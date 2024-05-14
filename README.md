@@ -263,8 +263,28 @@ python pvp/experiments/minigrid/train_pvp_minigrid.py \
 | Done Complete Task   | D            |
 </details>
 
+### MetaWorld
 
+MetaWorld is a collection of meta-learning and multi-task learning rl environments and benchmarks.
+All environments are performed by Sawyer robot arm, and details can be found in the paper: https://arxiv.org/pdf/1910.10897.
+To install the necessary requirements, we follow the setup in the CPL project and in particular,
+we need to install Cython version 0.29.36, mujoco-py 2.1, and the metaworld library using git+https://github.com/Farama-Foundation/Metaworld.git@04be337a12305e393c0caf0cbf5ec7755c7c8feb.
+All of the above libraries have been added to `requirements.txt` file so these installs should
+be done with the above `pip install -r requirements.txt`. 
 
+In order to actually run the environment, the Mujoco physics simulator must also be installed (
+which is what is being used by MetaWorld). To install everything correctly, follow the 
+instructions found here: https://github.com/openai/mujoco-py?tab=readme-ov-file#install-mujoco.
+
+Currently, rendering the environments has been removed due to an error: "ERROR: GLEW initalization error: Missing GL version".
+Rendering should be added in the future to allow for visualization of learned policies. 
+
+<details>
+    <summary><b>MetaWorld w/ FakeHuman</b></summary>
+A PPO agent has been trained on the environment for 10 million steps and is included in the 
+same folder. PVP experiment results are in progress.  
+
+</details>
 
 ## 📎 References
 

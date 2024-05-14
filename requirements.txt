@@ -31,3 +31,6 @@ minigrid==2.3.1
 easydict
 metadrive-simulator==0.4.2.2  # Use latest MetaDrive at the time of release.
 markupsafe==2.0.1
+Cython==0.29.36
+mujoco-py<2.2,>=2.0
+git+https://github.com/Farama-Foundation/Metaworld.git@04be337a12305e393c0caf0cbf5ec7755c7c8feb
