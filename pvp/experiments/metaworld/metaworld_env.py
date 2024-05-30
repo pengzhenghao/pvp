@@ -13,6 +13,7 @@ import math
 from metadrive.utils.math import safe_clip
 
 
+
 def trim_mw_obs(obs):
     # Remove the double robot observation from the environment.
     # Only stack two object observations
@@ -181,6 +182,8 @@ class HumanInTheLoopEnv(MetaWorldSawyerEnv):
     start_time = time.time()
 
     def reset(self, *args, **kwargs):
+        self.takeover = False
+        self.agent_action = None
         return super().reset(**kwargs)
 
     def step(self, actions):
@@ -212,7 +215,7 @@ class HumanInTheLoopEnv(MetaWorldSawyerEnv):
         """Return the takeover cost when intervened."""
         takeover_action = safe_clip(np.array(info["raw_action"]), -1, 1)
         agent_action = safe_clip(np.array(self.agent_action), -1, 1)
-        multiplier = (agent_action[0] * takeover_action[0] + agent_action[1] * takeover_action[1])
+        multiplier = np.dot(takeover_action, agent_action)
         divident = np.linalg.norm(takeover_action) * np.linalg.norm(agent_action)
         if divident < 1e-6:
             cos_dist = 1.0
@@ -269,8 +272,12 @@ def load():
         _expert_weights = np.load("/metaworld_ppo_10m_steps.zip")
     return _expert_weights
 
+def get_expert2():
+    from metaworld.policies import SawyerButtonPressV2Policy
+    return SawyerButtonPressV2Policy()
 
-_expert = get_expert()
+_expert = get_expert2()
+
 
 class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
     last_takeover = None
@@ -288,24 +295,42 @@ class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
             global _expert
             self.expert = _expert
             print()
-        last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
-        distribution = self.expert.get_distribution(last_obs)
-        log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
-        action_prob = log_prob.exp().detach().cpu().numpy()
-        expert_action = distribution.sample().detach().cpu().numpy()
-        assert expert_action.shape[0] == action_prob.shape[0] == 1
-        action_prob = action_prob[0]
-        expert_action = expert_action[0]
-        expert_action = expert_action.astype(np.float32)
-        # todo: change below to dependent on config['free_level'] as in metadrive example
-        if action_prob < 0.05:
-            actions = expert_action
-            self.takeover = True
-        else:
-            self.takeover = False
+
+        # use below if using custom ppo agent as expert
+        # last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
+        # distribution = self.expert.get_distribution(last_obs)
+        # log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
+        # action_prob = log_prob.exp().detach().cpu().numpy()
+        # expert_action = distribution.sample().detach().cpu().numpy()
+        # assert expert_action.shape[0] == action_prob.shape[0] == 1
+        # action_prob = action_prob[0]
+        # expert_action = expert_action[0]
+        # expert_action = expert_action.astype(np.float32)
+        # # todo: change below to dependent on config['free_level'] as in metadrive example
+        # if action_prob < 0.05:
+        #     actions = expert_action
+        #     self.takeover = True
+        # else:
+        #     self.takeover = False
         # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
 
+        # use below if using metaworld policy as expert
+        action = self.expert.get_action(self.last_obs)
+
+        # takeover when cosine similarily cost exceeds a certain value
+        cosine_similarity = np.dot(action, actions) / (np.linalg.norm(action) * np.linalg.norm(actions))
+        if np.linalg.norm(action) * np.linalg.norm(actions) < 1e-6:
+            cosine_similarity = 1
+        cosine_similarity_cost = 1 - cosine_similarity
+
+        if cosine_similarity_cost > 0.2:
+            self.takeover = True
+            actions = action
+        else:
+            self.takeover = False
+
         ret = super(HumanInTheLoopEnv, self).step(actions)
+        self.last_obs = ret[0]
         # add relevant things to info variable in order for shared_monitor to work
         ret[3]['raw_action'] = self.agent_action
         ret[3]['takeover_start'] = True if not self.last_takeover and self.takeover else False
@@ -324,12 +349,15 @@ class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
 
 if __name__ == '__main__':
 
-    env = FakeHumanInTheLoopMetaWorld(env_name='button-press-v2')
+    env = HumanInTheLoopEnv(env_name='button-press-v2')
     o = env.reset()
     print(env.action_space)
+    steps = 0
     while True:
         _, _, done, info = env.step(env.action_space.sample())
-        if done:
-            print(info)
+        steps += 1
+        print(info)
+        if done or int(info["success"]) == 1:
+            print(info, steps)
             env.reset()
             break

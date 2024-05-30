@@ -50,23 +50,10 @@ if __name__ == '__main__':
 
     # ===== Setup the config =====
     config = dict(
-        # ===== Environment =====
-        env_config=dict(
-            use_render=False,  # Open the interface
-            manual_control=False,  # Allow receiving control signal from external device
-            # controller=control_device,
-            # window_size=(1600, 1100),
-            horizon=1500,
-        ),
+        # ===== Training Environment =====
         num_train_envs=32,
 
-        # ===== Environment =====
-        eval_env_config=dict(
-            use_render=False,  # Open the interface
-            manual_control=False,  # Allow receiving control signal from external device
-            start_seed=1000,
-            horizon=1500,
-        ),
+        # ===== Evaluation Environment =====
         num_eval_envs=1,
 
         # ===== Training =====
@@ -101,7 +88,7 @@ if __name__ == '__main__':
         vec_env_cls = DummyVecEnv
 
     # ===== Setup the training environment =====
-    train_env_config = config["env_config"]
+    # train_env_config = config["env_config"]
 
     def _make_train_env():
         from pvp.experiments.metaworld.metaworld_env import HumanInTheLoopEnv
@@ -117,7 +104,7 @@ if __name__ == '__main__':
     assert config["algo"]["env"] is not None
 
     # ===== Also build the eval env =====
-    eval_env_config = config["eval_env_config"]
+    # eval_env_config = config["eval_env_config"]
 
     def _make_eval_env():
         from pvp.experiments.metaworld.metaworld_env import HumanInTheLoopEnv
@@ -160,7 +147,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=10_000_000,
+        total_timesteps=30_000_000,
         callback=callbacks,
         reset_num_timesteps=True,
 

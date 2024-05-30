@@ -15,11 +15,14 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
 
+os.environ["WANDB_START_METHOD"] = "thread" # for wandb to upload properly
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp_name", default="pvp_metaworld", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
+    parser.add_argument("--log_dir", type=str, default="data/michaelsong/pvp", help="Folder to store the logs.")
     parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
     args = parser.parse_args()
@@ -35,10 +38,12 @@ if __name__ == '__main__':
     if not use_wandb:
         print("[WARNING] Please note that you are not using wandb right now!!!")
 
-    experiment_dir = Path("runs") / experiment_batch_name
+    log_dir = args.log_dir
+    experiment_dir = Path(log_dir) / Path("runs") / experiment_batch_name
+
     trial_dir = experiment_dir / trial_name
     os.makedirs(experiment_dir, exist_ok=True)
-    os.makedirs(trial_dir, exist_ok=True)
+    os.makedirs(trial_dir, exist_ok=False)
     print(f"We start logging training data into {trial_dir}")
 
     # ===== Setup the config =====
@@ -89,6 +94,17 @@ if __name__ == '__main__':
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
+
+    # ===== Setup the eval environment =====
+    def _make_eval_env():
+        from pvp.experiments.metaworld.metaworld_env import HumanInTheLoopEnv
+        from pvp.sb3.common.monitor import Monitor
+        eval_env = HumanInTheLoopEnv(env_name='button-press-v2')
+        eval_env = Monitor(env=eval_env, filename=str(trial_dir))
+        return eval_env
+
+    eval_env = _make_eval_env()
+
     # ===== Setup the callbacks =====
     save_freq = 500  # Number of steps per model checkpoint
     callbacks = [
@@ -117,10 +133,10 @@ if __name__ == '__main__':
         reset_num_timesteps=True,
 
         # eval
-        eval_env=None,
-        eval_freq=-1,
-        n_eval_episodes=2,
-        eval_log_path=None,
+        eval_env=eval_env,
+        eval_freq=1000,
+        n_eval_episodes=10,
+        eval_log_path=str(trial_dir),
 
         # logging
         tb_log_name=experiment_batch_name,
