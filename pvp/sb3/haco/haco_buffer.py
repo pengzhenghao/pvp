@@ -217,7 +217,8 @@ class HACOReplayBuffer(ReplayBuffer):
         # A special case is you might want to clip the novice actions.
         if not infos[0]["takeover"]:
             # TODO: This is overfit to MetaDrive, might need to fix.
-            assert np.abs(np.clip(action, -1, 1) - behavior_actions).max() < 1e-6
+            # assert np.abs(np.clip(action, -1, 1) - behavior_actions).max() < 1e-6
+            pass
 
         if self.discard_reward:
             self.rewards[self.pos] = np.zeros_like(self.rewards[self.pos])

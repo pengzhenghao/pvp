@@ -123,7 +123,7 @@ class Monitor(gym.Wrapper):
             for key in self.info_keywords:
                 ep_info[key] = info[key]
                 ep_data = np.asarray(self.episode_infos[key])
-                if ep_data.dtype == np.object:
+                if ep_data.dtype == object:
                     pass
                 else:
                     # Temporary workaround solution for accessing mean for non float/int
