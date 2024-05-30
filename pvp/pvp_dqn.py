@@ -11,6 +11,7 @@ from pvp.sb3.common.buffers import ReplayBuffer
 from pvp.sb3.common.save_util import recursive_getattr, save_to_zip_file
 from pvp.sb3.dqn.dqn import DQN, compute_entropy
 from pvp.sb3.haco.haco_buffer import HACOReplayBuffer, concat_samples
+import tqdm
 
 
 class PVPDQN(DQN):
@@ -38,7 +39,8 @@ class PVPDQN(DQN):
 
         losses = []
         entropies = []
-        for _ in range(gradient_steps):
+
+        for _ in tqdm.trange(gradient_steps, desc="Gradient Steps"):
             if self.adaptive_batch_size:
                 if self.replay_buffer.pos > 0 and self.human_data_buffer.pos > 0:
                     replay_data_human = self.human_data_buffer.sample(
@@ -156,23 +158,23 @@ class PVPDQN(DQN):
         # self.human_data_buffer = self.replay_buffer
 
     def _store_transition(
-        self,
-        replay_buffer: ReplayBuffer,
-        buffer_action: np.ndarray,
-        new_obs: Union[np.ndarray, Dict[str, np.ndarray]],
-        reward: np.ndarray,
-        dones: np.ndarray,
-        infos: List[Dict[str, Any]],
+            self,
+            replay_buffer: ReplayBuffer,
+            buffer_action: np.ndarray,
+            new_obs: Union[np.ndarray, Dict[str, np.ndarray]],
+            reward: np.ndarray,
+            dones: np.ndarray,
+            infos: List[Dict[str, Any]],
     ) -> None:
         if infos[0]["takeover"] or infos[0]["takeover_start"]:
             replay_buffer = self.human_data_buffer
         super(PVPDQN, self)._store_transition(replay_buffer, buffer_action, new_obs, reward, dones, infos)
 
     def save(
-        self,
-        path: Union[str, pathlib.Path, io.BufferedIOBase],
-        exclude: Optional[Iterable[str]] = None,
-        include: Optional[Iterable[str]] = None,
+            self,
+            path: Union[str, pathlib.Path, io.BufferedIOBase],
+            exclude: Optional[Iterable[str]] = None,
+            include: Optional[Iterable[str]] = None,
     ) -> None:
         """
         Save all the attributes of the object and the model parameters in a zip-file.
