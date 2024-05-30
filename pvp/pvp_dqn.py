@@ -18,6 +18,10 @@ class PVPDQN(DQN):
         kwargs["replay_buffer_class"] = HACOReplayBuffer
         if "replay_buffer_class" not in kwargs:
             kwargs["replay_buffer_class"] = HACOReplayBuffer
+        if "adaptive_batch_size" in kwargs:
+            self.adaptive_batch_size = kwargs.pop("adaptive_batch_size")
+        else:
+            self.adaptive_batch_size = False
         super(PVPDQN, self).__init__(*args, **kwargs)
         self.q_value_bound = q_value_bound
 
@@ -35,17 +39,38 @@ class PVPDQN(DQN):
         losses = []
         entropies = []
         for _ in range(gradient_steps):
-            # Sample replay buffer
-            if self.replay_buffer.pos > batch_size and self.human_data_buffer.pos > batch_size:
-                replay_data_agent = self.replay_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
-                replay_data_human = self.human_data_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
-                replay_data = concat_samples(replay_data_agent, replay_data_human)
-            elif self.human_data_buffer.pos > batch_size:
-                replay_data = self.human_data_buffer.sample(batch_size, env=self._vec_normalize_env)
-            elif self.replay_buffer.pos > batch_size:
-                replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+            if self.adaptive_batch_size:
+                if self.replay_buffer.pos > 0 and self.human_data_buffer.pos > 0:
+                    replay_data_human = self.human_data_buffer.sample(
+                        int(batch_size), env=self._vec_normalize_env, return_all=True
+                    )
+                    human_data_size = len(replay_data_human.observations)
+                    human_data_size = max(1, human_data_size)
+                    human_data_size = int(human_data_size)
+                    replay_data_agent = self.replay_buffer.sample(human_data_size, env=self._vec_normalize_env)
+                    replay_data = concat_samples(replay_data_agent, replay_data_human)
+
+                elif self.human_data_buffer.pos > 0:
+                    replay_data = self.human_data_buffer.sample(
+                        batch_size, env=self._vec_normalize_env, return_all=True
+                    )
+                elif self.replay_buffer.pos > 0:
+                    replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+                else:
+                    break
+
             else:
-                break
+                # Sample replay buffer
+                if self.replay_buffer.pos > batch_size and self.human_data_buffer.pos > batch_size:
+                    replay_data_agent = self.replay_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
+                    replay_data_human = self.human_data_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
+                    replay_data = concat_samples(replay_data_agent, replay_data_human)
+                elif self.human_data_buffer.pos > batch_size:
+                    replay_data = self.human_data_buffer.sample(batch_size, env=self._vec_normalize_env)
+                elif self.replay_buffer.pos > batch_size:
+                    replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+                else:
+                    break
 
             with th.no_grad():
                 # Compute the next Q-values using the target network
