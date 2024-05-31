@@ -55,14 +55,16 @@ class QNetwork(BasePolicy):
         q_net = create_mlp(self.features_dim, action_dim, self.net_arch, self.activation_fn)
         self.q_net = nn.Sequential(*q_net)
 
-    def forward(self, obs: th.Tensor) -> th.Tensor:
+    def forward(self, obs: th.Tensor, feature=None) -> th.Tensor:
         """
         Predict the q-values.
 
         :param obs: Observation
         :return: The estimated Q-Value for each action.
         """
-        return self.q_net(self.extract_features(obs))
+        if feature is None:
+            feature = self.extract_features(obs)
+        return self.q_net(feature)
 
     def _predict(self, observation: th.Tensor, deterministic: bool = True) -> th.Tensor:
         q_values = self.forward(observation)

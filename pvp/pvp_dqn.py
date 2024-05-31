@@ -6,12 +6,31 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 import numpy as np
 import torch as th
 from torch.nn import functional as F
-
+import torch
 from pvp.sb3.common.buffers import ReplayBuffer
 from pvp.sb3.common.save_util import recursive_getattr, save_to_zip_file
 from pvp.sb3.dqn.dqn import DQN, compute_entropy
-from pvp.sb3.haco.haco_buffer import HACOReplayBuffer, concat_samples
+from pvp.sb3.haco.haco_buffer import HACOReplayBuffer, concat_samples, HACODictReplayBufferSamples
 import tqdm
+
+
+def sample_and_concat(replay_data_agent, replay_data_human, agent_data_index):
+    replay_data = concat_samples(HACODictReplayBufferSamples(
+        observations=replay_data_agent.observations[agent_data_index],
+        actions_novice=replay_data_agent.actions_novice[agent_data_index],
+        next_observations=replay_data_agent.next_observations[agent_data_index],
+        dones=replay_data_agent.dones[agent_data_index],
+        rewards=replay_data_agent.rewards[agent_data_index],
+        actions_behavior=replay_data_agent.actions_behavior[agent_data_index],
+        interventions=replay_data_agent.interventions[agent_data_index],
+        stop_td=replay_data_agent.stop_td[agent_data_index],
+        intervention_costs=replay_data_agent.intervention_costs[agent_data_index],
+        takeover_log_prob=replay_data_agent.takeover_log_prob[agent_data_index],
+        next_intervention_start=replay_data_agent.next_intervention_start[agent_data_index],
+        feature_observations=replay_data_agent.feature_observations[agent_data_index],
+        feature_next_observations=replay_data_agent.feature_next_observations[agent_data_index],
+    ), replay_data_human)
+    return replay_data
 
 
 class PVPDQN(DQN):
@@ -40,43 +59,80 @@ class PVPDQN(DQN):
         losses = []
         entropies = []
 
+        replay_data_human = self.human_data_buffer.sample(
+            int(batch_size), env=self._vec_normalize_env, return_all=True
+        )
+        human_data_size = len(replay_data_human.observations)
+        human_data_size = max(1, human_data_size)
+        human_data_size = int(human_data_size)
+
+        replay_data_agent = self.replay_buffer.sample(human_data_size, env=self._vec_normalize_env, return_all=True)
+
+        use_pretrained = self.policy_kwargs["features_extractor_kwargs"].get("pretrained", False)
+
+        if use_pretrained:
+            with torch.no_grad():
+                replay_data_human = replay_data_human._replace(
+                    feature_next_observations=self.policy.q_net_target.extract_features(
+                        replay_data_human.next_observations),
+                    feature_observations=self.policy.q_net.extract_features(replay_data_human.observations)
+                )
+
+                replay_data_agent = replay_data_agent._replace(
+                    feature_next_observations=self.policy.q_net_target.extract_features(
+                        replay_data_agent.next_observations),
+                    feature_observations=self.policy.q_net.extract_features(replay_data_agent.observations)
+                )
+
+        if replay_data_human.observations.shape[0] < replay_data_agent.observations.shape[0]:
+            # Reduce the number of agent actions
+            replay_data = None
+            should_sample_agent = True
+            num_agent_samples = replay_data_agent.observations.shape[0]
+            num_human_samples = replay_data_human.observations.shape[0]
+        else:
+            replay_data = concat_samples(replay_data_agent, replay_data_human)
+
+            should_sample_agent = False
+
         for _ in tqdm.trange(gradient_steps, desc="Gradient Steps"):
             if self.adaptive_batch_size:
                 if self.replay_buffer.pos > 0 and self.human_data_buffer.pos > 0:
-                    replay_data_human = self.human_data_buffer.sample(
-                        int(batch_size), env=self._vec_normalize_env, return_all=True
-                    )
-                    human_data_size = len(replay_data_human.observations)
-                    human_data_size = max(1, human_data_size)
-                    human_data_size = int(human_data_size)
-                    replay_data_agent = self.replay_buffer.sample(human_data_size, env=self._vec_normalize_env)
-                    replay_data = concat_samples(replay_data_agent, replay_data_human)
-
-                elif self.human_data_buffer.pos > 0:
-                    replay_data = self.human_data_buffer.sample(
-                        batch_size, env=self._vec_normalize_env, return_all=True
-                    )
-                elif self.replay_buffer.pos > 0:
-                    replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+                    pass
                 else:
-                    break
+                    raise ValueError()
+
+                # elif self.human_data_buffer.pos > 0:
+                #     replay_data = self.human_data_buffer.sample(
+                #         batch_size, env=self._vec_normalize_env, return_all=True
+                #     )
+                # elif self.replay_buffer.pos > 0:
+                #     replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+                # else:
+                #     break
 
             else:
+                raise ValueError()
                 # Sample replay buffer
-                if self.replay_buffer.pos > batch_size and self.human_data_buffer.pos > batch_size:
-                    replay_data_agent = self.replay_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
-                    replay_data_human = self.human_data_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
-                    replay_data = concat_samples(replay_data_agent, replay_data_human)
-                elif self.human_data_buffer.pos > batch_size:
-                    replay_data = self.human_data_buffer.sample(batch_size, env=self._vec_normalize_env)
-                elif self.replay_buffer.pos > batch_size:
-                    replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
-                else:
-                    break
+                # if self.replay_buffer.pos > batch_size and self.human_data_buffer.pos > batch_size:
+                #     replay_data_agent = self.replay_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
+                #     replay_data_human = self.human_data_buffer.sample(int(batch_size / 2), env=self._vec_normalize_env)
+                #     replay_data = concat_samples(replay_data_agent, replay_data_human)
+                # elif self.human_data_buffer.pos > batch_size:
+                #     replay_data = self.human_data_buffer.sample(batch_size, env=self._vec_normalize_env)
+                # elif self.replay_buffer.pos > batch_size:
+                #     replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+                # else:
+                #     break
+
+            if should_sample_agent:
+                # Sample number of human data's data from agent's data
+                ind = th.randperm(num_agent_samples)[:num_human_samples]
+                replay_data = sample_and_concat(replay_data_agent, replay_data_human, ind)
 
             with th.no_grad():
                 # Compute the next Q-values using the target network
-                next_q_values = self.q_net_target(replay_data.next_observations)
+                next_q_values = self.q_net_target(replay_data.next_observations, feature=replay_data.feature_next_observations)
                 # Follow greedy policy: use the one with the highest value
                 next_q_values, _ = next_q_values.max(dim=1)
                 # Avoid potential broadcast issue
@@ -86,7 +142,7 @@ class PVPDQN(DQN):
                 target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
 
             # Get current Q-values estimates
-            current_q_values = self.q_net(replay_data.observations)
+            current_q_values = self.q_net(replay_data.observations, feature=replay_data.feature_observations)
 
             entropies.append(compute_entropy(current_q_values))
 

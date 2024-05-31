@@ -35,6 +35,10 @@ class HACODictReplayBufferSamples(NamedTuple):
 
     next_intervention_start: th.Tensor
 
+    # New:
+    feature_observations: th.Tensor = None
+    feature_next_observations: th.Tensor = None
+
 
 def concat_samples(self, other):
     if isinstance(self.observations, dict):
@@ -46,6 +50,13 @@ def concat_samples(self, other):
     else:
         cat_obs = th.cat([self.observations, other.observations], dim=0)
         next_cat_obs = th.cat([self.next_observations, other.next_observations], dim=0)
+
+    if self.feature_observations is not None:
+        feature_observations = th.cat([self.feature_observations, other.feature_observations], dim=0)
+        feature_next_observations = th.cat([self.feature_next_observations, other.feature_next_observations], dim=0)
+    else:
+        feature_observations = None
+        feature_next_observations = None
     return HACODictReplayBufferSamples(
         cat_obs,
         next_cat_obs,
@@ -57,7 +68,9 @@ def concat_samples(self, other):
         takeover_log_prob=th.cat([self.takeover_log_prob, other.takeover_log_prob], dim=0),
         actions_behavior=th.cat([self.actions_behavior, other.actions_behavior], dim=0),
         actions_novice=th.cat([self.actions_novice, other.actions_novice], dim=0),
-        next_intervention_start=th.cat([self.next_intervention_start, other.next_intervention_start], dim=0)
+        next_intervention_start=th.cat([self.next_intervention_start, other.next_intervention_start], dim=0),
+        feature_observations=feature_observations,
+        feature_next_observations=feature_next_observations
     )
 
 
