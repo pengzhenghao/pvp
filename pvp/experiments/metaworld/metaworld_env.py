@@ -277,10 +277,10 @@ def get_expert2():
     from metaworld.policies import SawyerButtonPressV2Policy
     return SawyerButtonPressV2Policy()
 
-_expert = get_expert2()
+_expert_ppo = get_expert()
+_expert_scripted = get_expert2()
 
-
-class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
+class FakeHumanInTheLoopMetaWorldPPO(HumanInTheLoopEnv):
     last_takeover = None
     last_obs = None
     expert = None
@@ -293,8 +293,60 @@ class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
 
         # ===== Get expert action and determine whether to take over! =====
         if self.expert is None:
-            global _expert
-            self.expert = _expert
+            global _expert_ppo
+            self.expert = _expert_ppo
+            print()
+
+        # use below if using custom ppo agent as expert
+        last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
+        distribution = self.expert.get_distribution(last_obs)
+        log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
+        action_prob = log_prob.exp().detach().cpu().numpy()
+        expert_action = distribution.sample().detach().cpu().numpy()
+        assert expert_action.shape[0] == action_prob.shape[0] == 1
+        action_prob = action_prob[0]
+        expert_action = expert_action[0]
+        expert_action = expert_action.astype(np.float32)
+        # # todo: change below to dependent on config['free_level'] as in metadrive example
+        if action_prob < 0.05:
+            actions = expert_action
+            self.takeover = True
+        else:
+            self.takeover = False
+        # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
+
+        ret = super(HumanInTheLoopEnv, self).step(actions)
+        self.last_obs = ret[0]
+        # add relevant things to info variable in order for shared_monitor to work
+        ret[3]['raw_action'] = self.agent_action
+        ret[3]['takeover_start'] = True if not self.last_takeover and self.takeover else False
+        ret[3]['takeover'] = self.takeover and not ret[3]['takeover_start']
+        ret[3]['takeover_cost'] = self.get_takeover_cost(ret[3]) if self.takeover else 0
+
+        self.takeover_recorder.append(self.takeover)
+        self.total_steps += 1
+        return ret
+
+    def reset(self, **kwargs):
+        o = super().reset(**kwargs)
+        self.last_obs = o
+        return o
+
+class FakeHumanInTheLoopMetaWorldScripted(HumanInTheLoopEnv):
+    last_takeover = None
+    last_obs = None
+    expert = None
+
+    def step(self, actions):
+        """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
+        actions = np.asarray(actions).astype(np.float32)
+        self.agent_action = copy.copy(actions)
+        self.last_takeover = self.takeover
+
+        # ===== Get expert action and determine whether to take over! =====
+        if self.expert is None:
+            global _expert_scripted
+            self.expert = _expert_scripted
             print()
 
         # use below if using custom ppo agent as expert
@@ -350,7 +402,7 @@ class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
 
 if __name__ == '__main__':
 
-    env = Monitor(FakeHumanInTheLoopMetaWorld(env_name='button-press-v2'))
+    env = Monitor(FakeHumanInTheLoopMetaWorldScripted(env_name='button-press-v2'))
     o = env.reset()
     print(env.action_space)
     steps = 0

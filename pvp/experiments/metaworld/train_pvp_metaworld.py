@@ -5,7 +5,7 @@ import argparse
 import os
 from pathlib import Path
 
-from pvp.experiments.metaworld.metaworld_env import FakeHumanInTheLoopMetaWorld
+from pvp.experiments.metaworld.metaworld_env import FakeHumanInTheLoopMetaWorldPPO, FakeHumanInTheLoopMetaWorldScripted
 from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -87,7 +87,7 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    train_env = FakeHumanInTheLoopMetaWorld(env_name='button-press-v2')
+    train_env = FakeHumanInTheLoopMetaWorldPPO(env_name='button-press-v2')
     train_env = Monitor(env=train_env, filename=str(trial_dir))
     # Store all shared control data to the files.
     train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
