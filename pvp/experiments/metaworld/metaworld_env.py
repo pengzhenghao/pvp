@@ -11,6 +11,7 @@ from collections import deque
 import pathlib
 import math
 from metadrive.utils.math import safe_clip
+from pvp.sb3.common.monitor import Monitor
 
 
 
@@ -207,7 +208,7 @@ class HumanInTheLoopEnv(MetaWorldSawyerEnv):
         #     )
 
         self.total_steps += 1
-
+        ret[3]['is_success'] = ret[3]['success']
         return ret
 
 
@@ -323,7 +324,7 @@ class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
             cosine_similarity = 1
         cosine_similarity_cost = 1 - cosine_similarity
 
-        if cosine_similarity_cost > 0.2:
+        if cosine_similarity_cost > 0.4:
             self.takeover = True
             actions = action
         else:
@@ -349,7 +350,7 @@ class FakeHumanInTheLoopMetaWorld(HumanInTheLoopEnv):
 
 if __name__ == '__main__':
 
-    env = HumanInTheLoopEnv(env_name='button-press-v2')
+    env = Monitor(FakeHumanInTheLoopMetaWorld(env_name='button-press-v2'))
     o = env.reset()
     print(env.action_space)
     steps = 0
