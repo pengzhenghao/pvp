@@ -19,16 +19,16 @@ def train_ppo_metaworld(ctxt=None, seed=1):
     set_seed(seed)
 
     trainer = garage.Trainer(ctxt)
-    env = HumanInTheLoopEnv(env_name='button-press-v2')
-    env_spec = garage.EnvSpec(observation_space=env.observation_space, action_space=env.action_space,
-                              max_episode_length=500)
+    # env = HumanInTheLoopEnv(env_name='button-press-v2')
+    # env_spec = garage.EnvSpec(observation_space=env.observation_space, action_space=env.action_space,
+    #                           max_episode_length=500)
 
-    # ml1 = metaworld.ML1('pick-place-v1')  # Replace with desired task
-    # env = ml1.train_classes['pick-place-v1']()
-    # env = GymEnv(env)
+    ml1 = metaworld.ML1('button-press-v2')  # Replace with desired task
+    env = ml1.train_classes['button-press-v2']()
+    env = GymEnv(env)
 
     policy = GaussianMLPPolicy(
-        env_spec=env_spec,
+        env_spec=env.spec,
         hidden_sizes=[128, 128],
         hidden_nonlinearity=torch.tanh,
         output_nonlinearity=None,
