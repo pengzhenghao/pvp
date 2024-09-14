@@ -120,16 +120,16 @@ class PVPTD3(TD3):
                 else:
                     break
 
-            with th.no_grad():
-                # Select action according to policy and add clipped noise
-                noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
-                noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
-                next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
-
-                # Compute the next Q-values: min over all critics targets
-                next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
-                next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
-                target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
+            # with th.no_grad():
+            #     # Select action according to policy and add clipped noise
+            #     noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
+            #     noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
+            #     next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
+            #
+            #     # Compute the next Q-values: min over all critics targets
+            #     next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
+            #     next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
+            #     # target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
 
             # Get current Q-values estimates for each critic network
             current_q_behavior_values = self.critic(replay_data.observations, replay_data.actions_behavior)
@@ -138,30 +138,49 @@ class PVPTD3(TD3):
             stat_recorder["q_value_behavior"].append(current_q_behavior_values[0].mean().item())
             stat_recorder["q_value_novice"].append(current_q_novice_values[0].mean().item())
 
+            new_action = self.actor(replay_data.observations)
+            current_q_online_values = self.critic(replay_data.observations, new_action.detach())
+
+
             # Compute critic loss
             critic_loss = []
-            for (current_q_behavior, current_q_novice) in zip(current_q_behavior_values, current_q_novice_values):
-                if self.intervention_start_stop_td:
-                    l = 0.5 * F.mse_loss(
-                        replay_data.stop_td * current_q_behavior, replay_data.stop_td * target_q_values
-                    )
+            for (current_q_behavior, current_q_novice, current_q_online) in zip(current_q_behavior_values, current_q_novice_values, current_q_online_values):
+                # if self.intervention_start_stop_td:
+                #     l = 0.5 * F.mse_loss(
+                #         replay_data.stop_td * current_q_behavior, replay_data.stop_td * target_q_values
+                #     )
+                #
+                # else:
+                #     l = 0.5 * F.mse_loss(current_q_behavior, target_q_values)
 
-                else:
-                    l = 0.5 * F.mse_loss(current_q_behavior, target_q_values)
+                l = 0.0
 
-                # ====== The key of Proxy Value Objective =====
-                l += th.mean(
-                    replay_data.interventions * self.cql_coefficient *
-                    F.mse_loss(
-                        current_q_behavior, self.q_value_bound * th.ones_like(current_q_behavior), reduction="none"
+                # Good enough agent action
+                objective_1 = th.mean(
+                    th.minimum(
+                        (1 - replay_data.interventions) * current_q_novice,
+                        th.zeros_like(current_q_novice),
                     )
                 )
-                l += th.mean(
-                    replay_data.interventions * self.cql_coefficient *
-                    F.mse_loss(
-                        current_q_novice, -self.q_value_bound * th.ones_like(current_q_behavior), reduction="none"
+                loss_1 = -objective_1
+
+                # Bad state-actions
+                objective_2 = th.mean(
+                    th.minimum(
+                        replay_data.interventions * (-current_q_novice),
+                        th.zeros_like(current_q_novice),
                     )
                 )
+                loss_2 = -objective_2
+
+                # Intervention state-actions:
+
+                objective_3 = (current_q_behavior - current_q_novice) * replay_data.interventions
+                objective_3 = th.minimum(objective_3, th.zeros_like(objective_3))
+                objective_3 = th.mean(objective_3)
+                loss_3 = -objective_3
+
+                l = loss_1 + loss_2 + loss_3
 
                 critic_loss.append(l)
             critic_loss = sum(critic_loss)
@@ -175,7 +194,6 @@ class PVPTD3(TD3):
             # Delayed policy updates
             if self._n_updates % self.policy_delay == 0:
                 # Compute actor loss
-                new_action = self.actor(replay_data.observations)
                 actor_loss = -self.critic.q1_forward(replay_data.observations, new_action).mean()
 
                 # BC loss on human data
@@ -186,10 +204,12 @@ class PVPTD3(TD3):
                 # masked_bc_loss = masked_bc_loss.mean()
 
                 if self.extra_config["only_bc_loss"]:
+                    raise ValueError()
                     actor_loss = bc_loss.mean()
 
                 else:
                     if self.extra_config["add_bc_loss"]:
+                        raise ValueError()
                         actor_loss += masked_bc_loss * self.extra_config["bc_loss_weight"]
 
                 # Optimize the actor
