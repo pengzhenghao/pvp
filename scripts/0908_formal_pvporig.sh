@@ -24,16 +24,29 @@ seeds=(0 100 200 300 400 500 600 700)
 #done
 
 
+## Loop over each GPU
+#for i in {0..7}
+#do
+#    CUDA_VISIBLE_DEVICES=$i \
+#    nohup python pvp/experiments/metadrive/train_pvp_metadrive_fakehuman.py \
+#    --exp_name=0913_onlybc_bs1024 \
+#    --wandb \
+#    --wandb_project=pvp2024 \
+#    --wandb_team=drivingforce \
+#    --only_bc_loss=True \
+#    --seed=${seeds[$i]} \
+#    > "seed${seeds[$i]}.log" 2>&1 &
+#done
+
 # Loop over each GPU
 for i in {0..7}
 do
     CUDA_VISIBLE_DEVICES=$i \
     nohup python pvp/experiments/metadrive/train_pvp_metadrive_fakehuman.py \
-    --exp_name=0913_onlybc_bs1024 \
+    --exp_name=0914_EIL \
     --wandb \
     --wandb_project=pvp2024 \
     --wandb_team=drivingforce \
-    --only_bc_loss=True \
     --seed=${seeds[$i]} \
     > "seed${seeds[$i]}.log" 2>&1 &
 done
