@@ -274,7 +274,7 @@ class PVPTD3ENS(PVPTD3):
                     self.policy_choice[idx] = np.random.randint(self.k)
 
                     if len(self.estimates) > 25:
-                        self.switch2human_thresh = th.quantile(th.Tensor(self.estimates), 0.95).item()
+                        self.switch2human_thresh = th.quantile(th.Tensor(self.estimates), 0.99).item()
                         self.uthred = [self.switch2human_thresh, self.switch2robot_thresh]
 
                     # Update stats
@@ -330,10 +330,13 @@ class PVPTD3ENS(PVPTD3):
             all_actions, _ = self.predict(observation=val_data.observations.cpu().numpy(), return_all=True)
             heldout_estim = th.Tensor(all_actions.var(axis = 0).mean(axis = -1)).to(self.device)
 
-            discre = th.mean((train_data.actions_behavior - train_data.actions_novice) ** 2, dim = -1)
-
+            actions_train_data, _ = self.predict(observation=train_data.observations.cpu().numpy())
+            actions_train_data = th.Tensor(actions_train_data).to(self.device)
+            discre = th.mean((train_data.actions_behavior - actions_train_data) ** 2, dim = -1)
+            #change train_data.actions_novice to new actions  chy: 0108
+            
             self.switch2robot_thresh = th.mean(discre).item()
-            self.switch2human_thresh = th.quantile(heldout_estim, 0.95).item()
+            self.switch2human_thresh = th.quantile(heldout_estim, 0.99).item()
             self.uthred = [self.switch2human_thresh, self.switch2robot_thresh]
             self.human_data_buffer.pos = len_train
         
