@@ -48,7 +48,7 @@ class PVPTD3(TD3):
                 assert v in ["True", "False"]
                 v = v == "True"
                 self.extra_config[k] = v
-        for k in ["agent_data_ratio", "bc_loss_weight"]:
+        for k in ["agent_data_ratio", "bc_loss_weight", "init_bc_steps"]:
             if k in kwargs:
                 self.extra_config[k] = kwargs.pop(k)
 

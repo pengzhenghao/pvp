@@ -9,9 +9,9 @@ import os
 from pathlib import Path
 import uuid
 
-from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
+from pvp.experiments.metadrive.egpo.fakehuman_env_aim import FakeHumanEnv
 from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
-from pvp.pvp_td3 import PVPTD3
+from pvp.aim import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
 from pvp.sb3.common.wandb_callback import WandbCallback
@@ -20,6 +20,7 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
 from pvp.sb3.common.vec_env import DummyVecEnv, VecFrameStack, SubprocVecEnv
+from pvp.sb3.common.env_util import make_vec_env
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -30,10 +31,10 @@ if __name__ == '__main__':
     parser.add_argument("--learning_starts", default=10, type=int)
     parser.add_argument("--save_freq", default=500, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
-    parser.add_argument("--log_dir", type=str, default="/home/zhenghao/pvp", help="Folder to store the logs.")
+    parser.add_argument("--wandb", type=bool, default=True, help="Set to True to upload stats to wandb.")
+    parser.add_argument("--wandb_project", type=str, default="AIM", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
+    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
 
@@ -53,6 +54,10 @@ if __name__ == '__main__':
     #     type=str,
     #     help="The control device, selected from [wheel, gamepad, keyboard]."
     # )
+    parser.add_argument("--thr_classifier", type=float, default=0.95)
+    parser.add_argument("--init_bc_steps", type=int, default=200)
+    parser.add_argument("--thr_actdiff", type=float, default=0.4)
+    
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -77,7 +82,9 @@ if __name__ == '__main__':
     print(f"We start logging training data into {trial_dir}")
 
     free_level = args.free_level
-
+    thr_classifier = args.thr_classifier
+    init_bc_steps = args.init_bc_steps
+    thr_actdiff = args.thr_actdiff
     # ===== Setup the config =====
     config = dict(
 
@@ -92,6 +99,9 @@ if __name__ == '__main__':
 
             # FakeHumanEnv config:
             free_level=free_level,
+            # thr_classifier=thr_classifier,
+            # init_bc_steps=init_bc_steps,
+            # thr_actdiff=thr_actdiff,
         ),
 
         # Algorithm config
@@ -125,6 +135,10 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
+            #num_instances=1,
+            policy_delay=25,
+            gradient_steps=5,
+            init_bc_steps=init_bc_steps,
         ),
 
         # Experiment log
@@ -166,8 +180,8 @@ if __name__ == '__main__':
         return eval_env
 
 
-    eval_env = SubprocVecEnv([_make_eval_env])
-
+    eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
+    
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
     callbacks = [
@@ -187,6 +201,8 @@ if __name__ == '__main__':
 
     # ===== Setup the training algorithm =====
     model = PVPTD3(**config["algo"])
+    train_env.env.env.model = model
+    
     if args.ckpt:
         ckpt = Path(args.ckpt)
         print(f"Loading checkpoint from {ckpt}!")
@@ -194,6 +210,8 @@ if __name__ == '__main__':
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
+
+    eval_freq, n_eval_episodes = 500, 50
 
     # ===== Launch training =====
     model.learn(
@@ -210,8 +228,8 @@ if __name__ == '__main__':
 
         # eval
         eval_env=eval_env,
-        eval_freq=150,
-        n_eval_episodes=50,
+        eval_freq=eval_freq,
+        n_eval_episodes=n_eval_episodes,
         eval_log_path=str(trial_dir),
 
         # logging
@@ -219,4 +237,7 @@ if __name__ == '__main__':
         log_interval=1,
         save_buffer=False,
         load_buffer=False,
+        save_path_human = Path(log_dir) / Path("human_buffer_tb1_ours") / (str(seed)),
+        save_path_replay = Path(log_dir) / Path("novice_buffer_tb1_ours") / (str(seed)),
     )
+
