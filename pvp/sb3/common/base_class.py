@@ -303,7 +303,7 @@ class BaseAlgorithm(ABC):
         """
         # Log the current learning rate
         lr = self.lr_schedule(self._current_progress_remaining)
-        self.logger.record("train/learning_rate", lr)
+        #self.logger.record("train/learning_rate", lr)
 
         if not isinstance(optimizers, list):
             optimizers = [optimizers]

@@ -83,6 +83,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
     last_takeover = None
     last_obs = None
     expert = None
+    total_switch = 0
+    total_wall_steps = 0
 
     def __init__(self, config):
         super(FakeHumanEnv, self).__init__(config)
@@ -98,12 +100,6 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         else:
             return super(FakeHumanEnv, self).action_space
 
-    # def _preprocess_actions(self, actions: Union[np.ndarray, Dict[AnyStr, np.ndarray], int]) -> Union[np.ndarray, Dict[AnyStr, np.ndarray], int]:
-    #     if self.config["use_discrete"]:
-    #         print(111)
-    #         return int(actions)
-    #     else:
-    #         return actions
 
     def default_config(self):
         """Revert to use the RL policy (so no takeover signal will be issued from the human)"""
@@ -118,6 +114,11 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "manual_control": False,
                 "use_render": False,
                 "expert_deterministic": False,
+                
+                "init_bc_steps": 200,
+                "thr_classifier": 0.95,
+                "thr_actdiff": 0.4,
+                "robot_gated": False,
             }
         )
         return config
@@ -163,21 +164,33 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
             expert_action = expert_action[0]
-            if action_prob < 1 - self.config['free_level']:
+            if self.config["use_discrete"]:
+                expert_action = self.continuous_to_discrete(expert_action)
+                expert_action = self.discrete_to_continuous(expert_action)
 
-                # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action},")
-
-                if self.config["use_discrete"]:
-                    expert_action = self.continuous_to_discrete(expert_action)
-                    expert_action = self.discrete_to_continuous(expert_action)
-
-                actions = expert_action
-
-                self.takeover = True
-            else:
+            if self.config['robot_gated'] and self.total_steps > self.config['init_bc_steps']:
+                unc = self.model.compute_uncertainty(self.last_obs, actions)
                 self.takeover = False
-            # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
+                if not self.last_takeover:
+                    if unc > self.model.switch2human_thresh:
+                        self.takeover = True
+                else:
+                    if np.mean((actions - expert_action) ** 2) > self.model.switch2robot_thresh: #self.config['thr_actdiff']:
+                        self.takeover = True
+                self.total_wall_steps += (int)(self.takeover)
+            else:
+                self.total_wall_steps += 1
+                if action_prob < 1 - self.config['free_level']:
 
+                    # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action},")
+                    actions = expert_action
+
+                    self.takeover = True
+                else:
+                    self.takeover = False
+            # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
+        if self.takeover:
+            actions = expert_action
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
@@ -203,6 +216,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if self.config["use_discrete"]:
             i["raw_action"] = self.continuous_to_discrete(i["raw_action"])
 
+        i["total_human_involved_steps"] = (int)(self.total_wall_steps)
         return o, r, d, i
 
     def _get_step_return(self, actions, engine_info):
@@ -228,6 +242,10 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         engine_info["total_takeover_count"] = self.total_takeover_count
         engine_info["total_cost"] = self.total_cost
         # engine_info["total_cost_so_far"] = self.total_cost
+        sw = (last_t != self.takeover)
+        self.total_switch += sw
+        engine_info["switch"] = sw
+        engine_info["total_switch"] = self.total_switch
         return o, r, d, engine_info
 
     def _get_reset_return(self, reset_info):

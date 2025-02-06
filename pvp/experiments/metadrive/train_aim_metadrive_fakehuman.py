@@ -43,7 +43,7 @@ if __name__ == '__main__':
     # )
 
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
-    parser.add_argument("--only_bc_loss", default="False", type=str)
+    parser.add_argument("--only_bc_loss", default="True", type=str)
     parser.add_argument("--ckpt", default="", type=str)
 
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
@@ -99,9 +99,10 @@ if __name__ == '__main__':
 
             # FakeHumanEnv config:
             free_level=free_level,
-            # thr_classifier=thr_classifier,
-            # init_bc_steps=init_bc_steps,
-            # thr_actdiff=thr_actdiff,
+            thr_classifier=thr_classifier,
+            init_bc_steps=init_bc_steps,
+            thr_actdiff=thr_actdiff,
+            robot_gated=True,
         ),
 
         # Algorithm config
@@ -139,6 +140,7 @@ if __name__ == '__main__':
             policy_delay=25,
             gradient_steps=5,
             init_bc_steps=init_bc_steps,
+            thr_classifier=thr_classifier,
         ),
 
         # Experiment log
@@ -180,7 +182,7 @@ if __name__ == '__main__':
         return eval_env
 
 
-    eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
+    eval_env = make_vec_env(_make_eval_env, n_envs=1, vec_env_cls=SubprocVecEnv)
     
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
