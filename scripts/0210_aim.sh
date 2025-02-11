@@ -19,6 +19,7 @@ do
     --wandb_project=aim2025 \
     --wandb_team=victorique \
     --seed=${seeds[$i]} \
+    --name=aim \
     > ${EXP_NAME}_seed${seeds[$i]}.log 2>&1 &
 done
 

@@ -20,6 +20,7 @@ do
     --wandb_team=victorique \
     --seed=${seeds[$i]} \
     --human_gated \
+    --name=PVP \
     > ${EXP_NAME}_seed${seeds[$i]}.log 2>&1 &
 done
 

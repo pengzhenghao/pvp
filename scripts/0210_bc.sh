@@ -21,6 +21,7 @@ do
     --seed=${seeds[$i]} \
     --human_gated \
     --free_level=-100 \
+    --name=BC \
     > ${EXP_NAME}_seed${seeds[$i]}.log 2>&1 &
 done
 

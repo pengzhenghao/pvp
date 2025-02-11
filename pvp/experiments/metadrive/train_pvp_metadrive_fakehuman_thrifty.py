@@ -63,13 +63,17 @@ if __name__ == '__main__':
     # control_device = args.device
     experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
     seed = args.seed
-    trial_name = "{}_{}_{}".format("thrifty", seed, get_time_str())
+    ens_dagger = args.ens_dagger
+    if not ens_dagger:
+        trial_name = "{}_{}_{}".format("thrifty", seed, get_time_str())
+    else:
+        trial_name = "{}_{}_{}".format("ens_dagger", seed, get_time_str())
     print("Trial name is set to: ", trial_name)
 
     use_wandb = args.wandb
     project_name = args.wandb_project
     team_name = args.wandb_team
-    ens_dagger = args.ens_dagger
+    
     if not use_wandb:
         print("[WARNING] Please note that you are not using wandb right now!!!")
 

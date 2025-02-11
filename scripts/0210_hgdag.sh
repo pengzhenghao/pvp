@@ -21,6 +21,7 @@ do
     --seed=${seeds[$i]} \
     --human_gated \
     --hg \
+    --name=HG_DAgger \
     > ${EXP_NAME}_seed${seeds[$i]}.log 2>&1 &
 done
 

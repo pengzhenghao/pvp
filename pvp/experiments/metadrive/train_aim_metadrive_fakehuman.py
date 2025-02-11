@@ -59,14 +59,16 @@ if __name__ == '__main__':
     parser.add_argument("--thr_classifier", type=float, default=0.95)
     parser.add_argument("--init_bc_steps", type=int, default=200)
     parser.add_argument("--thr_actdiff", type=float, default=0.4)
-    
+    parser.add_argument("--name", default="aim", type=str)
+
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     # control_device = args.device
     experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
     seed = args.seed
-    trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
+    #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
+    trial_name = "{}_{}_{}".format(args.name, seed, get_time_str())
     print("Trial name is set to: ", trial_name)
 
     use_wandb = args.wandb

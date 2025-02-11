@@ -6,7 +6,7 @@ seeds=(0 100 200 300 400 500 600 700)
 filename=$(basename "$0")
 extension="${filename##*.}"
 
-EXP_NAME="${filename%.*}"
+EXP_NAME="ens_dagger"
 
 
 # Loop over each GPU
