@@ -242,6 +242,7 @@ class PVPTD3ENS(PVPTD3):
 
             # Rescale and perform action
             new_obs, rewards, dones, infos = env.step(actions)
+            self.logger.record("train/human_involved_steps", infos[0]["total_human_involved_steps"])
 
             self.num_timesteps += env.num_envs
             self.since_last_reset += env.num_envs

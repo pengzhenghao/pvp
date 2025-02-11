@@ -215,6 +215,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         i["miss"] = (np.mean(expert_action ** 2) > 0.2) * (np.mean((actions - expert_action) ** 2) > 0.1)
         self.total_miss += i["miss"]
         i["total_miss"] = self.total_miss
+        i["total_human_involved_steps"] = self.total_wall_steps
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
