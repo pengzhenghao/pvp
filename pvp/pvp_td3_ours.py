@@ -246,6 +246,8 @@ class PVPTD3ENS(PVPTD3):
 
             # Rescale and perform action
             new_obs, rewards, dones, infos = env.step(actions)
+            self.logger.record("train/human_involved_steps", infos[0]["total_human_involved_steps"])
+            
             
             if hasattr(self, "trained") and not infos[0]["takeover"]:
                 self.estimates.append(unc)

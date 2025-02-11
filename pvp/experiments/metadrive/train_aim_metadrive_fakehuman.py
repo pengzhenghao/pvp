@@ -213,7 +213,7 @@ if __name__ == '__main__':
         model.set_parameters(params, exact_match=True, device=model.device)
 
 
-    eval_freq, n_eval_episodes = 500, 50
+    eval_freq, n_eval_episodes = 100, 50
 
     # ===== Launch training =====
     model.learn(

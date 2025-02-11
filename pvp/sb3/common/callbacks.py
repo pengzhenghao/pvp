@@ -326,6 +326,7 @@ class EvalCallback(EventCallback):
         self._is_success_buffer = []
         self.evaluations_successes = []
         self.evaluations_info_buffer = defaultdict(list)
+        self.next_upd = eval_freq
 
     def _init_callback(self) -> None:
         # Does not work in some corner cases, where the wrapper is not the same
@@ -369,8 +370,10 @@ class EvalCallback(EventCallback):
             self.evaluations_info_buffer["raw_action"].append(info["raw_action"])
 
     def _on_step(self) -> bool:
-
-        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+        tmp = self.logger.name_to_value["train/human_involved_steps"]
+        if self.eval_freq > 0 and tmp > 0 and tmp == self.next_upd:
+            self.next_upd = self.eval_freq + tmp
+            self.logger.record("eval/human_involved_steps", tmp)
             # Sync training and eval env if there is VecNormalize
             if self.model.get_vec_normalize_env() is not None:
                 try:
