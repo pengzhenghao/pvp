@@ -9,7 +9,7 @@ from metadrive.engine.logger import get_logger
 from metadrive.examples.ppo_expert.numpy_expert import ckpt_path
 from metadrive.policy.env_input_policy import EnvInputPolicy
 
-from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+from pvp.experiments.metadrive.human_in_the_loop_env_thrifty import HumanInTheLoopEnv
 
 FOLDER_PATH = pathlib.Path(__file__).parent
 
@@ -47,7 +47,7 @@ def get_expert():
 
     print(f"Loading checkpoint from {ckpt}!")
     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
-    model.set_parameters(params, exact_match=True, device=model.device)
+    model.set_parameters(params, exact_match=False, device=model.device)
     print(f"Model is loaded from {ckpt}!")
 
     train_env.close()
@@ -88,6 +88,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
     total_miss = 0
 
     def __init__(self, config):
+        self.unc = None
         super(FakeHumanEnv, self).__init__(config)
         if self.config["use_discrete"]:
             self._num_bins = 13
@@ -101,6 +102,12 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         else:
             return super(FakeHumanEnv, self).action_space
 
+    # def _preprocess_actions(self, actions: Union[np.ndarray, Dict[AnyStr, np.ndarray], int]) -> Union[np.ndarray, Dict[AnyStr, np.ndarray], int]:
+    #     if self.config["use_discrete"]:
+    #         print(111)
+    #         return int(actions)
+    #     else:
+    #         return actions
 
     def default_config(self):
         """Revert to use the RL policy (so no takeover signal will be issued from the human)"""
@@ -112,15 +119,14 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
                 "agent_policy": EnvInputPolicy,
                 "free_level": 0.95,
+                "init_bc_steps": 200,
+                "lr_classifier": 1e-4,
+                "thr_classifier": 0.5,
+                "thr_actdiff": 0.3,
                 "manual_control": False,
                 "use_render": False,
                 "expert_deterministic": False,
-                
-                "init_bc_steps": 200,
-                "thr_classifier": 0.95,
-                "thr_actdiff": 0.4,
-                "robot_gated": False,
-                "hg": False,
+                "ens_dagger": False,
             }
         )
         return config
@@ -166,35 +172,45 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
             expert_action = expert_action[0]
+
+            etakeover = (action_prob < 1 - self.config['free_level'])
             if self.config["use_discrete"]:
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)
 
-            if self.config['robot_gated'] and self.total_steps > self.config['init_bc_steps']:
-                unc = self.model.compute_uncertainty(self.last_obs, actions)
-                self.takeover = False
-                if not self.last_takeover:
-                    if unc > self.model.switch2human_thresh:
-                        self.takeover = True
-                else:
-                    if np.mean((actions - expert_action) ** 2) > self.model.switch2robot_thresh: #self.config['thr_actdiff']:
-                        self.takeover = True
-                self.total_wall_steps += (int)(self.takeover)
-            else:
-                self.total_wall_steps += 1
-                if not self.config['hg']:
-                    etakeover =  action_prob < 1 - self.config['free_level']
-                else:
-                    etakeover = (np.mean((actions - expert_action) ** 2) > 0.2)
-                if etakeover:
-                    # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action},")
-                    actions = expert_action
+            from torch.nn import functional as F
+            if hasattr(self, "model"):
+                if not hasattr(self.model, "trained"):
                     self.takeover = True
                 else:
-                    self.takeover = False
-            # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
-        if self.takeover:
-            actions = expert_action
+                    if self.takeover:
+                        self.takeover = (np.mean((actions - expert_action) ** 2) >= self.model.switch2robot_thresh)
+                    else:
+                        unc = self.model.compute_unc(self.last_obs)
+                        if not self.config["ens_dagger"]:
+                            self.takeover = (unc > self.model.switch2human_thresh)
+                        else:
+                            self.takeover = (unc > 0.05)
+            else:
+                self.takeover = True
+            
+                    
+            # if self.total_steps <= self.config['init_bc_steps']:
+            #     self.takeover = True
+            # else:
+            #     unc = self.compute_uncertainty(actions)
+            #     self.takeover = False
+            #     if not self.last_takeover:
+            #         if unc > self.model.switch2human_thresh: #self.config['thr_classifier']:
+            #             self.takeover = True
+            #     else:
+            #         if np.mean((actions - expert_action) ** 2) > self.model.switch2robot_thresh: #self.config['thr_actdiff']:
+            #             self.takeover = True
+                
+            if self.takeover:
+                actions = expert_action
+                self.total_wall_steps += 1
+
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
         i["miss"] = (np.mean(expert_action ** 2) > 0.2) * (np.mean((actions - expert_action) ** 2) > 0.1)
         self.total_miss += i["miss"]
@@ -219,11 +235,11 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             )
 
         assert i["takeover"] == self.takeover
-
+        i["etakeover"] = etakeover
+        i["total_wall_steps"] = self.total_wall_steps
         if self.config["use_discrete"]:
             i["raw_action"] = self.continuous_to_discrete(i["raw_action"])
 
-        i["total_human_involved_steps"] = (int)(self.total_wall_steps)
         return o, r, d, i
 
     def _get_step_return(self, actions, engine_info):
