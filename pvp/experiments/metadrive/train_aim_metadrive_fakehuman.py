@@ -37,6 +37,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
+    parser.add_argument("--hg", action="store_true")
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
 
     # parser.add_argument(
@@ -72,6 +73,7 @@ if __name__ == '__main__':
     project_name = args.wandb_project
     team_name = args.wandb_team
     robot_gated = args.human_gated
+    hg = args.hg
     if not use_wandb:
         print("[WARNING] Please note that you are not using wandb right now!!!")
 
@@ -105,6 +107,7 @@ if __name__ == '__main__':
             init_bc_steps=init_bc_steps,
             thr_actdiff=thr_actdiff,
             robot_gated=robot_gated,
+            hg=hg,
         ),
 
         # Algorithm config

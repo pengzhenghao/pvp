@@ -119,6 +119,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "thr_classifier": 0.95,
                 "thr_actdiff": 0.4,
                 "robot_gated": False,
+                "hg": False,
             }
         )
         return config
@@ -180,11 +181,13 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 self.total_wall_steps += (int)(self.takeover)
             else:
                 self.total_wall_steps += 1
-                if action_prob < 1 - self.config['free_level']:
-
+                if not self.config['hg']:
+                    etakeover =  action_prob < 1 - self.config['free_level']
+                else:
+                    etakeover = (np.mean((actions - expert_action) ** 2) > 0.2)
+                if etakeover:
                     # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action},")
                     actions = expert_action
-
                     self.takeover = True
                 else:
                     self.takeover = False
