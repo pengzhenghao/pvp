@@ -25,7 +25,7 @@ from pvp.sb3.common.vec_env import VecEnv
 logger = logging.getLogger(__name__)
 
 
-class PVPTD3(TD3):
+class AIM(TD3):
     classifier: TD3Policy
     def __init__(self, use_balance_sample=True, q_value_bound=1., *args, **kwargs):
         """Please find the hyperparameters from original TD3"""
@@ -64,10 +64,10 @@ class PVPTD3(TD3):
         self.estimates = []
         self.q_value_bound = q_value_bound
         self.use_balance_sample = use_balance_sample
-        super(PVPTD3, self).__init__(*args, **kwargs)
+        super(AIM, self).__init__(*args, **kwargs)
 
     def _setup_model(self) -> None:
-        super(PVPTD3, self)._setup_model()
+        super(AIM, self)._setup_model()
         if self.use_balance_sample:
             self.human_data_buffer = HACOReplayBuffer(
                 self.buffer_size,
@@ -295,14 +295,14 @@ class PVPTD3(TD3):
     ) -> None:
         if infos[0]["takeover"] or infos[0]["takeover_start"]:
             replay_buffer = self.human_data_buffer
-        super(PVPTD3, self)._store_transition(replay_buffer, buffer_action, new_obs, reward, dones, infos)
+        super(AIM, self)._store_transition(replay_buffer, buffer_action, new_obs, reward, dones, infos)
 
     def save_replay_buffer(
         self, path_human: Union[str, pathlib.Path, io.BufferedIOBase], path_replay: Union[str, pathlib.Path,
                                                                                           io.BufferedIOBase]
     ) -> None:
         save_to_pkl(path_human, self.human_data_buffer, self.verbose)
-        super(PVPTD3, self).save_replay_buffer(path_replay)
+        super(AIM, self).save_replay_buffer(path_replay)
 
     def load_replay_buffer(
         self,
@@ -329,7 +329,7 @@ class PVPTD3(TD3):
         if not hasattr(self.human_data_buffer, "handle_timeout_termination"):  # pragma: no cover
             self.human_data_buffer.handle_timeout_termination = False
             self.human_data_buffer.timeouts = np.zeros_like(self.replay_buffer.dones)
-        super(PVPTD3, self).load_replay_buffer(path_replay, truncate_last_traj)
+        super(AIM, self).load_replay_buffer(path_replay, truncate_last_traj)
     def collect_rollouts(
         self,
         env: VecEnv,

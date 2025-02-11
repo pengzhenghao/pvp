@@ -11,7 +11,7 @@ import uuid
 
 from pvp.experiments.metadrive.egpo.fakehuman_env_aim import FakeHumanEnv
 from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
-from pvp.aim import PVPTD3
+from pvp.aim import AIM
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
 from pvp.sb3.common.wandb_callback import WandbCallback
@@ -32,6 +32,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=500, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", type=bool, default=True, help="Set to True to upload stats to wandb.")
+    parser.add_argument("--human_gated", action="store_false")
     parser.add_argument("--wandb_project", type=str, default="AIM", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
@@ -70,6 +71,7 @@ if __name__ == '__main__':
     use_wandb = args.wandb
     project_name = args.wandb_project
     team_name = args.wandb_team
+    robot_gated = args.human_gated
     if not use_wandb:
         print("[WARNING] Please note that you are not using wandb right now!!!")
 
@@ -102,7 +104,7 @@ if __name__ == '__main__':
             thr_classifier=thr_classifier,
             init_bc_steps=init_bc_steps,
             thr_actdiff=thr_actdiff,
-            robot_gated=True,
+            robot_gated=robot_gated,
         ),
 
         # Algorithm config
@@ -182,7 +184,7 @@ if __name__ == '__main__':
         return eval_env
 
 
-    eval_env = make_vec_env(_make_eval_env, n_envs=1, vec_env_cls=SubprocVecEnv)
+    eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
     
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -202,7 +204,7 @@ if __name__ == '__main__':
     callbacks = CallbackList(callbacks)
 
     # ===== Setup the training algorithm =====
-    model = PVPTD3(**config["algo"])
+    model = AIM(**config["algo"])
     train_env.env.env.model = model
     
     if args.ckpt:
