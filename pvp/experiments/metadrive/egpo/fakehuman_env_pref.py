@@ -131,7 +131,55 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     def discrete_to_continuous(self, a):
         continuous_action = self._actions[a.astype(int)]
         return continuous_action
-    
+    def get_state(self) -> dict:
+        state = dict()
+        state["episode_rewards"] = self.episode_rewards.copy()  # defaultdict 也可以转为普通 dict
+        state["episode_lengths"] = self.episode_lengths.copy()
+        state["dones"] = self.dones.copy()
+        state["episode_step"] = self.episode_step
+        import copy
+        state["vehicle"] = copy.deepcopy(self.vehicle.get_state())
+        agent_states = dict()
+        for agent_id, agent in self.agents.items():
+            if hasattr(agent, "get_global_states") and callable(agent.get_global_states):
+                agent_states[agent_id] = agent.get_global_states()
+            elif hasattr(agent, "get_state") and callable(agent.get_state):
+                agent_states[agent_id] = agent.get_state()
+        manager_states = dict()
+        for agent_id, agent in self.engine.managers.items():
+            if hasattr(agent, "get_global_states") and callable(agent.get_global_states):
+                manager_states[agent_id] = agent.get_global_states()
+            elif hasattr(agent, "get_state") and callable(agent.get_state):
+                manager_states[agent_id] = agent.get_state()
+        state["manager_states"] = manager_states
+        state["agent_states"] = agent_states
+        if hasattr(self, "last_obs"):
+            state["last_obs"] = self.last_obs  
+        return state
+
+    def set_state(self, state: dict):
+        self.episode_rewards = state.get("episode_rewards", self.episode_rewards)
+        self.episode_lengths = state.get("episode_lengths", self.episode_lengths)
+        self.dones = state.get("dones", self.dones)
+        self.vehicle.set_state(state.get("vehicle", self.vehicle))
+        if "episode_step" in state and hasattr(self.engine, "episode_step"):
+            # 注意：engine.episode_step 可能是 engine 内部变量，只能在模拟环境中使用
+            self.engine.episode_step = state["episode_step"]
+        # 还原 agents 状态（前提是各 agent 实现了 get_state/set_state）
+        agent_states = state.get("agent_states", dict())
+        for agent_id, agent in self.agents.items():
+            if agent_id in agent_states and hasattr(agent, "set_state") and callable(agent.set_state):
+                agent.set_state(agent_states[agent_id])
+                
+        manager_states = state.get("manager_states", dict())
+        for agent_id, agent in self.engine.managers.items():
+            if agent_id in manager_states and hasattr(agent, "set_global_states"):
+                agent.set_global_states(manager_states[agent_id])
+            elif agent_id in manager_states and hasattr(agent, "set_state") and callable(agent.set_state):
+                agent.set_state(manager_states[agent_id])
+        # 还原 self.last_obs 等变量
+        if "last_obs" in state:
+            self.last_obs = state["last_obs"]
     def _predict_agent_future_trajectory(self, current_obs, n_steps):
         saved_state = self.get_state()
         traj = []
@@ -160,7 +208,13 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             else:
                 action_cont = action
 
-            o, r, d, i = super(HumanInTheLoopEnv, self).step(action_cont)
+            #o, r, d, i = super(HumanInTheLoopEnv, self).step(action_cont)
+            actions = self._preprocess_actions(action_cont)  # preprocess environment input
+            engine_info = self._step_simulator(actions)  # step the simulation
+            while self.in_stop:
+                self.engine.taskMgr.step()  # pause simulation
+            o, r, tm, tc, i = super(HumanInTheLoopEnv, self)._get_step_return(actions, engine_info=engine_info)
+            d = tm or tc
             tsaved_state = self.get_state()
             # print(saved_state)
             self.set_state(tsaved_state)
