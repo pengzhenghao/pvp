@@ -118,7 +118,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "manual_control": False,
                 "use_render": False,
                 "expert_deterministic": False,
-                "future_steps": 5,
+                "future_steps": 25,
             }
         )
         return config
@@ -145,6 +145,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 agent_states[agent_id] = agent.get_global_states()
             elif hasattr(agent, "get_state") and callable(agent.get_state):
                 agent_states[agent_id] = agent.get_state()
+            else:
+                agent_states[agent_id] = copy.deepcopy(agent)
         manager_states = dict()
         for agent_id, agent in self.engine.managers.items():
             if hasattr(agent, "get_global_states") and callable(agent.get_global_states):
@@ -155,7 +157,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         state["agent_states"] = agent_states
         if hasattr(self, "last_obs"):
             state["last_obs"] = self.last_obs  
-        return state
+        return copy.deepcopy(state)
 
     def set_state(self, state: dict):
         self.episode_rewards = state.get("episode_rewards", self.episode_rewards)
@@ -163,7 +165,6 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         self.dones = state.get("dones", self.dones)
         self.vehicle.set_state(state.get("vehicle", self.vehicle))
         if "episode_step" in state and hasattr(self.engine, "episode_step"):
-            # 注意：engine.episode_step 可能是 engine 内部变量，只能在模拟环境中使用
             self.engine.episode_step = state["episode_step"]
         # 还原 agents 状态（前提是各 agent 实现了 get_state/set_state）
         agent_states = state.get("agent_states", dict())
@@ -184,15 +185,6 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         saved_state = self.get_state()
         traj = []
         obs = current_obs
-        # self.engine.stop_render = True
-
-        oposition = copy.deepcopy(self.vehicle.position)
-        ovelocity = copy.deepcopy(self.vehicle.velocity)
-        ospeed = copy.deepcopy(self.vehicle.speed)
-        oheading = copy.deepcopy(self.vehicle.heading_theta)
-
-        print("start")
-        print(oposition, ovelocity, ospeed, oheading)
 
         for step in range(n_steps):
             if hasattr(self, "model"):
@@ -225,15 +217,13 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "next_obs": o,
                 "reward": r,
                 "done": d,
+                "next_pos": self.vehicle.position,
             })
             obs = o
-            print(copy.copy(self.vehicle.position), 
-                    copy.copy(self.vehicle.velocity), 
-                    copy.copy(self.vehicle.speed), 
-                    copy.copy(self.vehicle.heading_theta))
             if d:
                 break
         self.set_state(saved_state)
+        print("NoW", self.vehicle.out_of_route)
         return traj
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
@@ -288,10 +278,32 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 self.takeover = False
             # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
 
+        
+        try:
+            if hasattr(self,"drawer"):
+                drawer = self.drawer # create a point drawer
+            else:
+                self.drawer = self.engine.make_point_drawer(scale=1)
+                drawer = self.drawer 
+            points, colors = [], []
+            for j in range(len(predicted_traj)):
+                points.append((predicted_traj[j]["next_pos"][0], predicted_traj[j]["next_pos"][1], 0.5)) # define line 1 for test
+                # line_2, color_2 = make_line(self.vehicle.position[0], self.vehicle.position[1], 0.5, -0.01*j) # define line 2 for test
+                # points = line_2 # create point list
+                # colors = color_2
+                color=(1,105/255,180/255)
+                colors.append(np.clip(np.array([*color,1]), 0., 1.0))
+            drawer.reset()
+            drawer.draw_points(points, colors) # draw points
+        finally:    
+            pass
+        
+        self.vehicle.real = True
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
-        print("true", actions)
+        self.vehicle.real = False
+        if d:
+            print("done")
         position, velocity, speed, heading = copy.copy(self.vehicle.position), copy.copy(self.vehicle.velocity), copy.copy(self.vehicle.speed), copy.copy(self.vehicle.heading_theta)
-        print(position, velocity, speed, heading)
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
