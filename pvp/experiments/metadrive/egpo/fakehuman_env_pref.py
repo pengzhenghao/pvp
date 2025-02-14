@@ -134,16 +134,6 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     
     def _predict_agent_future_trajectory(self, current_obs, n_steps):
         saved_state = self.get_state()
-        # print(saved_state)
-        self.set_state(saved_state)
-        # saved_state = self.get_state()
-        # print(saved_state)
-        # self.set_state(saved_state)
-        # saved_state = self.get_state()
-        # print(saved_state)
-        # self.set_state(saved_state)
-        # saved_state = self.get_state()
-        # print(saved_state)
         traj = []
         obs = current_obs
         # self.engine.stop_render = True
@@ -202,13 +192,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         self.last_takeover = self.takeover
         
         future_steps = self.config["future_steps"]
-        # predicted_traj = None
         predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
-        print("pred 2nd time")
-        predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
-        # print("pred 3rd time")
-        # predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
-        # print("pred 4th time")
+        # print("2nd")
         # predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
         
         self.predicted_traj = predicted_traj
@@ -312,15 +297,10 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
 
 if __name__ == "__main__":
-    env = FakeHumanEnvPref(dict(free_level=100, use_render=True, map='SSS', traffic_density=0))
+    env = FakeHumanEnvPref(dict(free_level=0.95, use_render=True))
     env.reset()
-    s = 0
     while True:
-        s += 1
-        if s <= 20:
-            _, _, done, info = env.step([0, 1])
-        else:
-            _, _, done, info = env.step([0, 1])
+        _, _, done, info = env.step([0, 1])
         # done = tm or tc
         # env.render(mode="topdown")
         if done:
