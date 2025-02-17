@@ -122,7 +122,10 @@ class Monitor(gym.Wrapper):
             ep_info = {"r": round(ep_rew, 6), "l": ep_len, "t": round(time.time() - self.t_start, 6)}
             for key in self.info_keywords:
                 ep_info[key] = info[key]
-                ep_data = np.asarray(self.episode_infos[key])
+                try:
+                    ep_data = np.asarray(self.episode_infos[key])
+                except:
+                    continue
                 if ep_data.dtype == object:
                     pass
                 else:

@@ -35,6 +35,12 @@ class HACODictReplayBufferSamples(NamedTuple):
 
     next_intervention_start: th.Tensor
 
+class PrefReplayBufferSamples(NamedTuple):
+    pos_observations: TensorDict
+    pos_actions: th.Tensor
+    neg_observations: TensorDict
+    neg_actions: th.Tensor
+    mask: th.Tensor
 
 def concat_samples(self, other):
     if isinstance(self.observations, dict):
@@ -61,6 +67,200 @@ def concat_samples(self, other):
     )
 
 
+class PrefReplayBuffer(ReplayBuffer):
+    def __init__(
+        self,
+        buffer_size: int,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        device: Union[th.device, str] = "cpu",
+        n_envs: int = 1,
+        optimize_memory_usage: bool = True,
+        handle_timeout_termination: bool = True,
+        discard_reward=False,
+        discard_takeover_start=False,
+        takeover_stop_td=False,
+        future_steps=5,
+    ):
+        # Skip the init of ReplayBuffer and only run the BaseBuffer.__init__
+        super(ReplayBuffer, self).__init__(buffer_size, observation_space, action_space, device, n_envs=n_envs)
+        self.discard_takeover_start = discard_takeover_start
+        self.takeover_stop_td = takeover_stop_td
+        self.future_steps = future_steps
+        # PZH: Hack
+        # assert isinstance(self.obs_shape, dict), "DictReplayBuffer must be used with Dict obs space only"
+        self._fake_dict_obs = False
+        if not isinstance(self.obs_shape, dict):
+            self.obs_shape = {"default": self.obs_shape}
+            if isinstance(self.observation_space, spaces.Space):
+                self.observation_space = spaces.Dict({'default': self.observation_space})
+            elif isinstance(self.observation_space, new_spaces.Space):
+                self.observation_space = new_spaces.Dict({'default': self.observation_space})
+            else:
+                raise ValueError("Unknown observation space {}".format(type(self.observation_space)))
+            self._fake_dict_obs = True
+
+        self.buffer_size = max(buffer_size // n_envs, 1)
+
+        # Check that the replay buffer can fit into the memory
+        if psutil is not None:
+            mem_available = psutil.virtual_memory().available
+
+        # PZH: We know support optimize_memory_usage!
+        # assert optimize_memory_usage is False, "DictReplayBuffer does not support optimize_memory_usage"
+        # disabling as this adds quite a bit of complexity
+        # https://github.com/DLR-RM/stable-baselines3/pull/243#discussion_r531535702
+        self.optimize_memory_usage = optimize_memory_usage
+
+        self.pos_observations = {
+            key: np.zeros((self.buffer_size, future_steps) + _obs_shape, dtype=self.observation_space[key].dtype)
+            for key, _obs_shape in self.obs_shape.items()
+        }
+
+        if self.optimize_memory_usage:
+            self.pos_next_observations = None
+        else:
+            self.pos_next_observations = {
+                key: np.zeros((self.buffer_size, future_steps) + _obs_shape, dtype=self.observation_space[key].dtype)
+                for key, _obs_shape in self.obs_shape.items()
+            }
+        
+        self.neg_observations = {
+            key: np.zeros((self.buffer_size, future_steps) + _obs_shape, dtype=self.observation_space[key].dtype)
+            for key, _obs_shape in self.obs_shape.items()
+        }
+
+        if self.optimize_memory_usage:
+            self.neg_next_observations = None
+        else:
+            self.neg_next_observations = {
+                key: np.zeros((self.buffer_size, future_steps) + _obs_shape, dtype=self.observation_space[key].dtype)
+                for key, _obs_shape in self.obs_shape.items()
+            }
+        self.pos_actions = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        self.neg_actions = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        self.mask = np.zeros((self.buffer_size, future_steps), dtype=np.float32)
+        self.discard_reward = discard_reward
+
+        if not self.discard_reward:
+            print("You are not discarding reward from the environment! This should be True when training HACO!")
+
+        # Handle timeouts termination properly if needed
+        # see https://github.com/DLR-RM/stable-baselines3/issues/284
+        self.handle_timeout_termination = handle_timeout_termination
+        self.timeouts = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+
+        # if psutil is not None:
+        #     obs_nbytes = 0
+        #     for _, obs in self.observations.items():
+        #         obs_nbytes += obs.nbytes
+
+        #     total_memory_usage = obs_nbytes + self.actions_behavior.nbytes + self.rewards.nbytes + self.dones.nbytes
+        #     if self.next_observations is not None:
+        #         next_obs_nbytes = 0
+        #         for _, obs in self.observations.items():
+        #             next_obs_nbytes += obs.nbytes
+        #         total_memory_usage += next_obs_nbytes
+
+        #     if total_memory_usage > mem_available:
+        #         # Convert to GB
+        #         total_memory_usage /= 1e9
+        #         mem_available /= 1e9
+        #         warnings.warn(
+        #             "This system does not have apparently enough memory to store the complete "
+        #             f"replay buffer {total_memory_usage:.2f}GB > {mem_available:.2f}GB"
+        #         )
+    def add(
+        self,
+        pos_traj: List,
+        neg_traj: List,
+        # obs: Dict[str, np.ndarray],
+        # next_obs: Dict[str, np.ndarray],
+        # action: np.ndarray,
+        # reward: np.ndarray,
+        # done: np.ndarray,
+        # infos: List[Dict[str, Any]],
+    ) -> None:
+        
+        l = min(len(pos_traj), len(neg_traj))
+        for step in range(self.future_steps):
+            if step >= l:
+                self.mask[self.pos][step] = 0
+            else:
+                self.mask[self.pos][step] = 1
+                obs, action, next_obs = pos_traj[step]["obs"], pos_traj[step]["action"], pos_traj[step]["next_obs"]
+                if self._fake_dict_obs:
+                    obs = {"default": obs}
+                    next_obs = {"default": next_obs}
+                for key in self.pos_observations.keys():
+                    self.pos_observations[key][self.pos][step] = np.array(obs[key]).copy()
+                self.pos_actions[self.pos][step] = np.array(action).copy().reshape(self.pos_actions[self.pos][step].shape)
+            
+        for step in range(self.future_steps):
+            if step >= l:
+                self.mask[self.pos][step] = 0
+            else:
+                self.mask[self.pos][step] = 1
+                obs, action, next_obs = neg_traj[step]["obs"], neg_traj[step]["action"], neg_traj[step]["next_obs"]
+                if self._fake_dict_obs:
+                    obs = {"default": obs}
+                    next_obs = {"default": next_obs}
+                for key in self.neg_observations.keys():
+                    self.neg_observations[key][self.pos][step] = np.array(obs[key]).copy()
+                self.neg_actions[self.pos][step] = np.array(action).copy().reshape(self.neg_actions[self.pos][step].shape)
+        # behavior_actions = np.array([step["raw_action"] for step in infos]).copy()
+        
+        self.pos += 1
+        if self.pos == self.buffer_size:
+            self.full = True
+            self.pos = 0
+            
+    def sample(
+        self, batch_size: int, env: Optional[VecNormalize] = None, return_all=False, discard_rgb=None
+    ) -> HACODictReplayBufferSamples:
+        if self.full:
+            batch_inds = (np.random.randint(0, self.buffer_size, size=batch_size) + self.pos) % self.buffer_size
+        else:
+            batch_inds = np.random.randint(0, self.pos, size=batch_size)
+
+        if return_all:
+            batch_inds = np.random.permutation(np.arange(self.buffer_size if self.full else self.pos))
+
+        new_ret = self._get_samples(batch_inds, env=env)
+        return new_ret
+
+    def _get_samples(self, batch_inds: np.ndarray, env: Optional[VecNormalize] = None) -> HACODictReplayBufferSamples:
+        # Sample randomly the env idx
+        # Normalize if needed and remove extra dimension (we are using only one env for now)
+        obs_ = self._normalize_obs(
+            {key: obs[batch_inds, :, :]
+             for key, obs in self.pos_observations.items()}, env
+        )
+
+        # Convert to torch tensor
+        pos_observations = {key: self.to_torch(obs) for key, obs in obs_.items()}
+
+        if self._fake_dict_obs:
+            pos_observations = pos_observations["default"]
+        
+        obs_ = self._normalize_obs(
+            {key: obs[batch_inds, :, :]
+             for key, obs in self.neg_observations.items()}, env
+        )
+
+        # Convert to torch tensor
+        neg_observations = {key: self.to_torch(obs) for key, obs in obs_.items()}
+
+        if self._fake_dict_obs:
+            neg_observations = neg_observations["default"]
+
+        return PrefReplayBufferSamples(
+            pos_observations=pos_observations,
+            pos_actions=self.to_torch(self.pos_actions[batch_inds]),
+            neg_observations=neg_observations,
+            neg_actions=self.to_torch(self.neg_actions[batch_inds]),
+            mask=self.to_torch(self.mask[batch_inds])
+        )
 class HACOReplayBuffer(ReplayBuffer):
     def __init__(
         self,

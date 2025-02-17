@@ -371,7 +371,7 @@ class EvalCallback(EventCallback):
 
     def _on_step(self) -> bool:
         tmp = self.logger.name_to_value["train/human_involved_steps"]
-        if self.eval_freq > 0 and tmp > 0 and tmp == self.next_upd:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0: #tmp > 0 and tmp == self.next_upd:
             self.next_upd = self.eval_freq + tmp
             self.logger.record("eval/human_involved_steps", tmp)
             # Sync training and eval env if there is VecNormalize

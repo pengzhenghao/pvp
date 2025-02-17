@@ -453,9 +453,12 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             first_ep_info = self.ep_info_buffer[-1]
             for k, v in first_ep_info.items():
                 if k not in ["r", "l"] and type(v) is not str:
-                    self.logger.record(
-                        "rollout/{}_mean".format(k), safe_mean([ep_info[k] for ep_info in self.ep_info_buffer])
-                    )
+                    try:
+                        self.logger.record(
+                            "rollout/{}_mean".format(k), safe_mean([ep_info[k] for ep_info in self.ep_info_buffer])
+                        )
+                    except:
+                        pass
 
             for k, v in first_ep_info.items():
                 if k.startswith("total"):

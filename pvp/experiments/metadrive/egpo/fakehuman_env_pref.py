@@ -83,6 +83,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     last_takeover = None
     last_obs = None
     expert = None
+    pending_human_traj = []
+    pending_agent_traj = []
 
     def __init__(self, config):
         super(FakeHumanEnvPref, self).__init__(config)
@@ -118,7 +120,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "manual_control": False,
                 "use_render": False,
                 "expert_deterministic": False,
-                "future_steps": 25,
+                "future_steps": 5,
             }
         )
         return config
@@ -188,13 +190,13 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
         for step in range(n_steps):
             if hasattr(self, "model"):
-                # action, _ = self.model.policy.predict(obs, deterministic=True)
+                action, _ = self.model.policy.predict(obs, deterministic=True)
                 #action, _ = self.model._sample_action(learning_starts=self.model.learning_starts,
                 #                                    obs=obs, deterministic=True)
-                assert False
+                #assert False
             else:
-                #action = self.agent_action
-                action = np.array([0, 1])
+                action = self.agent_action
+                #action = np.array([0, 1])
             if self.config["use_discrete"]:
                 action_cont = self.discrete_to_continuous(action)
             else:
@@ -223,7 +225,6 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             if d:
                 break
         self.set_state(saved_state)
-        print("NoW", self.vehicle.out_of_route)
         return traj
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
@@ -236,11 +237,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         self.last_takeover = self.takeover
         
         future_steps = self.config["future_steps"]
-        predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
-        # print("2nd")
-        # predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
-        
-        self.predicted_traj = predicted_traj
+        self.human_traj = []
         # ===== Get expert action and determine whether to take over! =====
 
         if self.config["disable_expert"]:
@@ -277,9 +274,14 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             else:
                 self.takeover = False
             # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
-
         
-        try:
+        if self.takeover:
+            predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
+            self.pending_agent_traj.append(predicted_traj)
+        else:
+            predicted_traj = []
+        
+        if self.config["use_render"]:
             if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
             else:
@@ -288,21 +290,34 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             points, colors = [], []
             for j in range(len(predicted_traj)):
                 points.append((predicted_traj[j]["next_pos"][0], predicted_traj[j]["next_pos"][1], 0.5)) # define line 1 for test
-                # line_2, color_2 = make_line(self.vehicle.position[0], self.vehicle.position[1], 0.5, -0.01*j) # define line 2 for test
-                # points = line_2 # create point list
-                # colors = color_2
                 color=(1,105/255,180/255)
                 colors.append(np.clip(np.array([*color,1]), 0., 1.0))
             drawer.reset()
             drawer.draw_points(points, colors) # draw points
-        finally:    
-            pass
-        
+            
         self.vehicle.real = True
+        last_o = self.last_obs.copy()
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
+        if self.takeover:
+            self.pending_human_traj.append(self.human_traj)
+            for lst in self.pending_human_traj:
+                lst.append({
+                    "obs": last_o,
+                    "action": expert_action,
+                    "next_obs": o,
+                    "reward": r,
+                    "done": d,
+                    "next_pos": self.vehicle.position,
+                })
+        else:
+            if hasattr(self, "model"):
+                assert len(self.pending_agent_traj) == len(self.pending_human_traj)
+                for i in range(len(self.pending_agent_traj)):
+                    self.model.prefreplay_buffer.add(self.pending_human_traj[i], self.pending_agent_traj[i])
+            self.pending_agent_traj = []
+            self.pending_human_traj = []
+        
         self.vehicle.real = False
-        if d:
-            print("done")
         position, velocity, speed, heading = copy.copy(self.vehicle.position), copy.copy(self.vehicle.velocity), copy.copy(self.vehicle.speed), copy.copy(self.vehicle.heading_theta)
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
@@ -327,7 +342,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
         if self.config["use_discrete"]:
             i["raw_action"] = self.continuous_to_discrete(i["raw_action"])
-        #i["agent_future_trajectory"] = predicted_traj
+        i["agent_future_trajectory"] = predicted_traj
         return o, r, d, i
 
     def _get_step_return(self, actions, engine_info):
@@ -359,6 +374,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         o, info = super(HumanInTheLoopEnv, self)._get_reset_return(reset_info)
         self.last_obs = o
         self.last_takeover = False
+        self.pending_human_traj = []
+        self.pending_agent_traj = []
         return o, info
 
 
