@@ -72,7 +72,8 @@ class PREF(SAC):
 
         # PZH: Our new introduce hyper-parameters
         cql_coefficient=1,
-        monitor_wrapper=False
+        monitor_wrapper=False,
+        future_steps=5,
     ):
 
         assert replay_buffer_class == HACOReplayBuffer
@@ -107,6 +108,7 @@ class PREF(SAC):
         # PZH: Define some new variables
         self.cql_coefficient = cql_coefficient
         from pvp.sb3.haco.haco_buffer import PrefReplayBuffer
+        self.future_steps = future_steps
         self.prefreplay_buffer = PrefReplayBuffer(
                 self.buffer_size,
                 self.observation_space,
@@ -114,6 +116,7 @@ class PREF(SAC):
                 self.device,
                 n_envs=self.n_envs,
                 optimize_memory_usage=self.optimize_memory_usage,
+                future_steps=self.future_steps,
                 **self.replay_buffer_kwargs,
         )
 
@@ -121,6 +124,18 @@ class PREF(SAC):
     #     super()._create_aliases()
     #     self.cost_critic = self.policy.cost_critic
     #     self.cost_critic_target = self.policy.cost_critic_target
+    def _store_transition(
+        self,
+        replay_buffer,
+        buffer_action: np.ndarray,
+        new_obs: Union[np.ndarray, Dict[str, np.ndarray]],
+        reward: np.ndarray,
+        dones: np.ndarray,
+        infos: List[Dict[str, Any]],
+    ) -> None:
+        if infos[0]["takeover"] or infos[0]["takeover_start"]:
+            replay_buffer = self.human_data_buffer
+        super(PREF, self)._store_transition(replay_buffer, buffer_action, new_obs, reward, dones, infos)
 
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         # Switch to train mode (this affects batch norm / dropout)
@@ -152,7 +167,7 @@ class PREF(SAC):
             # log_prob = log_prob.reshape(-1, 1)
 
             # ========== Compute the CPL loss ==========
-            bc_loss_weight = 1.0  # TODO: Config
+            bc_loss_weight = 0  # TODO: Config
 
             # Sample replay buffer
             replay_data_human = None
@@ -164,36 +179,60 @@ class PREF(SAC):
                 replay_data_human = self.human_data_buffer.sample(batch_size, env=self._vec_normalize_env)
             elif self.replay_buffer.pos > batch_size:
                 replay_data_agent = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+            
+            if self.prefreplay_buffer.pos > 0:
+                replay_data = self.prefreplay_buffer.sample(batch_size, env=self._vec_normalize_env)
             else:
                 loss = None
                 break
 
             alpha = 0.1  # TODO: Config
             accuracy = cpl_loss = bc_loss = None
+            
+            mask = replay_data.mask
+            
+            pos_obs, pos_action = replay_data.pos_observations, replay_data.pos_actions
+            pos_obs_reshape = th.reshape(pos_obs, (-1, pos_obs.shape[-1]))
+            pos_action_reshape = th.reshape(pos_action, (-1, pos_action.shape[-1]))
+            mean, log_std, _ = self.policy.actor.get_action_dist_params(pos_obs_reshape)
+            dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
+            log_prob_pos = dist.log_prob(pos_action_reshape)
+            log_prob_pos = th.reshape(log_prob_pos, pos_obs.shape[:-1]) * mask
+            log_prob_pos = log_prob_pos.sum(dim = -1)
+            
+            neg_obs, neg_action = replay_data.neg_observations, replay_data.neg_actions
+            neg_obs_reshape = th.reshape(neg_obs, (-1, neg_obs.shape[-1]))
+            neg_action_reshape = th.reshape(neg_action, (-1, neg_action.shape[-1]))
+            mean, log_std, _ = self.policy.actor.get_action_dist_params(neg_obs_reshape)
+            dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
+            log_prob_neg = dist.log_prob(neg_action_reshape)
+            log_prob_neg = th.reshape(log_prob_neg, neg_obs.shape[:-1]) * mask
+            log_prob_neg = log_prob_neg.sum(dim = -1)
+            
+            adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
+            label = torch.ones_like(adv_pos)
+            cpl_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=0.5)
+
+
+            # if replay_data_human is not None:
+            #     human_action = replay_data_human.actions_behavior
+            #     agent_action = replay_data_human.actions_novice
+
+            #     mean, log_std, _ = self.policy.actor.get_action_dist_params(replay_data_human.observations)
+            #     dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
+
+            #     log_prob_human = dist.log_prob(human_action)  #.sum(dim=-1)  # Don't do the sum...
+            #     log_prob_agent = dist.log_prob(agent_action)  #.sum(dim=-1)
+            #     adv_human = alpha * log_prob_human
+            #     adv_agent = alpha * log_prob_agent
+            #     # If label = 1, then adv_human > adv_agent
+            #     label = torch.ones_like(adv_human)
+            #     cpl_loss, accuracy = biased_bce_with_logits(adv_agent, adv_human, label.float(), bias=0.5)
 
             if replay_data_human is not None:
-                human_action = replay_data_human.actions_behavior
-                agent_action = replay_data_human.actions_novice
-
                 mean, log_std, _ = self.policy.actor.get_action_dist_params(replay_data_human.observations)
                 dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
-
-                log_prob_human = dist.log_prob(human_action)  #.sum(dim=-1)  # Don't do the sum...
-                log_prob_agent = dist.log_prob(agent_action)  #.sum(dim=-1)
-                adv_human = alpha * log_prob_human
-                adv_agent = alpha * log_prob_agent
-                # If label = 1, then adv_human > adv_agent
-                label = torch.ones_like(adv_human)
-                cpl_loss, accuracy = biased_bce_with_logits(adv_agent, adv_human, label.float(), bias=0.5)
-
-            if replay_data_agent is not None:
-                # TODO(PZH): Note that this function is use SquashedGaussian. Maybe we can use DiagGaussian.
-                # BC Loss for agent trajectory:
-                # from pvp.sb3.sac.policies import Actor
-                # assert isinstance(self.policy.actor, Actor)
-                mean, log_std, _ = self.policy.actor.get_action_dist_params(replay_data_agent.observations)
-                dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
-                log_prob_bc = dist.log_prob(replay_data_agent.actions_behavior)
+                log_prob_bc = dist.log_prob(replay_data_human.actions_behavior)
                 bc_loss = -log_prob_bc.mean()
 
             # Aggregate losses
@@ -227,6 +266,7 @@ class PREF(SAC):
 
         self._n_updates += gradient_steps
 
+        self.logger.record("train/num_traj", self.prefreplay_buffer.pos)
         self.logger.record("train/n_updates", self._n_updates)
         for key, values in stat_recorder.items():
             self.logger.record("train/{}".format(key), np.mean(values))

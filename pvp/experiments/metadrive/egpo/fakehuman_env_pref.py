@@ -257,6 +257,10 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             else:
                 expert_action = distribution.sample().detach().cpu().numpy()
 
+            expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
+            # if np.any(expert_action != expert_action_clip):
+            #     print(expert_action_clip, expert_action)
+            
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
             expert_action = expert_action[0]
@@ -303,7 +307,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             for lst in self.pending_human_traj:
                 lst.append({
                     "obs": last_o,
-                    "action": expert_action,
+                    "action": expert_action_clip,
                     "next_obs": o,
                     "reward": r,
                     "done": d,
@@ -312,8 +316,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         else:
             if hasattr(self, "model"):
                 assert len(self.pending_agent_traj) == len(self.pending_human_traj)
-                for i in range(len(self.pending_agent_traj)):
-                    self.model.prefreplay_buffer.add(self.pending_human_traj[i], self.pending_agent_traj[i])
+                for step in range(len(self.pending_agent_traj)):
+                    self.model.prefreplay_buffer.add(self.pending_human_traj[step], self.pending_agent_traj[step])
             self.pending_agent_traj = []
             self.pending_human_traj = []
         

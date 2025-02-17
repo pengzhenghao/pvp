@@ -217,7 +217,7 @@ class PrefReplayBuffer(ReplayBuffer):
             
     def sample(
         self, batch_size: int, env: Optional[VecNormalize] = None, return_all=False, discard_rgb=None
-    ) -> HACODictReplayBufferSamples:
+    ) -> PrefReplayBufferSamples:
         if self.full:
             batch_inds = (np.random.randint(0, self.buffer_size, size=batch_size) + self.pos) % self.buffer_size
         else:

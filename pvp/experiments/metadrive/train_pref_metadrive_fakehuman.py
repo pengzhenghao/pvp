@@ -29,9 +29,9 @@ if __name__ == '__main__':
         "--exp_name", default="pref", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
+    parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
+    parser.add_argument("--wandb_project", type=str, default="pref", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--future_steps", default=5, type=int, help="The random seed.")
@@ -114,6 +114,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
+            future_steps=args.future_steps,
         ),
 
         # Experiment log
@@ -153,7 +154,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    # eval_env = SubprocVecEnv([_make_eval_env])
+    eval_env = SubprocVecEnv([_make_eval_env] * 1)
 
     # ===== Setup the callbacks =====
     save_freq = 500  # Number of steps per model checkpoint
@@ -184,9 +185,9 @@ if __name__ == '__main__':
         reset_num_timesteps=True,
 
         # eval
-        eval_env=None,
-        eval_freq=-1,
-        n_eval_episodes=2,
+        eval_env=eval_env,
+        eval_freq=2000,
+        n_eval_episodes=50,
         eval_log_path=None,
 
         # eval
