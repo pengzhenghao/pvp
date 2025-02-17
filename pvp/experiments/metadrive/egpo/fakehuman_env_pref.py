@@ -346,7 +346,6 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
         if self.config["use_discrete"]:
             i["raw_action"] = self.continuous_to_discrete(i["raw_action"])
-        i["agent_future_trajectory"] = predicted_traj
         return o, r, d, i
 
     def _get_step_return(self, actions, engine_info):
