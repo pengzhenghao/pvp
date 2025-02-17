@@ -38,8 +38,12 @@ class HACODictReplayBufferSamples(NamedTuple):
 class PrefReplayBufferSamples(NamedTuple):
     pos_observations: TensorDict
     pos_actions: th.Tensor
+    pos_actions_exp: th.Tensor
+    pos_actions_nov: th.Tensor
     neg_observations: TensorDict
     neg_actions: th.Tensor
+    neg_actions_exp: th.Tensor
+    neg_actions_nov: th.Tensor
     mask: th.Tensor
 
 def concat_samples(self, other):
@@ -138,7 +142,12 @@ class PrefReplayBuffer(ReplayBuffer):
                 for key, _obs_shape in self.obs_shape.items()
             }
         self.pos_actions = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        self.pos_actions_exp = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        self.pos_actions_nov = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
         self.neg_actions = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        self.neg_actions_exp = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        self.neg_actions_nov = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
+        
         self.mask = np.zeros((self.buffer_size, future_steps), dtype=np.float32)
         self.discard_reward = discard_reward
 
@@ -195,6 +204,10 @@ class PrefReplayBuffer(ReplayBuffer):
                 for key in self.pos_observations.keys():
                     self.pos_observations[key][self.pos][step] = np.array(obs[key]).copy()
                 self.pos_actions[self.pos][step] = np.array(action).copy().reshape(self.pos_actions[self.pos][step].shape)
+                
+                action_exp, action_nov = pos_traj[step]["action_exp"], pos_traj[step]["action_nov"]
+                self.pos_actions_exp[self.pos][step] = np.array(action_exp).copy().reshape(self.pos_actions_exp[self.pos][step].shape)
+                self.pos_actions_nov[self.pos][step] = np.array(action_nov).copy().reshape(self.pos_actions_nov[self.pos][step].shape)
             
         for step in range(self.future_steps):
             if step >= l:
@@ -208,6 +221,10 @@ class PrefReplayBuffer(ReplayBuffer):
                 for key in self.neg_observations.keys():
                     self.neg_observations[key][self.pos][step] = np.array(obs[key]).copy()
                 self.neg_actions[self.pos][step] = np.array(action).copy().reshape(self.neg_actions[self.pos][step].shape)
+                
+                action_exp, action_nov = neg_traj[step]["action_exp"], neg_traj[step]["action_nov"]
+                self.neg_actions_exp[self.pos][step] = np.array(action_exp).copy().reshape(self.neg_actions_exp[self.pos][step].shape)
+                self.neg_actions_nov[self.pos][step] = np.array(action_nov).copy().reshape(self.neg_actions_nov[self.pos][step].shape)
         # behavior_actions = np.array([step["raw_action"] for step in infos]).copy()
         
         self.pos += 1
@@ -257,9 +274,13 @@ class PrefReplayBuffer(ReplayBuffer):
         return PrefReplayBufferSamples(
             pos_observations=pos_observations,
             pos_actions=self.to_torch(self.pos_actions[batch_inds]),
+            pos_actions_exp=self.to_torch(self.pos_actions_exp[batch_inds]),
+            pos_actions_nov=self.to_torch(self.pos_actions_nov[batch_inds]),
             neg_observations=neg_observations,
             neg_actions=self.to_torch(self.neg_actions[batch_inds]),
-            mask=self.to_torch(self.mask[batch_inds])
+            neg_actions_exp=self.to_torch(self.neg_actions_exp[batch_inds]),
+            neg_actions_nov=self.to_torch(self.neg_actions_nov[batch_inds]),
+            mask=self.to_torch(self.mask[batch_inds]),
         )
 class HACOReplayBuffer(ReplayBuffer):
     def __init__(

@@ -212,14 +212,27 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             tsaved_state = self.get_state()
             # print(saved_state)
             self.set_state(tsaved_state)
-            
+                        
+            last_obs, _ = self.expert.obs_to_tensor(obs)
+            distribution = self.expert.get_distribution(last_obs)
+            # log_prob = distribution.log_prob(torch.from_numpy(action_cont).to(last_obs.device))
+            # action_prob = log_prob.exp().detach().cpu().numpy()
+
+            if self.config["expert_deterministic"]:
+                expert_action = distribution.mode().detach().cpu().numpy()
+            else:
+                expert_action = distribution.sample().detach().cpu().numpy()
+
+            expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
             traj.append({
-                "obs": obs,
-                "action": action_cont,
-                "next_obs": o,
+                "obs": obs.copy(),
+                "action": action_cont.copy(),
+                "next_obs": o.copy(),
                 "reward": r,
                 "done": d,
-                "next_pos": self.vehicle.position,
+                "next_pos": copy.deepcopy(self.vehicle.position),
+                "action_exp": expert_action_clip.copy(),
+                "action_nov": action_cont.copy(),
             })
             obs = o
             if d:
@@ -306,12 +319,14 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             self.pending_human_traj.append(self.human_traj)
             for lst in self.pending_human_traj:
                 lst.append({
-                    "obs": last_o,
-                    "action": expert_action_clip,
-                    "next_obs": o,
+                    "obs": last_o.copy(),
+                    "action": expert_action_clip.copy(),
+                    "next_obs": o.copy(),
                     "reward": r,
                     "done": d,
-                    "next_pos": self.vehicle.position,
+                    "next_pos": copy.deepcopy(self.vehicle.position),
+                    "action_exp": expert_action_clip.copy(),
+                    "action_nov": self.agent_action.copy(),
                 })
         else:
             if hasattr(self, "model"):
