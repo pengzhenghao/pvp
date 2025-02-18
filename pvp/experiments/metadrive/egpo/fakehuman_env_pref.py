@@ -121,6 +121,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "use_render": False,
                 "expert_deterministic": False,
                 "future_steps": 5,
+                "takeover_see": 5,
             }
         )
         return config
@@ -187,6 +188,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         saved_state = self.get_state()
         traj = []
         obs = current_obs
+        lstprob = []
 
         for step in range(n_steps):
             if hasattr(self, "model"):
@@ -215,14 +217,16 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                         
             last_obs, _ = self.expert.obs_to_tensor(obs)
             distribution = self.expert.get_distribution(last_obs)
-            # log_prob = distribution.log_prob(torch.from_numpy(action_cont).to(last_obs.device))
-            # action_prob = log_prob.exp().detach().cpu().numpy()
+            log_prob = distribution.log_prob(torch.from_numpy(action_cont).to(last_obs.device))
+            action_prob = log_prob.exp().detach().cpu().numpy()
+            action_prob = action_prob[0]
+            lstprob.append(action_prob)
 
             if self.config["expert_deterministic"]:
                 expert_action = distribution.mode().detach().cpu().numpy()
             else:
                 expert_action = distribution.sample().detach().cpu().numpy()
-
+            expert_action = expert_action[0]
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
             traj.append({
                 "obs": obs.copy(),
@@ -238,7 +242,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             if d:
                 break
         self.set_state(saved_state)
-        return traj
+        from pvp.sb3.common.utils import safe_mean
+        return traj, safe_mean(lstprob[:self.config["takeover_see"]])
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
         actions = np.asarray(actions).astype(np.float32)
@@ -251,15 +256,17 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         
         future_steps = self.config["future_steps"]
         self.human_traj = []
+        if self.expert is None:
+                global _expert
+                self.expert = _expert
+        predicted_traj, acprob = self._predict_agent_future_trajectory(self.last_obs, future_steps)
+        
         # ===== Get expert action and determine whether to take over! =====
 
         if self.config["disable_expert"]:
             pass
 
         else:
-            if self.expert is None:
-                global _expert
-                self.expert = _expert
             last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
             distribution = self.expert.get_distribution(last_obs)
             log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
@@ -270,14 +277,17 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             else:
                 expert_action = distribution.sample().detach().cpu().numpy()
 
-            expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
+            
             # if np.any(expert_action != expert_action_clip):
             #     print(expert_action_clip, expert_action)
             
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
             expert_action = expert_action[0]
-            if action_prob < 1 - self.config['free_level']:
+            
+            expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
+            
+            if acprob < 1 - self.config['free_level']:
 
                 # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action},")
 
@@ -293,7 +303,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
         
         if self.takeover:
-            predicted_traj = self._predict_agent_future_trajectory(self.last_obs, future_steps)
+            
             self.pending_agent_traj.append(predicted_traj)
         else:
             predicted_traj = []

@@ -34,8 +34,25 @@ if __name__ == '__main__':
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
-    parser.add_argument("--future_steps", default=5, type=int, help="The random seed.")
-    
+    parser.add_argument("--future_steps", default=5, type=int, help="The future steps.")
+    parser.add_argument("--takeover_see", default=5, type=int, help="The takeover sees how many steps.")
+    parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
+    parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
+    parser.add_argument("--alpha", default=0.1, type=float, help="Alpha parameter.")
+    parser.add_argument("--cpl_loss_weight", default=1.0, type=float, help="CPL loss weight.")
+    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
+    parser.add_argument("--poso", default="pos_observations", type=str,
+                        help="Name of the positive observations dataset.")
+    parser.add_argument("--posa", default="pos_actions", type=str,
+                        help="Name of the positive actions dataset.")
+    parser.add_argument("--nego", default="neg_observations", type=str,
+                        help="Name of the negative observations dataset.")
+    parser.add_argument("--nega", default="neg_actions", type=str,
+                        help="Name of the negative actions dataset.")
+    parser.add_argument("--use_bc_only", action="store_true",
+                        help="Use BC only if set, otherwise False.")
+    parser.add_argument("--use_bcmse_only", action="store_true",
+                        help="Use BC MSE only if set, otherwise False.")
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     # parser.add_argument(
     #     "--device",
@@ -82,6 +99,7 @@ if __name__ == '__main__':
             # FakeHumanEnv config:
             free_level=free_level,
             future_steps=args.future_steps,
+            takeover_see=args.takeover_see,
         ),
 
         # Algorithm config
@@ -115,6 +133,17 @@ if __name__ == '__main__':
             seed=seed,
             device="auto",
             future_steps=args.future_steps,
+            bias=args.bias,
+            cbias=args.cbias,
+            alpha=args.alpha,
+            poso=args.poso,
+            posa=args.posa,
+            nego=args.nego,
+            nega=args.nega,
+            cpl_loss_weight=args.cpl_loss_weight,
+            bc_loss_weight=args.bc_loss_weight,
+            use_bc_only=args.use_bc_only,
+            use_bcmse_only=args.use_bcmse_only,
         ),
 
         # Experiment log
@@ -157,7 +186,7 @@ if __name__ == '__main__':
     eval_env = SubprocVecEnv([_make_eval_env] * 1)
 
     # ===== Setup the callbacks =====
-    save_freq = 2000  # Number of steps per model checkpoint
+    save_freq = 50000  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]

@@ -18,12 +18,12 @@ from collections import defaultdict
 import torch
 
 
-def biased_bce_with_logits(adv1, adv2, y, bias=1.0):
+def biased_bce_with_logits(adv1, adv2, y, bias=1.0, cbias = 0):
     # Apply the log-sum-exp trick.
     # y = 1 if we prefer x2 to x1
     # We need to implement the numerical stability trick.
 
-    logit21 = adv2 - bias * adv1
+    logit21 = adv2 - bias * adv1 - cbias
     logit12 = adv1 - bias * adv2
     max21 = torch.clamp(-logit21, min=0, max=None)
     max12 = torch.clamp(-logit12, min=0, max=None)
@@ -74,9 +74,24 @@ class PREF(SAC):
         cql_coefficient=1,
         monitor_wrapper=False,
         future_steps=5,
+        bias=0,
+        cbias=0,
+        alpha=0.1,
+        poso="pos_observations",
+        posa="pos_actions",
+        nego="neg_observations",
+        nega="neg_actions",
+        cpl_loss_weight=1.0,
+        bc_loss_weight=1.0,
+        use_bc_only=False,
+        use_bcmse_only=False,
     ):
 
         assert replay_buffer_class == HACOReplayBuffer
+        self.bias = bias
+        self.cbias, self.alpha, self.bc_loss_weight, self.use_bc_only = cbias, alpha, bc_loss_weight, use_bc_only
+        self.poso, self.posa, self.nego, self.nega = poso, posa, nego, nega
+        self.cpl_loss_weight, self.use_bcmse_only = cpl_loss_weight, use_bcmse_only
 
         super().__init__(
             policy,
@@ -167,7 +182,7 @@ class PREF(SAC):
             # log_prob = log_prob.reshape(-1, 1)
 
             # ========== Compute the CPL loss ==========
-            bc_loss_weight = 0  # TODO: Config
+            bc_loss_weight = self.bc_loss_weight 
 
             # Sample replay buffer
             replay_data_human = None
@@ -186,21 +201,27 @@ class PREF(SAC):
                 loss = None
                 break
 
-            alpha = 0.1  # TODO: Config
+            alpha = self.alpha
             accuracy = cpl_loss = bc_loss = None
             
             mask = replay_data.mask
             
-            pos_obs, pos_action = replay_data.pos_observations, replay_data.pos_actions
+            pos_obs, pos_action = getattr(replay_data, self.poso), getattr(replay_data, self.posa)
             pos_obs_reshape = th.reshape(pos_obs, (-1, pos_obs.shape[-1]))
             pos_action_reshape = th.reshape(pos_action, (-1, pos_action.shape[-1]))
             mean, log_std, _ = self.policy.actor.get_action_dist_params(pos_obs_reshape)
             dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
             log_prob_pos = dist.log_prob(pos_action_reshape)
             log_prob_pos = th.reshape(log_prob_pos, pos_obs.shape[:-1]) * mask
+            if self.use_bcmse_only:
+                policy_mean = th.reshape(mean, pos_action.shape)
+                actdiff = th.mean((policy_mean - pos_action) ** 2, dim = -1)
+                loss = th.mean(actdiff * mask)
+            elif self.use_bc_only:
+                loss = -log_prob_pos.mean()
             log_prob_pos = log_prob_pos.sum(dim = -1)
             
-            neg_obs, neg_action = replay_data.neg_observations, replay_data.neg_actions
+            neg_obs, neg_action = getattr(replay_data, self.nego), getattr(replay_data, self.nega)
             neg_obs_reshape = th.reshape(neg_obs, (-1, neg_obs.shape[-1]))
             neg_action_reshape = th.reshape(neg_action, (-1, neg_action.shape[-1]))
             mean, log_std, _ = self.policy.actor.get_action_dist_params(neg_obs_reshape)
@@ -211,7 +232,7 @@ class PREF(SAC):
             
             adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
             label = torch.ones_like(adv_pos)
-            cpl_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=0.5)
+            cpl_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=self.bias, cbias=self.cbias)
 
 
             # if replay_data_human is not None:
@@ -238,9 +259,10 @@ class PREF(SAC):
             # Aggregate losses
             if bc_loss is None and cpl_loss is None:
                 break
-
-            loss = bc_loss_weight * (bc_loss
-                                     if bc_loss is not None else 0.0) + (cpl_loss if cpl_loss is not None else 0.0)
+            
+            if not self.use_bc_only and not self.use_bcmse_only:
+                loss = bc_loss_weight * (bc_loss
+                                     if bc_loss is not None else 0.0) + self.cpl_loss_weight * (cpl_loss if cpl_loss is not None else 0.0)
 
             self._optimize_actor(actor_loss=loss)
 
