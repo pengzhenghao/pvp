@@ -33,12 +33,15 @@ if __name__ == '__main__':
     parser.add_argument("--wandb_project", type=str, default="pref", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
+    parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
+    
+    
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--future_steps", default=5, type=int, help="The future steps.")
-    parser.add_argument("--takeover_see", default=5, type=int, help="The takeover sees how many steps.")
+    parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
     parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
-    parser.add_argument("--alpha", default=0.1, type=float, help="Alpha parameter.")
+    parser.add_argument("--alpha", default=0.5, type=float, help="Alpha parameter.")
     parser.add_argument("--cpl_loss_weight", default=1.0, type=float, help="CPL loss weight.")
     parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
     parser.add_argument("--poso", default="pos_observations", type=str,
@@ -67,7 +70,7 @@ if __name__ == '__main__':
     # control_device = args.device
     experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
     seed = args.seed
-    trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
+    trial_name = "{}_{}_{}".format(args.trial_name, get_time_str(), args.seed)
 
     use_wandb = args.wandb
     project_name = args.wandb_project
