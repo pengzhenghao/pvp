@@ -44,7 +44,7 @@ if __name__ == '__main__':
     parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
     parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
-    parser.add_argument("--alpha", default=0.5, type=float, help="Alpha parameter.")
+    parser.add_argument("--alpha", default=0.1, type=float, help="Alpha parameter.")
     parser.add_argument("--cpl_loss_weight", default=1.0, type=float, help="CPL loss weight.")
     parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
     parser.add_argument("--poso", default="pos_observations", type=str,

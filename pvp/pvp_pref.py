@@ -315,7 +315,7 @@ class PREF(SAC):
 
         self.logger.record("train/num_traj", self.prefreplay_buffer.pos)
         self.logger.record("train/n_updates", self._n_updates)
-        self.logger.record("train/human_involved_steps", self.prefreplay_buffer.pos * self.stop_freq)
+        self.logger.record("train/human_involved_steps", self.human_data_buffer.pos)
         
         for key, values in stat_recorder.items():
             self.logger.record("train/{}".format(key), np.mean(values))

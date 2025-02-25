@@ -199,7 +199,7 @@ if __name__ == '__main__':
     eval_env = SubprocVecEnv([_make_eval_env] * 1)
 
     # ===== Setup the callbacks =====
-    save_freq = 50000  # Number of steps per model checkpoint
+    save_freq = 2000  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
