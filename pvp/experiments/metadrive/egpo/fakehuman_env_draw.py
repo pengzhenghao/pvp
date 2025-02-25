@@ -166,7 +166,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         self.episode_rewards = state.get("episode_rewards", self.episode_rewards)
         self.episode_lengths = state.get("episode_lengths", self.episode_lengths)
         self.dones = state.get("dones", self.dones)
-        self.vehicle.set_state(state.get("vehicle", self.vehicle))
+
         if "episode_step" in state and hasattr(self.engine, "episode_step"):
             self.engine.episode_step = state["episode_step"]
         # 还原 agents 状态（前提是各 agent 实现了 get_state/set_state）
@@ -184,6 +184,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         # 还原 self.last_obs 等变量
         if "last_obs" in state:
             self.last_obs = state["last_obs"]
+        self.vehicle.set_state(state.get("vehicle", self.vehicle))
     def _predict_agent_future_trajectory(self, current_obs, n_steps):
         saved_state = self.get_state()
         traj = []
@@ -197,7 +198,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 #                                    obs=obs, deterministic=True)
                 #assert False
             else:
-                action = self.agent_action
+                action, _  = self.expert.predict(obs, deterministic=True)
                 #action = np.array([0, 1])
             if self.config["use_discrete"]:
                 action_cont = self.discrete_to_continuous(action)
@@ -226,7 +227,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 expert_action = distribution.mode().detach().cpu().numpy()
             else:
                 expert_action = distribution.sample().detach().cpu().numpy()
-            expert_action, _ = self.expert.predict(obs, deterministic=True) #expert_action[0]
+            expert_action = expert_action[0]
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
             traj.append({
                 "obs": obs.copy(),
@@ -259,8 +260,12 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         if self.expert is None:
                 global _expert
                 self.expert = _expert
-        predicted_traj, acprob = self._predict_agent_future_trajectory(self.last_obs, future_steps)
-        
+        if self.total_steps % future_steps == 0:
+            predicted_traj, acprob = self._predict_agent_future_trajectory(self.last_obs, future_steps)
+            
+            predicted_traj2, acprob = self._predict_agent_future_trajectory(self.last_obs, future_steps)
+        else:
+            predicted_traj = None
         # ===== Get expert action and determine whether to take over! =====
 
         if self.config["disable_expert"]:
@@ -283,11 +288,11 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
-            expert_action = expert_action[0]
+            expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
             
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
             
-            if acprob < 1 - self.config['free_level']:
+            if True:
 
                 # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action},")
 
@@ -308,23 +313,47 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         else:
             predicted_traj = []
         
-        if self.config["use_render"]:
+        if self.config["use_render"] and self.total_steps % future_steps == 0:
             if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
             else:
-                self.drawer = self.engine.make_point_drawer(scale=1)
+                self.drawer = self.engine.make_point_drawer(scale=3)
                 drawer = self.drawer 
             points, colors = [], []
             for j in range(len(predicted_traj)):
                 points.append((predicted_traj[j]["next_pos"][0], predicted_traj[j]["next_pos"][1], 0.5)) # define line 1 for test
                 color=(1,105/255,180/255)
                 colors.append(np.clip(np.array([*color,1]), 0., 1.0))
-            drawer.reset()
+            #drawer.reset()
+            drawer.draw_points(points, colors) # draw points
+            
+            if hasattr(self,"drawer"):
+                drawer = self.drawer # create a point drawer
+            else:
+                self.drawer = self.engine.make_point_drawer(scale=3)
+                drawer = self.drawer 
+            points, colors = [], []
+            for j in range(len(predicted_traj2)):
+                points.append((predicted_traj2[j]["next_pos"][0], predicted_traj2[j]["next_pos"][1], 0.5)) # define line 1 for test
+                color=(0,0,1)
+                colors.append(np.clip(np.array([*color,1]), 0., 1.0))
+            #drawer.reset()
             drawer.draw_points(points, colors) # draw points
             
         self.vehicle.real = True
         last_o = self.last_obs.copy()
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
+        if hasattr(self,"drawer"):
+                drawer = self.drawer # create a point drawer
+        else:
+                self.drawer = self.engine.make_point_drawer(scale=3)
+                drawer = self.drawer 
+        points, colors = [], []
+        for j in range(1):
+            points.append((self.vehicle.position[0], self.vehicle.position[1], 0.5)) # define line 1 for test
+            color=(105/255,1,180/255)
+            colors.append(np.clip(np.array([*color,1]), 0., 1.0))
+        drawer.draw_points(points, colors)
         if self.takeover:
             self.pending_human_traj.append(self.human_traj)
             for lst in self.pending_human_traj:
@@ -408,7 +437,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
 
 if __name__ == "__main__":
-    env = FakeHumanEnvPref(dict(free_level=0.95, use_render=True, future_steps = 15))
+    env = FakeHumanEnvPref(dict(free_level=0.95, use_render=True, future_steps=50, traffic_density = 0))
     env.reset()
     while True:
         _, _, done, info = env.step([0, 1])

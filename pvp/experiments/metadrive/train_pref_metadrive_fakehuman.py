@@ -10,7 +10,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.metadrive.egpo.fakehuman_env_pref import FakeHumanEnvPref
+from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new import FakeHumanEnvPref
 from pvp.pvp_pref import PREF
 # from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
@@ -36,8 +36,9 @@ if __name__ == '__main__':
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
     
-    parser.add_argument("--free_level", type=float, default=0.95)
-    parser.add_argument("--future_steps", default=5, type=int, help="The future steps.")
+    parser.add_argument("--free_level", type=float, default=0.9)
+    parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
+    parser.add_argument("--stop_freq", default=5, type=int, help="The future steps.")
     parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
     parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
@@ -103,6 +104,7 @@ if __name__ == '__main__':
             free_level=free_level,
             future_steps=args.future_steps,
             takeover_see=args.takeover_see,
+            stop_freq=args.stop_freq,
         ),
 
         # Algorithm config
@@ -135,7 +137,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            future_steps=args.future_steps,
+            future_steps=15,
             bias=args.bias,
             cbias=args.cbias,
             alpha=args.alpha,
@@ -147,6 +149,7 @@ if __name__ == '__main__':
             bc_loss_weight=args.bc_loss_weight,
             use_bc_only=args.use_bc_only,
             use_bcmse_only=args.use_bcmse_only,
+            stop_freq=args.stop_freq,
         ),
 
         # Experiment log

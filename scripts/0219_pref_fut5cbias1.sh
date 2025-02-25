@@ -6,7 +6,7 @@ seeds=(0 100 200 300 0 100 200 300 0 100 200 300)
 
 
 # Loop over each GPU
-for i in {8..11}
+for i in {0..2}
 do
     CUDA_VISIBLE_DEVICES=$i \
     nohup python /home/caihy/pvp/pvp/experiments/metadrive/train_pref_metadrive_fakehuman.py \

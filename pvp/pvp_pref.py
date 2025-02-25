@@ -85,6 +85,7 @@ class PREF(SAC):
         bc_loss_weight=1.0,
         use_bc_only=False,
         use_bcmse_only=False,
+        stop_freq=5,
     ):
 
         assert replay_buffer_class == HACOReplayBuffer
@@ -124,6 +125,7 @@ class PREF(SAC):
         self.cql_coefficient = cql_coefficient
         from pvp.sb3.haco.haco_buffer import PrefReplayBuffer
         self.future_steps = future_steps
+        self.stop_freq = stop_freq
         self.prefreplay_buffer = PrefReplayBuffer(
                 self.buffer_size,
                 self.observation_space,
@@ -290,6 +292,8 @@ class PREF(SAC):
 
         self.logger.record("train/num_traj", self.prefreplay_buffer.pos)
         self.logger.record("train/n_updates", self._n_updates)
+        self.logger.record("train/human_involved_steps", self.prefreplay_buffer.pos * self.stop_freq)
+        
         for key, values in stat_recorder.items():
             self.logger.record("train/{}".format(key), np.mean(values))
 
