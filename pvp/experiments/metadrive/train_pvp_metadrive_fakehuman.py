@@ -30,18 +30,18 @@ if __name__ == '__main__':
     parser.add_argument("--learning_starts", default=10, type=int)
     parser.add_argument("--save_freq", default=500, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
-    parser.add_argument("--log_dir", type=str, default="/home/zhenghao/pvp", help="Folder to store the logs.")
-    parser.add_argument("--free_level", type=float, default=0.95)
+    parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
+    parser.add_argument("--wandb_project", type=str, default="cpl", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
+    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
+    parser.add_argument("--free_level", type=float, default=0.9)
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
 
     # parser.add_argument(
     #     "--intervention_start_stop_td", default=True, type=bool, help="Whether to use intervention_start_stop_td."
     # )
 
-    parser.add_argument("--adaptive_batch_size", default="False", type=str)
+    parser.add_argument("--adaptive_batch_size", default="True", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
 
@@ -210,7 +210,7 @@ if __name__ == '__main__':
 
         # eval
         eval_env=eval_env,
-        eval_freq=150,
+        eval_freq=2000,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
