@@ -38,6 +38,8 @@ if __name__ == '__main__':
     
     parser.add_argument("--free_level", type=float, default=0.9)
     parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
+    parser.add_argument("--future_steps_cpl", default=0, type=int, help="The future steps.")
+    
     parser.add_argument("--stop_freq", default=5, type=int, help="The future steps.")
     parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
@@ -76,6 +78,11 @@ if __name__ == '__main__':
     use_wandb = args.wandb
     project_name = args.wandb_project
     team_name = args.wandb_team
+    
+    if args.future_steps_cpl == 0:
+        future_steps_cpl = args.future_steps
+    else:
+        future_steps_cpl = args.future_steps_cpl
     if not use_wandb:
         print("[WARNING] Please note that you are not using wandb right now!!!")
 
@@ -137,7 +144,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            future_steps=15,
+            future_steps=future_steps_cpl,
             bias=args.bias,
             cbias=args.cbias,
             alpha=args.alpha,
