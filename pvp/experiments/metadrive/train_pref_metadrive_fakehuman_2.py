@@ -10,7 +10,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new import FakeHumanEnvPref
+from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new_2 import FakeHumanEnvPref
 from pvp.pvp_pref import PREF
 # from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
@@ -199,7 +199,7 @@ if __name__ == '__main__':
     eval_env = SubprocVecEnv([_make_eval_env] * 1)
 
     # ===== Setup the callbacks =====
-    save_freq = 2000  # Number of steps per model checkpoint
+    save_freq = 50000  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]

@@ -157,6 +157,7 @@ if __name__ == '__main__':
             use_bc_only=args.use_bc_only,
             use_bcmse_only=args.use_bcmse_only,
             stop_freq=args.stop_freq,
+            use_ref=True,
         ),
 
         # Experiment log
@@ -217,6 +218,18 @@ if __name__ == '__main__':
 
     # ===== Setup the training algorithm =====
     model = PREF(**config["algo"])
+    
+    if True:
+        ckpt = "/home/caihy/pvp/cplbaseline.zip"
+        print(f"Loading checkpoint from {ckpt}!")
+        from pvp.sb3.common.save_util import load_from_zip_file
+        data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
+        model.set_parameters(params, exact_match=True, device=model.device)
+        import copy
+        model.policy_ref = copy.deepcopy(model.policy)
+        model.policy_ref.eval()
+    
+    
     train_env.env.env.model = model
 
     # ===== Launch training =====

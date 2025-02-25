@@ -153,6 +153,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         obs = current_obs
         lstprob = []
         total_reward = 0
+        
+        total_advantage = 0
         for step in range(n_steps):
             if not use_exp:
                 if hasattr(self, "model"):
@@ -233,6 +235,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 r += self.reward_function('default_agent')[0]
             # print("pred", self.vehicle.position)
             del self.engine.notrender
+            #if step > 0:
             total_reward += r
             d = self.done_function('default_agent')[0]
 
@@ -258,6 +261,11 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "values_n": values_n.item(),
             })
             obs = self.get_single_observation().observe(self.vehicle)
+            
+            actions_n, values_next, log_prob_n = self.expert(torch.Tensor(obs).to(self.expert.device).unsqueeze(0))
+            traj[-1]["advantage"] = r + 0.99 * values_n.item() - values_next.item()
+            
+            total_advantage += r + 0.99 * values_n.item() - values_next.item()
             if d:
                 if r < 0:
                     total_reward = -100
@@ -266,7 +274,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         from pvp.sb3.common.utils import safe_mean
         if total_reward > 0:
             total_reward += values_n.item()
-        return traj, safe_mean(lstprob[:self.config["takeover_see"]]), total_reward
+        return traj, safe_mean(lstprob[:self.config["takeover_see"]]), total_reward, total_advantage
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
         actions = np.asarray(actions).astype(np.float32)
@@ -285,14 +293,16 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 self.expert = _expert
                 
         if self.total_steps % stop_freq == 0:
-            predicted_traj_exp, acprob, total_reward_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
+            predicted_traj_exp, acprob, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
             
-            predicted_traj, acprob, total_reward = self._predict_agent_future_trajectory(self.last_obs, future_steps)
+            predicted_traj, acprob, total_reward, total_advantage = self._predict_agent_future_trajectory(self.last_obs, future_steps)
             
-            advantage = total_reward_exp - total_reward
+            advantage = total_reward_exp - total_advantage
+            self.advantage = total_advantage - total_reward_exp
+            self.total_r = total_reward
             if len(self.advantages) < 10 or total_reward < 0:
                 self.etakeover = True
-                if total_reward > 0:
+                if len(predicted_traj) == future_steps:
                     self.advantages.append(advantage)
             else:
                 q = np.quantile(list(self.advantages), self.config["free_level"])
@@ -385,8 +395,6 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         last_o = self.last_obs.copy()
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
         
-        if len(self.advantages) >= 10:
-            i["int_thred"] = np.quantile(list(self.advantages), self.config["free_level"])
         
         if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
@@ -442,6 +450,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                     # "Total Time": time.strftime("%M:%S", time.gmtime(time.time() - self.start_time)),
                     "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
                     "Pause": "Press E",
+                    "advantage": self.advantage,
+                    "rewardtogo": self.total_r,
                 }
             )
 
@@ -493,7 +503,7 @@ if __name__ == "__main__":
     env = FakeHumanEnvPref(dict(free_level=0.95, use_render=True, manual_control=False, future_steps=15, stop_freq = 5))
     env.reset()
     while True:
-        _, _, done, info = env.step([0, 1])
+        _, _, done, info = env.step([0, 0.1])
         # done = tm or tc
         #env.render(mode="topdown")
         if done:

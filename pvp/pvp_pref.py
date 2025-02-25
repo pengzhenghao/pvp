@@ -86,6 +86,7 @@ class PREF(SAC):
         use_bc_only=False,
         use_bcmse_only=False,
         stop_freq=5,
+        use_ref=False,
     ):
 
         assert replay_buffer_class == HACOReplayBuffer
@@ -93,6 +94,7 @@ class PREF(SAC):
         self.cbias, self.alpha, self.bc_loss_weight, self.use_bc_only = cbias, alpha, bc_loss_weight, use_bc_only
         self.poso, self.posa, self.nego, self.nega = poso, posa, nego, nega
         self.cpl_loss_weight, self.use_bcmse_only = cpl_loss_weight, use_bcmse_only
+        self.use_ref = use_ref
 
         super().__init__(
             policy,
@@ -223,6 +225,22 @@ class PREF(SAC):
                 loss = -log_prob_pos.mean()
             log_prob_pos = log_prob_pos.sum(dim = -1)
             
+            def get_log_prob(policy, pos_obs, pos_action):
+                    pos_obs_reshape = th.reshape(pos_obs, (-1, pos_obs.shape[-1]))
+                    pos_action_reshape = th.reshape(pos_action, (-1, pos_action.shape[-1]))
+                    mean, log_std, _ = policy.actor.get_action_dist_params(pos_obs_reshape)
+                    dist = policy.actor.action_dist.proba_distribution(mean, log_std)
+                    log_prob_pos = dist.log_prob(pos_action_reshape)
+                    log_prob_pos = th.reshape(log_prob_pos, pos_obs.shape[:-1]) * mask
+                    log_prob_pos = log_prob_pos.sum(dim = -1)
+                    return log_prob_pos
+            
+            if self.use_ref:
+                with th.no_grad():
+                    log_prob_pos_ref = get_log_prob(self.policy_ref, pos_obs, pos_action)
+                log_prob_pos -= log_prob_pos_ref
+
+            
             neg_obs, neg_action = getattr(replay_data, self.nego), getattr(replay_data, self.nega)
             neg_obs_reshape = th.reshape(neg_obs, (-1, neg_obs.shape[-1]))
             neg_action_reshape = th.reshape(neg_action, (-1, neg_action.shape[-1]))
@@ -231,6 +249,11 @@ class PREF(SAC):
             log_prob_neg = dist.log_prob(neg_action_reshape)
             log_prob_neg = th.reshape(log_prob_neg, neg_obs.shape[:-1]) * mask
             log_prob_neg = log_prob_neg.sum(dim = -1)
+            
+            if self.use_ref:
+                with th.no_grad():
+                    log_prob_neg_ref = get_log_prob(self.policy_ref, neg_obs, neg_action)
+                log_prob_neg -= log_prob_neg_ref
             
             adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
             label = torch.ones_like(adv_pos)
@@ -307,9 +330,9 @@ class PREF(SAC):
     #     merged_critic_loss.backward()
     #     self.critic.optimizer.step()
 
-    # def _excluded_save_params(self) -> List[str]:
-    #     return super()._excluded_save_params() + ["cost_critic", "cost_critic_target"]
-    #
+    def _excluded_save_params(self) -> List[str]:
+        return super()._excluded_save_params() + ["prefreplay_buffer", "human_data_buffer", "policy_ref"]
+    
     # def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
     #     # state_dicts = ["policy", "actor.optimizer", "critic.optimizer", "cost_critic.optimizer"]
     #     state_dicts = ["policy", "actor.optimizer", "critic.optimizer"]
