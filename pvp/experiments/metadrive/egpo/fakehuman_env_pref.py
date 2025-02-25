@@ -342,7 +342,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             if hasattr(self, "model"):
                 assert len(self.pending_agent_traj) == len(self.pending_human_traj)
                 for step in range(len(self.pending_agent_traj)):
-                    self.model.prefreplay_buffer.add(self.pending_human_traj[step], self.pending_agent_traj[step])
+                    if hasattr(self.model, "prefreplay_buffer"):
+                        self.model.prefreplay_buffer.add(self.pending_human_traj[step], self.pending_agent_traj[step])
             self.pending_agent_traj = []
             self.pending_human_traj = []
         

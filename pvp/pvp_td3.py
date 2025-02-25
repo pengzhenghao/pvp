@@ -173,7 +173,7 @@ class PVPTD3(TD3):
             self.critic.optimizer.zero_grad()
             critic_loss.backward()
             self.critic.optimizer.step()
-            stat_recorder["train/critic_loss"] = critic_loss.item()
+            stat_recorder["critic_loss"] = critic_loss.item()
 
             # Delayed policy updates
             if self._n_updates % self.policy_delay == 0:
@@ -201,14 +201,15 @@ class PVPTD3(TD3):
                 self.actor.optimizer.zero_grad()
                 actor_loss.backward()
                 self.actor.optimizer.step()
-                stat_recorder["train/actor_loss"] = actor_loss.item()
-                stat_recorder["train/masked_bc_loss"] = masked_bc_loss.item()
-                stat_recorder["train/bc_loss"] = bc_loss.mean().item()
+                stat_recorder["actor_loss"] = actor_loss.item()
+                stat_recorder["masked_bc_loss"] = masked_bc_loss.item()
+                stat_recorder["bc_loss"] = bc_loss.mean().item()
 
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)
 
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record("train/human_involved_steps", self.human_data_buffer.pos)
         for key, values in stat_recorder.items():
             self.logger.record("train/{}".format(key), np.mean(values))
 
