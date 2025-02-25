@@ -1,0 +1,230 @@
+"""
+Compared to original file:
+1. use fakehumanenv
+2. new config: free_level
+3. buffer_size and total_timesteps set to 150_000
+4. use CPL
+"""
+import argparse
+import os
+import uuid
+from pathlib import Path
+
+from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new_draw_slow import FakeHumanEnvPref
+from pvp.pvp_pref import PREF
+# from pvp.pvp_td3 import PVPTD3
+from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
+from pvp.sb3.common.monitor import Monitor
+from pvp.sb3.common.vec_env import SubprocVecEnv
+from pvp.sb3.common.wandb_callback import WandbCallback
+from pvp.sb3.haco import HACOReplayBuffer
+# from pvp.sb3.td3.policies import TD3Policy
+from pvp.sb3.sac.policies import SACPolicy
+from pvp.utils.shared_control_monitor import SharedControlMonitor
+from pvp.utils.utils import get_time_str
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--exp_name", default="pref", type=str, help="The name for this batch of experiments."
+    )
+    parser.add_argument("--seed", default=0, type=int, help="The random seed.")
+    parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
+    parser.add_argument("--wandb_project", type=str, default="cpl", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
+    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
+    parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
+    
+    
+    parser.add_argument("--free_level", type=float, default=0.9)
+    parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
+    parser.add_argument("--future_steps_cpl", default=0, type=int, help="The future steps.")
+    
+    parser.add_argument("--stop_freq", default=5, type=int, help="The future steps.")
+    parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
+    parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
+    parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
+    parser.add_argument("--alpha", default=0.1, type=float, help="Alpha parameter.")
+    parser.add_argument("--cpl_loss_weight", default=1.0, type=float, help="CPL loss weight.")
+    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
+    parser.add_argument("--poso", default="pos_observations", type=str,
+                        help="Name of the positive observations dataset.")
+    parser.add_argument("--posa", default="pos_actions", type=str,
+                        help="Name of the positive actions dataset.")
+    parser.add_argument("--nego", default="neg_observations", type=str,
+                        help="Name of the negative observations dataset.")
+    parser.add_argument("--nega", default="neg_actions", type=str,
+                        help="Name of the negative actions dataset.")
+    parser.add_argument("--use_bc_only", action="store_true",
+                        help="Use BC only if set, otherwise False.")
+    parser.add_argument("--use_bcmse_only", action="store_true",
+                        help="Use BC MSE only if set, otherwise False.")
+    parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
+    # parser.add_argument(
+    #     "--device",
+    #     required=True,
+    #     choices=['wheel', 'gamepad', 'keyboard'],
+    #     type=str,
+    #     help="The control device, selected from [wheel, gamepad, keyboard]."
+    # )
+    args = parser.parse_args()
+
+    # ===== Set up some arguments =====
+    # control_device = args.device
+    experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
+    seed = args.seed
+    trial_name = "{}_{}_{}".format(args.trial_name, get_time_str(), args.seed)
+
+    use_wandb = args.wandb
+    project_name = args.wandb_project
+    team_name = args.wandb_team
+    
+    if args.future_steps_cpl == 0:
+        future_steps_cpl = args.future_steps
+    else:
+        future_steps_cpl = args.future_steps_cpl
+    if not use_wandb:
+        print("[WARNING] Please note that you are not using wandb right now!!!")
+
+    log_dir = args.log_dir
+    experiment_dir = Path(log_dir) / Path("runs") / experiment_batch_name
+
+    trial_dir = experiment_dir / trial_name
+    os.makedirs(experiment_dir, exist_ok=True)
+    os.makedirs(trial_dir, exist_ok=False)  # Avoid overwritting old experiment
+    print(f"We start logging training data into {trial_dir}")
+
+    # ===== Setup the config =====
+    free_level = args.free_level
+    config = dict(
+
+        # Environment config
+        env_config=dict(
+
+            # Original real human exp env config:
+            use_render=True,  # Open the interface
+            # manual_control=True,  # Allow receiving control signal from external device
+            # controller=control_device,
+            # window_size=(1600, 1100),
+
+            # FakeHumanEnv config:
+            free_level=free_level,
+            future_steps=args.future_steps,
+            takeover_see=args.takeover_see,
+            stop_freq=args.stop_freq,
+        ),
+
+        # Algorithm config
+        algo=dict(
+            policy=SACPolicy,
+            replay_buffer_class=HACOReplayBuffer,
+            replay_buffer_kwargs=dict(
+                discard_reward=True,  # We run in reward-free manner!
+            ),
+            policy_kwargs=dict(net_arch=[256, 256]),
+            env=None,
+            learning_rate=dict(
+                actor=1e-4,
+                critic=1e-4,
+                entropy=1e-4,
+            ),
+
+            # learning_rate=1e-4,
+            # q_value_bound=1,
+            optimize_memory_usage=True,
+            buffer_size=150_000,  # We only conduct experiment less than 50K steps
+            learning_starts=0,  # The number of steps before
+            batch_size=128,  # Reduce the batch size for real-time copilot
+            tau=0.005,
+            gamma=0.99,
+            train_freq=(1, "step"),
+            action_noise=None,
+            tensorboard_log=trial_dir,
+            create_eval_env=False,
+            verbose=2,
+            seed=seed,
+            device="auto",
+            future_steps=future_steps_cpl,
+            bias=args.bias,
+            cbias=args.cbias,
+            alpha=args.alpha,
+            poso=args.poso,
+            posa=args.posa,
+            nego=args.nego,
+            nega=args.nega,
+            cpl_loss_weight=args.cpl_loss_weight,
+            bc_loss_weight=args.bc_loss_weight,
+            use_bc_only=args.use_bc_only,
+            use_bcmse_only=args.use_bcmse_only,
+            stop_freq=args.stop_freq,
+        ),
+
+        # Experiment log
+        exp_name=experiment_batch_name,
+        seed=seed,
+        use_wandb=use_wandb,
+        trial_name=trial_name,
+        log_dir=str(trial_dir)
+    )
+    if args.toy_env:
+        config["env_config"].update(
+            # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT"
+        )
+
+    # ===== Setup the training environment =====
+    train_env = FakeHumanEnvPref(config=config["env_config"], )
+    train_env = Monitor(env=train_env, filename=str(trial_dir))
+    # Store all shared control data to the files.
+    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+    config["algo"]["env"] = train_env
+    assert config["algo"]["env"] is not None
+
+    # ===== Also build the eval env =====
+
+    # ===== Setup the callbacks =====
+    save_freq = 2000  # Number of steps per model checkpoint
+    callbacks = [
+        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
+    ]
+    if use_wandb:
+        callbacks.append(
+            WandbCallback(
+                trial_name=trial_name,
+                exp_name=experiment_batch_name,
+                team_name=team_name,
+                project_name=project_name,
+                config=config
+            )
+        )
+    callbacks = CallbackList(callbacks)
+
+    # ===== Setup the training algorithm =====
+    model = PREF(**config["algo"])
+    
+    if True:
+        ckpt = "/home/caihy/pvp/best_model_kl.zip"
+        print(f"Loading checkpoint from {ckpt}!")
+        from pvp.sb3.common.save_util import load_from_zip_file
+        data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
+        model.set_parameters(params, exact_match=True, device=model.device)
+        import copy
+        model.policy_ref = copy.deepcopy(model.policy)
+        model.policy_ref.eval()
+    
+    train_env.env.env.model = model
+
+    # ===== Launch training =====
+    env = train_env
+    obs = env.reset()
+    while True:
+        action, _ = model.predict(obs, deterministic=True)
+        new_obs, _, done, info = env.step(action)
+        # done = tm or tc
+        #env.render(mode="topdown")
+        obs = new_obs
+        if done:
+            print(info)
+            obs = env.reset()
