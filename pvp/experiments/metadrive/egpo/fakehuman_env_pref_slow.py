@@ -92,6 +92,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     
     def __init__(self, config):
         super(FakeHumanEnvPref, self).__init__(config)
+        self.takeover_remaining = 0
         if self.config["use_discrete"]:
             self._num_bins = 13
             self._grid = np.linspace(-1, 1, self._num_bins)
@@ -287,24 +288,29 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 self.expert = _expert
                 
         if self.total_steps % stop_freq == 0:
-            predicted_traj_exp, acprob, total_reward_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
+            predicted_traj_exp, acprob_exp, total_reward_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
             
             predicted_traj, acprob, total_reward = self._predict_agent_future_trajectory(self.last_obs, future_steps)
             
-            advantage = total_reward_exp - total_reward
-            if self.total_steps < self.config["init_bc_len"] or total_reward < 0:
+            advantage = acprob_exp
+            if self.total_steps < self.config["init_bc_len"] or total_reward < -90:
                 self.etakeover = True
-                if total_reward > 0:
+                self.takeover_remaining = self.config["future_steps"]
+                if total_reward > -90:
                     self.advantages.append(advantage)
             else:
-                q = np.quantile(list(self.advantages), self.config["free_level"])
-                self.etakeover = (advantage > q)
-                if advantage > q:
-                    self.etakeover = True
+                q = np.quantile(list(self.advantages), 1 - self.config["free_level"])
+                self.etakeover = (acprob < q) #(advantage > q)
+                if self.etakeover:
+                    self.takeover_remaining = self.config["future_steps"]
                 self.advantages.append(advantage)
         else:
             predicted_traj_exp, predicted_traj = [], []
         etakeover = self.etakeover
+        if self.takeover_remaining > 0:
+            self.takeover_remaining -= 1
+            etakeover = True
+        
         # ===== Get expert action and determine whether to take over! =====
 
         if self.config["disable_expert"]:
@@ -389,6 +395,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         
         if len(self.advantages) >= 10:
             i["int_thred"] = np.quantile(list(self.advantages), self.config["free_level"])
+        else:
+            i["int_thred"] = 0
         
         if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
@@ -488,6 +496,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             npp.detachNode()
             self.drawer._dying_points.append(npp)
         self.drawn_points = []
+        self.takeover_remaining = 0
         return o, info
 
 

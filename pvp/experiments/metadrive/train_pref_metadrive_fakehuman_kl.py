@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
     
-    parser.add_argument("--free_level", type=float, default=0.9)
+    parser.add_argument("--free_level", type=float, default=0.99)
     parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
     parser.add_argument("--future_steps_cpl", default=0, type=int, help="The future steps.")
     
@@ -220,7 +220,7 @@ if __name__ == '__main__':
     model = PREF(**config["algo"])
     
     if True:
-        ckpt = "/home/caihy/pvp/cplbaseline.zip"
+        ckpt = "/home/caihy/pvp/runs/pref_freelevel0.99/cpl_2025-02-26_12-13-31_0/models/rl_model_10000_steps.zip" #"/home/caihy/pvp/cplbaseline.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)

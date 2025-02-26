@@ -36,12 +36,12 @@ if __name__ == '__main__':
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
     
-    parser.add_argument("--free_level", type=float, default=0.9)
+    parser.add_argument("--free_level", type=float, default=0.99)
     parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
     parser.add_argument("--future_steps_cpl", default=0, type=int, help="The future steps.")
     
     parser.add_argument("--stop_freq", default=5, type=int, help="The future steps.")
-    parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
+    parser.add_argument("--takeover_see", default=15, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
     parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
     parser.add_argument("--alpha", default=0.1, type=float, help="Alpha parameter.")
