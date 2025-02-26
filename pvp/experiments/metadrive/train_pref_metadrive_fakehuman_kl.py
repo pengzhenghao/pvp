@@ -220,7 +220,7 @@ if __name__ == '__main__':
     model = PREF(**config["algo"])
     
     if True:
-        ckpt = "/home/caihy/pvp/runs/pref_freelevel0.99/cpl_2025-02-26_12-13-31_0/models/rl_model_10000_steps.zip" #"/home/caihy/pvp/cplbaseline.zip"
+        ckpt = "/home/caihy/pvp/bl.zip" #"/home/caihy/pvp/cplbaseline.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
