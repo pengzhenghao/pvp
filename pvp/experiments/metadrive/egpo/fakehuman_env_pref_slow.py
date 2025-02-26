@@ -127,6 +127,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "future_steps": 15,
                 "takeover_see": 15,
                 "stop_freq": 5,
+                "init_bc_len": 200,
+                "weight_value_n": 1.0,
             }
         )
         return config
@@ -245,6 +247,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             expert_action, _ = self.expert.predict(obs, deterministic=True)
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
             actions_n, values_n, log_prob_n = self.expert(torch.Tensor(obs).to(self.expert.device).unsqueeze(0))
+            values_n = values_n * self.config["weight_value_n"]
             traj.append({
                 "obs": obs.copy(),
                 "action": action_cont.copy(),
@@ -289,7 +292,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             predicted_traj, acprob, total_reward = self._predict_agent_future_trajectory(self.last_obs, future_steps)
             
             advantage = total_reward_exp - total_reward
-            if len(self.advantages) < 10 or total_reward < 0:
+            if self.total_steps < self.config["init_bc_len"] or total_reward < 0:
                 self.etakeover = True
                 if total_reward > 0:
                     self.advantages.append(advantage)

@@ -18,32 +18,45 @@ logger = get_logger()
 
 def get_expert():
     from pvp.sb3.common.save_util import load_from_zip_file
-    from pvp.sb3.ppo import PPO
-    from pvp.sb3.ppo.policies import ActorCriticPolicy
-
+    from pvp.pvp_td3 import PVPTD3
+    from pvp.sb3.td3.policies import TD3Policy
+    from pvp.sb3.haco import HACOReplayBuffer
     train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
 
     # Initialize agent
     algo_config = dict(
-        policy=ActorCriticPolicy,
-        n_steps=1024,  # n_steps * n_envs = total_batch_size
-        n_epochs=20,
-        learning_rate=5e-5,
-        batch_size=256,
-        clip_range=0.1,
-        vf_coef=0.5,
-        ent_coef=0.0,
-        max_grad_norm=10.0,
-        # tensorboard_log=trial_dir,
-        create_eval_env=False,
-        verbose=2,
-        # seed=seed,
-        device="auto",
-        env=train_env
-    )
-    model = PPO(**algo_config)
+            # intervention_start_stop_td=args.intervention_start_stop_td,
+            adaptive_batch_size="False",
+            bc_loss_weight=0,
+            only_bc_loss="False",
+            add_bc_loss="False",
+            use_balance_sample=True,
+            agent_data_ratio=1.0,
+            policy=TD3Policy,
+            replay_buffer_class=HACOReplayBuffer,
+            replay_buffer_kwargs=dict(
+                discard_reward=True,  # We run in reward-free manner!
+            ),
+            policy_kwargs=dict(net_arch=[256, 256]),
+            env=train_env,
+            learning_rate=1e-4,
+            q_value_bound=1,
+            optimize_memory_usage=True,
+            buffer_size=50_000,  # We only conduct experiment less than 50K steps
+            learning_starts=10,  # The number of steps before
+            batch_size=1024,  # Reduce the batch size for real-time copilot
+            tau=0.005,
+            gamma=0.99,
+            train_freq=(1, "step"),
+            action_noise=None,
+            create_eval_env=False,
+            verbose=2,
+            seed=0,
+            device="auto",
+        )
+    model = PVPTD3(**algo_config)
 
-    ckpt = FOLDER_PATH / "metadrive_pvp_20m_steps"
+    ckpt = "/home/caihy/pvp/best_model_pvp.zip"
 
     print(f"Loading checkpoint from {ckpt}!")
     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
@@ -128,7 +141,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "takeover_see": 15,
                 "stop_freq": 5,
                 "init_bc_len": 200,
-                "weight_value_n": 0.01,
+                "weight_value_n": 1,
             }
         )
         return config
@@ -234,20 +247,28 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             d = tm or tc
             
             del self.engine.notrender
-            total_reward += r
+            #total_reward += r
             d = self.done_function('default_agent')[0]
 
                         
             last_obs, _ = self.expert.obs_to_tensor(obs)
-            distribution = self.expert.get_distribution(last_obs)
-            log_prob = distribution.log_prob(torch.from_numpy(action_cont).to(last_obs.device))
-            action_prob = log_prob.exp().detach().cpu().numpy()
-            action_prob = action_prob[0]
-            lstprob.append(action_prob)
+            # distribution = self.expert.get_distribution(last_obs)
+            # log_prob = distribution.log_prob(torch.from_numpy(action_cont).to(last_obs.device))
+            # action_prob = log_prob.exp().detach().cpu().numpy()
+            # action_prob = action_prob[0]
+            # lstprob.append(action_prob)
             expert_action, _ = self.expert.predict(obs, deterministic=True)
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
-            actions_n, values_n, log_prob_n = self.expert(torch.Tensor(obs).to(self.expert.device).unsqueeze(0))
-            values_n = values_n * self.config["weight_value_n"]
+            # actions_n, values_n, log_prob_n = self.expert(torch.Tensor(obs).to(self.expert.device).unsqueeze(0))
+            # values_n = values_n * self.config["weight_value_n"]
+            values_exp = self.expert.critic(torch.Tensor(obs).to(self.expert.device).unsqueeze(0), torch.Tensor(expert_action).to(self.expert.device).unsqueeze(0))[0].item()
+            if hasattr(self, "model"):
+                action_nov, _ = self.model.policy.predict(obs, deterministic=True)
+            else:
+                action_nov = action_cont
+            values_novice = self.expert.critic(torch.Tensor(obs).to(self.expert.device).unsqueeze(0), torch.Tensor(action_nov).to(self.expert.device).unsqueeze(0))[0].item()
+            values_behavior = self.expert.critic(torch.Tensor(obs).to(self.expert.device).unsqueeze(0), torch.Tensor(action_cont).to(self.expert.device).unsqueeze(0))[0].item()
+            total_reward += values_behavior
             traj.append({
                 "obs": obs.copy(),
                 "action": action_cont.copy(),
@@ -257,7 +278,6 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "next_pos": copy.deepcopy(self.vehicle.position),
                 "action_exp": expert_action_clip.copy(),
                 "action_nov": action_cont.copy(),
-                "values_n": values_n.item(),
             })
             obs = o
             if d:
@@ -266,8 +286,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 break
         self.set_state(saved_state)
         from pvp.sb3.common.utils import safe_mean
-        if total_reward > 0:
-            total_reward += values_n.item()
+        # if total_reward > 0:
+        #     total_reward += values_n.item()
         return traj, safe_mean(lstprob[:self.config["takeover_see"]]), total_reward
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
@@ -292,9 +312,9 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             predicted_traj, acprob, total_reward = self._predict_agent_future_trajectory(self.last_obs, future_steps)
             
             advantage = total_reward_exp - total_reward
-            if self.total_steps < self.config["init_bc_len"] or total_reward < 0:
+            if self.total_steps < self.config["init_bc_len"] or total_reward < -90:
                 self.etakeover = True
-                if total_reward > 0:
+                if total_reward > -90:
                     self.advantages.append(advantage)
             else:
                 q = np.quantile(list(self.advantages), self.config["free_level"])
@@ -312,21 +332,21 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
         else:
             last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
-            distribution = self.expert.get_distribution(last_obs)
-            log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
-            action_prob = log_prob.exp().detach().cpu().numpy()
+            # distribution = self.expert.get_distribution(last_obs)
+            # log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
+            # action_prob = log_prob.exp().detach().cpu().numpy()
 
-            if self.config["expert_deterministic"]:
-                expert_action = distribution.mode().detach().cpu().numpy()
-            else:
-                expert_action = distribution.sample().detach().cpu().numpy()
+            # if self.config["expert_deterministic"]:
+            #     expert_action = distribution.mode().detach().cpu().numpy()
+            # else:
+            #     expert_action = distribution.sample().detach().cpu().numpy()
 
             
             # if np.any(expert_action != expert_action_clip):
             #     print(expert_action_clip, expert_action)
             
-            assert expert_action.shape[0] == action_prob.shape[0] == 1
-            action_prob = action_prob[0]
+            # assert expert_action.shape[0] == action_prob.shape[0] == 1
+            # action_prob = action_prob[0]
             expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
             
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
@@ -430,8 +450,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
-        if not self.config["disable_expert"]:
-            i["takeover_log_prob"] = log_prob.item()
+        # if not self.config["disable_expert"]:
+        #     i["takeover_log_prob"] = log_prob.item()
 
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             self.render(
