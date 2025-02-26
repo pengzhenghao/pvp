@@ -29,7 +29,7 @@ if __name__ == '__main__':
         "--exp_name", default="pref", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
+    parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="cpl", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
@@ -205,7 +205,7 @@ if __name__ == '__main__':
     model = PREF(**config["algo"])
     
     if True:
-        ckpt = "/home/caihy/pvp/best_model_kl.zip"
+        ckpt = "/home/caihy/pvp/runs/pref_freelevel0.9/cpl_2025-02-25_15-43-25_0/models/rl_model_4000_steps.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
