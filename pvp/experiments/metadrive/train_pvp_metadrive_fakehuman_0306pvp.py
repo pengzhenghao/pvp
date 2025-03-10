@@ -190,7 +190,7 @@ if __name__ == '__main__':
     if use_wandb:
         callbacks.append(
             WandbCallback(
-                trial_name=trial_name,
+                trial_name="TakeoverAdvantage_Crash,Algo_PVP_L=20+TDLoss"+get_time_str(),
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,

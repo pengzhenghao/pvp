@@ -37,13 +37,18 @@ class HACODictReplayBufferSamples(NamedTuple):
 
 class PrefReplayBufferSamples(NamedTuple):
     pos_observations: TensorDict
+    pos_next_observations: TensorDict
     pos_actions: th.Tensor
     pos_actions_exp: th.Tensor
     pos_actions_nov: th.Tensor
+    pos_dones: th.Tensor
+    
     neg_observations: TensorDict
+    neg_next_observations: TensorDict
     neg_actions: th.Tensor
     neg_actions_exp: th.Tensor
     neg_actions_nov: th.Tensor
+    neg_dones: th.Tensor
     mask: th.Tensor
 
 def concat_samples(self, other):
@@ -79,7 +84,7 @@ class PrefReplayBuffer(ReplayBuffer):
         action_space: spaces.Space,
         device: Union[th.device, str] = "cpu",
         n_envs: int = 1,
-        optimize_memory_usage: bool = True,
+        optimize_memory_usage: bool = False,
         handle_timeout_termination: bool = True,
         discard_reward=False,
         discard_takeover_start=False,
@@ -114,7 +119,7 @@ class PrefReplayBuffer(ReplayBuffer):
         # assert optimize_memory_usage is False, "DictReplayBuffer does not support optimize_memory_usage"
         # disabling as this adds quite a bit of complexity
         # https://github.com/DLR-RM/stable-baselines3/pull/243#discussion_r531535702
-        self.optimize_memory_usage = optimize_memory_usage
+        self.optimize_memory_usage = False
 
         self.pos_observations = {
             key: np.zeros((self.buffer_size, future_steps) + _obs_shape, dtype=self.observation_space[key].dtype)
@@ -149,6 +154,10 @@ class PrefReplayBuffer(ReplayBuffer):
         self.neg_actions_nov = np.zeros((self.buffer_size, future_steps, self.action_dim), dtype=action_space.dtype)
         
         self.mask = np.zeros((self.buffer_size, future_steps), dtype=np.float32)
+        
+        self.pos_dones = np.zeros((self.buffer_size, future_steps), dtype=np.float32)
+        self.neg_dones = np.zeros((self.buffer_size, future_steps), dtype=np.float32)
+        
         self.discard_reward = discard_reward
 
         if not self.discard_reward:
@@ -195,14 +204,18 @@ class PrefReplayBuffer(ReplayBuffer):
         for step in range(self.future_steps):
             if step >= l:
                 self.mask[self.pos][step] = 0
+                self.pos_dones[self.pos][step] = 1
             else:
                 self.mask[self.pos][step] = 1
+                self.pos_dones[self.pos][step] = pos_traj[step]["done"]
                 obs, action, next_obs = pos_traj[step]["obs"], pos_traj[step]["action"], pos_traj[step]["next_obs"]
                 if self._fake_dict_obs:
                     obs = {"default": obs}
                     next_obs = {"default": next_obs}
                 for key in self.pos_observations.keys():
                     self.pos_observations[key][self.pos][step] = np.array(obs[key]).copy()
+                    self.pos_next_observations[key][self.pos][step] = np.array(next_obs[key]).copy()
+                
                 self.pos_actions[self.pos][step] = np.array(action).copy().reshape(self.pos_actions[self.pos][step].shape)
                 
                 action_exp, action_nov = pos_traj[step]["action_exp"], pos_traj[step]["action_nov"]
@@ -212,14 +225,18 @@ class PrefReplayBuffer(ReplayBuffer):
         for step in range(self.future_steps):
             if step >= l:
                 self.mask[self.pos][step] = 0
+                self.neg_dones[self.pos][step] = 1
             else:
                 self.mask[self.pos][step] = 1
+                self.neg_dones[self.pos][step] = neg_traj[step]["done"]
                 obs, action, next_obs = neg_traj[step]["obs"], neg_traj[step]["action"], neg_traj[step]["next_obs"]
                 if self._fake_dict_obs:
                     obs = {"default": obs}
                     next_obs = {"default": next_obs}
                 for key in self.neg_observations.keys():
                     self.neg_observations[key][self.pos][step] = np.array(obs[key]).copy()
+                    self.neg_next_observations[key][self.pos][step] = np.array(next_obs[key]).copy()
+                
                 self.neg_actions[self.pos][step] = np.array(action).copy().reshape(self.neg_actions[self.pos][step].shape)
                 
                 action_exp, action_nov = neg_traj[step]["action_exp"], neg_traj[step]["action_nov"]
@@ -254,33 +271,55 @@ class PrefReplayBuffer(ReplayBuffer):
              for key, obs in self.pos_observations.items()}, env
         )
 
+        if not self.optimize_memory_usage:
+            pos_next_obs_ = self._normalize_obs(
+                {key: obs[batch_inds, :, :]
+                 for key, obs in self.pos_next_observations.items()}, env
+            )
+            
         # Convert to torch tensor
         pos_observations = {key: self.to_torch(obs) for key, obs in obs_.items()}
+        
+        pos_next_observations = {key: self.to_torch(obs) for key, obs in pos_next_obs_.items()}
 
         if self._fake_dict_obs:
             pos_observations = pos_observations["default"]
+            pos_next_observations = pos_next_observations["default"]
         
         obs_ = self._normalize_obs(
             {key: obs[batch_inds, :, :]
              for key, obs in self.neg_observations.items()}, env
         )
+        if not self.optimize_memory_usage:
+            neg_next_obs_ = self._normalize_obs(
+                {key: obs[batch_inds, :, :]
+                 for key, obs in self.neg_next_observations.items()}, env
+            )
 
         # Convert to torch tensor
         neg_observations = {key: self.to_torch(obs) for key, obs in obs_.items()}
+        
+        neg_next_observations = {key: self.to_torch(obs) for key, obs in neg_next_obs_.items()}
 
         if self._fake_dict_obs:
             neg_observations = neg_observations["default"]
+            neg_next_observations = neg_next_observations["default"]
 
         return PrefReplayBufferSamples(
             pos_observations=pos_observations,
+            pos_next_observations=pos_next_observations,
             pos_actions=self.to_torch(self.pos_actions[batch_inds]),
             pos_actions_exp=self.to_torch(self.pos_actions_exp[batch_inds]),
             pos_actions_nov=self.to_torch(self.pos_actions_nov[batch_inds]),
+            
             neg_observations=neg_observations,
+            neg_next_observations=neg_next_observations,
             neg_actions=self.to_torch(self.neg_actions[batch_inds]),
             neg_actions_exp=self.to_torch(self.neg_actions_exp[batch_inds]),
             neg_actions_nov=self.to_torch(self.neg_actions_nov[batch_inds]),
             mask=self.to_torch(self.mask[batch_inds]),
+            pos_dones=self.to_torch(self.pos_dones[batch_inds]),
+            neg_dones=self.to_torch(self.neg_dones[batch_inds]),
         )
 class HACOReplayBuffer(ReplayBuffer):
     def __init__(

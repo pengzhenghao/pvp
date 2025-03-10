@@ -470,17 +470,46 @@ class PVPTD3_PREF(TD3):
             neg_action_reshape = th.reshape(neg_action, (-1, neg_action.shape[-1]))
             
             
+            # with th.no_grad():
+            #     # Select action according to policy and add clipped noise
+            #     noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
+            #     noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
+            #     next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
+
+            #     # Compute the next Q-values: min over all critics targets
+            #     next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
+            #     next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
+            #     target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
+
+            pos_next_obs_reshape = th.reshape(replay_data_pref.pos_next_observations, (-1, replay_data_pref.pos_next_observations.shape[-1]))
+            pos_dones_reshape = th.reshape(replay_data_pref.pos_dones, (-1, 1))
+            mask_reshape = th.reshape(replay_data_pref.mask, (-1, 1))
+            
             with th.no_grad():
                 # Select action according to policy and add clipped noise
-                noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
+                noise = pos_action_reshape.clone().data.normal_(0, self.target_policy_noise)
                 noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
-                next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
+                next_actions = (self.actor_target(pos_next_obs_reshape) + noise).clamp(-1, 1)
 
                 # Compute the next Q-values: min over all critics targets
-                next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
+                next_q_values = th.cat(self.critic_target(pos_next_obs_reshape, next_actions), dim=1)
                 next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
-                target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
+                pos_target_q_values = (1 - pos_dones_reshape) * self.gamma * next_q_values
+                
+            neg_next_obs_reshape = th.reshape(replay_data_pref.neg_next_observations, (-1, replay_data_pref.neg_next_observations.shape[-1]))
+            neg_dones_reshape = th.reshape(replay_data_pref.neg_dones, (-1, 1))
+            
+            with th.no_grad():
+                # Select action according to policy and add clipped noise
+                noise = neg_action_reshape.clone().data.normal_(0, self.target_policy_noise)
+                noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
+                next_actions = (self.actor_target(neg_next_obs_reshape) + noise).clamp(-1, 1)
 
+                # Compute the next Q-values: min over all critics targets
+                next_q_values = th.cat(self.critic_target(neg_next_obs_reshape, next_actions), dim=1)
+                next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
+                neg_target_q_values = (1 - neg_dones_reshape) * self.gamma * next_q_values
+                
             # Get current Q-values estimates for each critic network
             current_q_behavior_values = self.critic(replay_data.observations, replay_data.actions_behavior)
             current_q_novice_values = self.critic(replay_data.observations, replay_data.actions_novice)
@@ -492,32 +521,35 @@ class PVPTD3_PREF(TD3):
             stat_recorder["q_value_behavior"].append(current_q_behavior_values[0].mean().item())
             stat_recorder["q_value_novice"].append(current_q_novice_values[0].mean().item())
             
-            stat_recorder["q_value_pos"].append(current_q_pos_values[0].mean().item())
-            stat_recorder["q_value_neg"].append(current_q_neg_values[0].mean().item())
+            stat_recorder["q_value_pos"].append((mask_reshape * current_q_pos_values[0]).mean().item() / th.mean(mask_reshape).item())
+            stat_recorder["q_value_neg"].append((mask_reshape * current_q_neg_values[0]).mean().item() / th.mean(mask_reshape).item())
 
             # Compute critic loss
             critic_loss = []
             for (current_q_behavior, current_q_novice, current_q_pos, current_q_neg) in zip(current_q_behavior_values, current_q_novice_values, current_q_pos_values, current_q_neg_values):
-                if self.intervention_start_stop_td:
-                    l = 0.5 * F.mse_loss(
-                        replay_data.stop_td * current_q_behavior, replay_data.stop_td * target_q_values
-                    )
+                # if self.intervention_start_stop_td:
+                #     l = 0.5 * F.mse_loss(
+                #         replay_data.stop_td * current_q_behavior, replay_data.stop_td * target_q_values
+                #     )
                 
-                else:
-                    l = 0.5 * F.mse_loss(current_q_behavior, target_q_values)
+                # else:
+                #     l = 0.5 * F.mse_loss(current_q_behavior, target_q_values)
+                
+                l = 0.5 * (F.mse_loss(current_q_pos * mask_reshape, pos_target_q_values * mask_reshape))
+                l += 0.5 * (F.mse_loss(current_q_neg * mask_reshape, neg_target_q_values * mask_reshape))
 
                 # ====== The key of Proxy Value Objective =====
 
                 l += th.mean(
                     self.cql_coefficient *
                     F.mse_loss(
-                        current_q_pos, self.q_value_bound * th.ones_like(current_q_pos), reduction="none"
+                        current_q_pos * mask_reshape, self.q_value_bound * mask_reshape * th.ones_like(current_q_pos), reduction="none"
                     )
                 )
                 l += th.mean(
                     self.cql_coefficient *
                     F.mse_loss(
-                        current_q_neg, -self.q_value_bound * th.ones_like(current_q_neg), reduction="none"
+                        current_q_neg * mask_reshape, -self.q_value_bound * mask_reshape * th.ones_like(current_q_neg), reduction="none"
                     )
                 )
 
@@ -529,6 +561,7 @@ class PVPTD3_PREF(TD3):
             critic_loss.backward()
             self.critic.optimizer.step()
             stat_recorder["critic_loss"] = critic_loss.item()
+            self.logger.record("train/mask_mean", th.mean(mask_reshape).item())
 
             # Delayed policy updates
             if self._n_updates % self.policy_delay == 0:
@@ -565,6 +598,7 @@ class PVPTD3_PREF(TD3):
 
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/human_involved_steps", self.human_data_buffer.pos)
+        
         for key, values in stat_recorder.items():
             self.logger.record("train/{}".format(key), np.mean(values))
     def _excluded_save_params(self) -> List[str]:
