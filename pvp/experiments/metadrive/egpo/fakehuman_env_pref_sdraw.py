@@ -21,7 +21,7 @@ def get_expert():
     from pvp.sb3.ppo import PPO
     from pvp.sb3.ppo.policies import ActorCriticPolicy
 
-    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
+    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": False})
 
     # Initialize agent
     algo_config = dict(
@@ -89,6 +89,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     from collections import deque 
     advantages = deque(maxlen = 200)
     drawn_points = []
+    drawn_points_nd = []
     
     def __init__(self, config):
         super(FakeHumanEnvPref, self).__init__(config)
@@ -128,7 +129,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "future_steps": 15,
                 "takeover_see": 15,
                 "stop_freq": 5,
-                "init_bc_len": 200,
+                "init_bc_len": 10,
                 "weight_value_n": 1.0,
             }
         )
@@ -264,11 +265,13 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             if d:
                 if r < 0:
                     total_reward = -100
+                # else:
+                #     total_reward = 1000
                 break
         self.set_state(saved_state)
         from pvp.sb3.common.utils import safe_mean
-        if total_reward > 0:
-            total_reward += values_n.item()
+        # if total_reward > 0 and total_reward < 1000:
+        #     total_reward += values_n.item()
         return traj, safe_mean(lstprob[:self.config["takeover_see"]]), total_reward
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
@@ -286,24 +289,33 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         if self.expert is None:
                 global _expert
                 self.expert = _expert
-                
+        
+        tmpp = False
+        
         if self.total_steps % stop_freq == 0:
             predicted_traj_exp, acprob_exp, total_reward_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
             
             predicted_traj, acprob, total_reward = self._predict_agent_future_trajectory(self.last_obs, future_steps)
             
-            advantage = acprob_exp
-            if self.total_steps < self.config["init_bc_len"] or total_reward < -90:
+            advantage = total_reward_exp - total_reward
+            if len(self.advantages) < 1 or self.total_steps < self.config["init_bc_len"] or total_reward < -90:
                 self.etakeover = True
-                self.takeover_remaining = self.config["future_steps"]
-                if total_reward > -90:
+                if total_reward < -90:
+                    tmpp = True
+                self.takeover_remaining = self.config["stop_freq"]
+                if total_reward > -90 and total_reward < 1000:
                     self.advantages.append(advantage)
             else:
-                q = np.quantile(list(self.advantages), 1 - self.config["free_level"])
-                self.etakeover = (acprob < q) #(advantage > q)
+                q = np.quantile(list(self.advantages), self.config["free_level"])
+                
+                tmpp = (not self.etakeover) and (advantage > q)
+                
+                self.etakeover = (advantage > q)
+                
                 if self.etakeover:
-                    self.takeover_remaining = self.config["future_steps"]
-                self.advantages.append(advantage)
+                    self.takeover_remaining = self.config["stop_freq"]
+                if total_reward > -90 and total_reward < 1000:
+                    self.advantages.append(advantage)
         else:
             predicted_traj_exp, predicted_traj = [], []
         etakeover = self.etakeover
@@ -355,32 +367,40 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
             else:
-                self.drawer = self.engine.make_point_drawer(scale=3)
+                self.drawer = self.engine.make_point_drawer(scale=5)
                 drawer = self.drawer 
-            # if len(predicted_traj) > 0:
-            #     #drawer.reset()
-            #     for npp in self.drawn_points:
-            #         npp.detachNode()
-            #         self.drawer._dying_points.append(npp)
-            #     self.drawn_points = []
+            if len(predicted_traj) > 0:
+                #drawer.reset()
+                for npp in self.drawn_points:
+                    npp.detachNode()
+                    self.drawer._dying_points.append(npp)
+                self.drawn_points = []
             points, colors = [], []
             for j in range(len(predicted_traj)):
                 points.append((predicted_traj[j]["next_pos"][0], predicted_traj[j]["next_pos"][1], 0.5)) # define line 1 for test
-                color=(1,105/255,180/255)
+                if tmpp:
+                    color = (1, 0, 0)
+                else:
+                    color = (0, 1, 0)
                 colors.append(np.clip(np.array([*color,1]), 0., 1.0))
-            self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) # draw points
+            if not tmpp:
+                if not etakeover:
+                    self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) # draw points
+            else:
+                self.drawn_points_nd = self.drawn_points_nd + drawer.draw_points(points, colors)
         if self.config["use_render"]:
             if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
             else:
-                self.drawer = self.engine.make_point_drawer(scale=3)
+                self.drawer = self.engine.make_point_drawer(scale=5)
                 drawer = self.drawer 
             points, colors = [], []
             for j in range(len(predicted_traj_exp)):
                 points.append((predicted_traj_exp[j]["next_pos"][0], predicted_traj_exp[j]["next_pos"][1], 0.5)) # define line 1 for test
-                color=(105/255,180/255, 1)
+                color=(0, 0, 1)
                 colors.append(np.clip(np.array([*color,1]), 0., 1.0))
-            self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) # draw points
+            if tmpp:
+                self.drawn_points_nd = self.drawn_points_nd + drawer.draw_points(points, colors) # draw points
         if self.takeover:
             
             self.pending_agent_traj.append(predicted_traj)
@@ -401,14 +421,15 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
         else:
-                self.drawer = self.engine.make_point_drawer(scale=3)
+                self.drawer = self.engine.make_point_drawer(scale=5)
                 drawer = self.drawer 
         points, colors = [], []
         for j in range(1):
             points.append((self.vehicle.position[0], self.vehicle.position[1], 0.5)) # define line 1 for test
-            color=(105/255,1,180/255)
+            color=(105/255,180/255, 1)
             colors.append(np.clip(np.array([*color,1]), 0., 1.0))
-        self.drawn_points = self.drawn_points + drawer.draw_points(points, colors)
+        # if etakeover:
+        #     self.drawn_points_nd = self.drawn_points_nd + drawer.draw_points(points, colors)
         
         if self.takeover:
             self.pending_human_traj.append(self.human_traj)
@@ -443,7 +464,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             self.render(
-                mode="top_down",
+                #mode="top_down",
                 text={
                     "Total Cost": round(self.total_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),
@@ -496,6 +517,12 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             npp.detachNode()
             self.drawer._dying_points.append(npp)
         self.drawn_points = []
+        
+        for npp in self.drawn_points_nd:
+            npp.detachNode()
+            self.drawer._dying_points.append(npp)
+        self.drawn_points_nd = []
+        
         self.takeover_remaining = 0
         return o, info
 

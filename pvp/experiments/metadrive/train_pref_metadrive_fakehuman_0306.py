@@ -10,8 +10,8 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.metadrive.egpo.fakehuman_env_pref_sdraw import FakeHumanEnvPref
-from pvp.pvp_pref import PREF
+from pvp.experiments.metadrive.egpo.fakehuman_env_pref_slow import FakeHumanEnvPref
+from pvp.pvp_pref import PREF_DENSE as PREF
 # from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -29,18 +29,18 @@ if __name__ == '__main__':
         "--exp_name", default="pref", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
+    parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="cpl", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
     
-    parser.add_argument("--free_level", type=float, default=0.95)
-    parser.add_argument("--future_steps", default=20, type=int, help="The future steps.")
+    parser.add_argument("--free_level", type=float, default=0.99)
+    parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
     parser.add_argument("--future_steps_cpl", default=0, type=int, help="The future steps.")
     
-    parser.add_argument("--stop_freq", default=10, type=int, help="The future steps.")
+    parser.add_argument("--stop_freq", default=5, type=int, help="The future steps.")
     parser.add_argument("--takeover_see", default=15, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
     parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
@@ -102,7 +102,7 @@ if __name__ == '__main__':
         env_config=dict(
 
             # Original real human exp env config:
-            use_render=True,  # Open the interface
+            use_render=False,  # Open the interface
             # manual_control=True,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
@@ -112,9 +112,6 @@ if __name__ == '__main__':
             future_steps=args.future_steps,
             takeover_see=args.takeover_see,
             stop_freq=args.stop_freq,
-            # num_scenarios=1,
-            # traffic_density=0.0,
-            map="COT"
         ),
 
         # Algorithm config
@@ -186,6 +183,20 @@ if __name__ == '__main__':
     assert config["algo"]["env"] is not None
 
     # ===== Also build the eval env =====
+    def _make_eval_env():
+        eval_env_config = dict(
+            use_render=False,  # Open the interface
+            manual_control=False,  # Allow receiving control signal from external device
+            start_seed=1000,
+            horizon=1500,
+        )
+        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+        from pvp.sb3.common.monitor import Monitor
+        eval_env = HumanInTheLoopEnv(config=eval_env_config)
+        eval_env = Monitor(env=eval_env, filename=str(trial_dir))
+        return eval_env
+
+    eval_env = SubprocVecEnv([_make_eval_env] * 1)
 
     # ===== Setup the callbacks =====
     save_freq = 2000  # Number of steps per model checkpoint
@@ -206,28 +217,30 @@ if __name__ == '__main__':
 
     # ===== Setup the training algorithm =====
     model = PREF(**config["algo"])
-    
-    if True:
-        ckpt = "/home/caihy/pvp/bl.zip" #runs/pref_freelevel0.9/cpl_2025-02-25_15-43-25_0/models/rl_model_4000_steps.zip"
-        print(f"Loading checkpoint from {ckpt}!")
-        from pvp.sb3.common.save_util import load_from_zip_file
-        data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
-        model.set_parameters(params, exact_match=True, device=model.device)
-        import copy
-        model.policy_ref = copy.deepcopy(model.policy)
-        model.policy_ref.eval()
-    
     train_env.env.env.model = model
 
     # ===== Launch training =====
-    env = train_env
-    obs = env.reset()
-    while True:
-        action, _ = model.predict(obs, deterministic=True)
-        new_obs, _, done, info = env.step(action)
-        # done = tm or tc
-        #env.render(mode="topdown")
-        obs = new_obs
-        if done:
-            print(info)
-            obs = env.reset()
+    model.learn(
+        # training
+        total_timesteps=50_000,
+        callback=callbacks,
+        reset_num_timesteps=True,
+
+        # eval
+        eval_env=eval_env,
+        eval_freq=2000,
+        n_eval_episodes=50,
+        eval_log_path=None,
+
+        # eval
+        # eval_env=eval_env,
+        # eval_freq=500,
+        # n_eval_episodes=10,
+        # eval_log_path=str(trial_dir),
+
+        # logging
+        tb_log_name=experiment_batch_name,
+        log_interval=1,
+        # save_buffer=False,
+        # load_buffer=False,
+    )

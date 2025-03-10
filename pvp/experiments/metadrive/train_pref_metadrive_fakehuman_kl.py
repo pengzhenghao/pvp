@@ -10,7 +10,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.metadrive.egpo.fakehuman_env_pref_slow import FakeHumanEnvPref
+from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new import FakeHumanEnvPref
 from pvp.pvp_pref import PREF
 # from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
@@ -22,7 +22,6 @@ from pvp.sb3.haco import HACOReplayBuffer
 from pvp.sb3.sac.policies import SACPolicy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -36,15 +35,15 @@ if __name__ == '__main__':
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
     
-    parser.add_argument("--free_level", type=float, default=0.99)
+    parser.add_argument("--free_level", type=float, default=0.9)
     parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
     parser.add_argument("--future_steps_cpl", default=0, type=int, help="The future steps.")
     
     parser.add_argument("--stop_freq", default=5, type=int, help="The future steps.")
-    parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
+    parser.add_argument("--takeover_see", default=15, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
     parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
-    parser.add_argument("--alpha", default=0.1, type=float, help="Alpha parameter.")
+    parser.add_argument("--alpha", default=0.01, type=float, help="Alpha parameter.")
     parser.add_argument("--cpl_loss_weight", default=1.0, type=float, help="CPL loss weight.")
     parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
     parser.add_argument("--poso", default="pos_observations", type=str,
@@ -59,7 +58,7 @@ if __name__ == '__main__':
                         help="Use BC only if set, otherwise False.")
     parser.add_argument("--use_bcmse_only", action="store_true",
                         help="Use BC MSE only if set, otherwise False.")
-    parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
+    parser.add_argument("--toy_env", action="store_false", help="Whether to use a toy environment.")
     # parser.add_argument(
     #     "--device",
     #     required=True,
@@ -157,7 +156,7 @@ if __name__ == '__main__':
             use_bc_only=args.use_bc_only,
             use_bcmse_only=args.use_bcmse_only,
             stop_freq=args.stop_freq,
-            use_ref=True,
+            use_ref=False,
         ),
 
         # Experiment log
@@ -220,14 +219,15 @@ if __name__ == '__main__':
     model = PREF(**config["algo"])
     
     if True:
-        ckpt = "/home/caihy/pvp/bl.zip" #"/home/caihy/pvp/cplbaseline.zip"
+        ckpt = "/home/caihy/pvp/bl.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
-        import copy
-        model.policy_ref = copy.deepcopy(model.policy)
-        model.policy_ref.eval()
+        model.use_ref = False
+        # import copy
+        # model.policy_ref = copy.deepcopy(model.policy)
+        # model.policy_ref.eval()
     
     
     train_env.env.env.model = model

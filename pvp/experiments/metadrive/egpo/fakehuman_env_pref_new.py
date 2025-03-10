@@ -88,6 +88,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     etakeover = True
     from collections import deque 
     advantages = deque(maxlen = 200)
+    totalrewards = deque(maxlen = 200)
     drawn_points = []
     
     def __init__(self, config):
@@ -140,12 +141,55 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         continuous_action = self._actions[a.astype(int)]
         return continuous_action
     def get_state(self) -> dict:
+        state = dict()
+        state["episode_rewards"] = self.episode_rewards.copy()  # defaultdict 也可以转为普通 dict
+        state["episode_lengths"] = self.episode_lengths.copy()
+        state["dones"] = self.dones.copy()
+        state["episode_step"] = self.episode_step
         import copy
-        state = copy.deepcopy(self.vehicle.get_state())
+        state["vehicle"] = copy.deepcopy(self.vehicle.get_state())
+        agent_states = dict()
+        for agent_id, agent in self.agents.items():
+            if hasattr(agent, "get_global_states") and callable(agent.get_global_states):
+                agent_states[agent_id] = agent.get_global_states()
+            elif hasattr(agent, "get_state") and callable(agent.get_state):
+                agent_states[agent_id] = agent.get_state()
+            else:
+                agent_states[agent_id] = copy.deepcopy(agent)
+        manager_states = dict()
+        for agent_id, agent in self.engine.managers.items():
+            if hasattr(agent, "get_global_states") and callable(agent.get_global_states):
+                manager_states[agent_id] = agent.get_global_states()
+            elif hasattr(agent, "get_state") and callable(agent.get_state):
+                manager_states[agent_id] = agent.get_state()
+        state["manager_states"] = manager_states
+        state["agent_states"] = agent_states
+        if hasattr(self, "last_obs"):
+            state["last_obs"] = self.last_obs  
         return copy.deepcopy(state)
 
     def set_state(self, state: dict):
-        self.vehicle.set_state(state)
+        self.episode_rewards = state.get("episode_rewards", self.episode_rewards)
+        self.episode_lengths = state.get("episode_lengths", self.episode_lengths)
+        self.dones = state.get("dones", self.dones)
+        self.vehicle.set_state(state.get("vehicle", self.vehicle))
+        if "episode_step" in state and hasattr(self.engine, "episode_step"):
+            self.engine.episode_step = state["episode_step"]
+        # 还原 agents 状态（前提是各 agent 实现了 get_state/set_state）
+        agent_states = state.get("agent_states", dict())
+        for agent_id, agent in self.agents.items():
+            if agent_id in agent_states and hasattr(agent, "set_state") and callable(agent.set_state):
+                agent.set_state(agent_states[agent_id])
+                
+        manager_states = state.get("manager_states", dict())
+        for agent_id, agent in self.engine.managers.items():
+            if agent_id in manager_states and hasattr(agent, "set_global_states"):
+                agent.set_global_states(manager_states[agent_id])
+            elif agent_id in manager_states and hasattr(agent, "set_state") and callable(agent.set_state):
+                agent.set_state(manager_states[agent_id])
+        # 还原 self.last_obs 等变量
+        if "last_obs" in state:
+            self.last_obs = state["last_obs"]
 
     def _predict_agent_future_trajectory(self, current_obs, n_steps, use_exp = False):
         saved_state = self.get_state()
@@ -156,14 +200,14 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         for step in range(n_steps):
             if not use_exp:
                 if hasattr(self, "model"):
-                    action, _ = self.model.policy.predict(obs, deterministic=True)
+                    action, _ = self.model.policy.predict(obs, deterministic=False)
                 else:
                     action = self.agent_action
                 #action, _ = self.model._sample_action(learning_starts=self.model.learning_starts,
                 #                                    obs=obs, deterministic=True)
                 #assert False
             else:
-                action, _  = self.expert.predict(obs, deterministic=True)
+                action, _  = self.expert.predict(obs, deterministic=False)
                 #action = np.array([0, 1])
             if self.config["use_discrete"]:
                 action_cont = self.discrete_to_continuous(action)
@@ -175,63 +219,12 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             self.engine.notrender = True
             
             actions = self._preprocess_actions(action_cont)  # preprocess environment input
-            # engine_info = self._step_simulator(actions)  # step the simulation
-            # while self.in_stop:
-            #     self.engine.taskMgr.step()  # pause simulation
-            # o, r, tm, tc, i = super(HumanInTheLoopEnv, self)._get_step_return(actions, engine_info=engine_info)
-            # 假设 dt 已知
-            r = 0
-            for rep in range(self.config["decision_repeat"]):
-                dt = self.config["physics_world_step_size"]
-
-                # 从 after_step 中读取更新后的物理量
-                self.vehicle.before_step(action_cont)
-                
-                params = self.vehicle.get_dynamics_parameters()
-                mass = params["mass"]
-                max_engine_force = params["max_engine_force"]
-                max_brake_force = params["max_brake_force"]
-
-                # 当前控制信号（假设 throttle_brake 范围在 [-1, 1]）
-                throttle = self.vehicle.throttle_brake
-                if throttle >= 0:
-                    # 如果车速超过最大速度，则不再施加正向加速
-                    if self.vehicle.speed >= self.vehicle.max_speed_m_s:
-                        a = 0.0
-                    else:
-                        engine_force = max_engine_force * throttle
-                        a = engine_force / mass * 4
-                else:
-                    brake_force = max_brake_force * abs(throttle)
-                    a = -brake_force / mass * 4
-
-                # 更新速度：采用简单的欧拉积分
-                new_speed = self.vehicle.speed + a * dt
-                # 保证速度不为负
-                new_speed = max(new_speed, 0.0)
-
-                step_info = self.vehicle.after_step()
-                #new_speed = step_info["velocity"]        # 车速（单位：m/s）
-                current_steering = self.vehicle.steering   
-                max_steering_rad = math.radians(self.vehicle.config["max_steering"])  # 如果配置是度
-
-                # 使用车辆动力学公式更新 heading（轴距 L 根据你的模型设定）
-                L = self.vehicle.FRONT_WHEELBASE + self.vehicle.REAR_WHEELBASE  # 轴距，需替换为实际值
-                new_heading = self.vehicle.heading_theta + (new_speed / L) * math.tan(current_steering * max_steering_rad) * dt
-
-                # 更新位置（假设 self.vehicle.position 是一个 2D 数组或列表）
-                new_x = self.vehicle.position[0] + new_speed * dt * math.cos(new_heading)
-                new_y = self.vehicle.position[1] + new_speed * dt * math.sin(new_heading)
-                new_position = [new_x, new_y]
-                new_velocity = [new_speed * math.cos(new_heading), new_speed * math.sin(new_heading)]
-
-                # 然后将这些状态更新回车辆
-                self.vehicle.set_position(new_position)
-                self.vehicle.set_heading_theta(new_heading)
-                self.vehicle.set_velocity(new_velocity)
-                self.vehicle.navigation.update_localization(self.vehicle)
-                r += self.reward_function('default_agent')[0]
-            # print("pred", self.vehicle.position)
+            engine_info = self._step_simulator(actions)  # step the simulation
+            while self.in_stop:
+                self.engine.taskMgr.step()  # pause simulation
+            o, r, tm, tc, i = super(HumanInTheLoopEnv, self)._get_step_return(actions, engine_info=engine_info)
+            d = tm or tc
+            
             del self.engine.notrender
             total_reward += r
             d = self.done_function('default_agent')[0]
@@ -243,30 +236,34 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             action_prob = log_prob.exp().detach().cpu().numpy()
             action_prob = action_prob[0]
             lstprob.append(action_prob)
-            expert_action, _ = self.expert.predict(obs, deterministic=True)
+            expert_action, _ = self.expert.predict(obs, deterministic=False)
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
             actions_n, values_n, log_prob_n = self.expert(torch.Tensor(obs).to(self.expert.device).unsqueeze(0))
+            # values_n = values_n * self.config["weight_value_n"]
             traj.append({
                 "obs": obs.copy(),
                 "action": action_cont.copy(),
                 "reward": r,
-                "next_obs": self.get_single_observation().observe(self.vehicle),
+                "next_obs": o,
                 "done": d,
                 "next_pos": copy.deepcopy(self.vehicle.position),
                 "action_exp": expert_action_clip.copy(),
                 "action_nov": action_cont.copy(),
                 "values_n": values_n.item(),
             })
-            obs = self.get_single_observation().observe(self.vehicle)
+            obs = o
             if d:
                 if r < 0:
                     total_reward = -100
+                # else:
+                #     total_reward = 1000
                 break
         self.set_state(saved_state)
         from pvp.sb3.common.utils import safe_mean
-        if total_reward > 0:
+        if total_reward > 0 and total_reward < 1000:
             total_reward += values_n.item()
         return traj, safe_mean(lstprob[:self.config["takeover_see"]]), total_reward
+    
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
         actions = np.asarray(actions).astype(np.float32)
@@ -290,14 +287,17 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             predicted_traj, acprob, total_reward = self._predict_agent_future_trajectory(self.last_obs, future_steps)
             
             advantage = total_reward_exp - total_reward
-            if len(self.advantages) < 10 or total_reward < 0:
+            
+            if len(self.advantages) < 50 or total_reward < 0:
                 self.etakeover = True
                 if total_reward > 0:
                     self.advantages.append(advantage)
+                    self.totalrewards.append(total_reward_exp)
             else:
                 q = np.quantile(list(self.advantages), self.config["free_level"])
+                q2 = np.quantile(list(self.totalrewards), 1 - self.config["free_level"])
                 self.etakeover = (advantage > q)
-                if advantage > q:
+                if advantage > q or (total_reward < q2):
                     self.etakeover = True
                 self.advantages.append(advantage)
         else:
@@ -325,7 +325,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
-            expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
+            expert_action, _  = self.expert.predict(self.last_obs, deterministic=False)
             
             expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
             

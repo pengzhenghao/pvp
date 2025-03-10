@@ -27,7 +27,7 @@ if __name__ == '__main__':
         "--exp_name", default="pvpwithnew", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--save_freq", default=25000, type=int)
+    parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="cpl", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
@@ -36,8 +36,8 @@ if __name__ == '__main__':
     
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--free_level", type=float, default=0.9)
-    parser.add_argument("--future_steps", default=15, type=int, help="The future steps.")
-    parser.add_argument("--stop_freq", default=5, type=int, help="The future steps.")
+    parser.add_argument("--future_steps", default=20, type=int, help="The future steps.")
+    parser.add_argument("--stop_freq", default=10, type=int, help="The future steps.")
     parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--cpl_loss_weight", default=0, type=float, help="CPL loss weight.")
     parser.add_argument("--bc_loss_weight", default=0, type=float, help="BC loss weight.")
@@ -86,7 +86,7 @@ if __name__ == '__main__':
         env_config=dict(
 
             # Original real human exp env config:
-            # use_render=True,  # Open the interface
+            use_render=True,  # Open the interface
             # manual_control=True,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
@@ -129,6 +129,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
+            gradient_steps=5,
         ),
 
         # Experiment log
@@ -169,8 +170,10 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-
-    eval_env = SubprocVecEnv([_make_eval_env])
+    if config["env_config"]["use_render"]:
+        eval_env = None
+    else:
+        eval_env = SubprocVecEnv([_make_eval_env])
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -201,7 +204,10 @@ if __name__ == '__main__':
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
-
+    if eval_env == None:
+        eval_freq = -1
+    else:
+        eval_freq = 2000
     # ===== Launch training =====
     model.learn(
         # training
@@ -217,7 +223,7 @@ if __name__ == '__main__':
 
         # eval
         eval_env=eval_env,
-        eval_freq=2000,
+        eval_freq=eval_freq,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
