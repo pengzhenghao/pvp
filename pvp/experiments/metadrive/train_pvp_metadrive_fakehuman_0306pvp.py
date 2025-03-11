@@ -151,7 +151,7 @@ if __name__ == '__main__':
             # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
             num_scenarios=1,
             traffic_density=0.0,
-            map="COT"
+            map="C"
         )
 
     # ===== Setup the training environment =====

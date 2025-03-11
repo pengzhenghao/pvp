@@ -196,6 +196,9 @@ class PVPTD3(TD3):
                         # actor_loss += bc_loss.mean() * self.extra_config["bc_loss_weight"]
 
                 # Optimize the actor
+                stat_recorder["new_action_steering"] = new_action[:, 0].mean().item()
+                stat_recorder["new_action_accerler"] = new_action[:, 1].mean().item()
+                
                 self.actor.optimizer.zero_grad()
                 actor_loss.backward()
                 self.actor.optimizer.step()
@@ -566,9 +569,14 @@ class PVPTD3_PREF(TD3):
             # Delayed policy updates
             if self._n_updates % self.policy_delay == 0:
                 # Compute actor loss
+                new_action = self.actor(pos_obs_reshape)
+                actor_loss = -self.critic.q1_forward(pos_obs_reshape, new_action).mean()
+                new_action = self.actor(neg_obs_reshape)
+                actor_loss += -self.critic.q1_forward(neg_obs_reshape, new_action).mean()
+                
                 new_action = self.actor(replay_data.observations)
-                actor_loss = -self.critic.q1_forward(replay_data.observations, new_action).mean()
-
+                actor_loss += -self.critic.q1_forward(replay_data.observations, new_action).mean()
+                
                 # BC loss on human data
                 bc_loss = F.mse_loss(replay_data.actions_behavior, new_action, reduction="none").mean(axis=-1)
                 masked_bc_loss = (replay_data.interventions.flatten() * bc_loss).sum() / (
@@ -592,6 +600,9 @@ class PVPTD3_PREF(TD3):
                 stat_recorder["actor_loss"] = actor_loss.item()
                 stat_recorder["masked_bc_loss"] = masked_bc_loss.item()
                 stat_recorder["bc_loss"] = bc_loss.mean().item()
+                
+                stat_recorder["new_action_steering"] = new_action[:, 0].mean().item()
+                stat_recorder["new_action_accerler"] = new_action[:, 1].mean().item()
 
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)

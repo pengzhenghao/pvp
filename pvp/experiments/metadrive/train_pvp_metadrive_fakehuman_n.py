@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import uuid
 
-from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new import FakeHumanEnvPref
+from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new_2 import FakeHumanEnvPref
 from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
 from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
@@ -86,7 +86,7 @@ if __name__ == '__main__':
         env_config=dict(
 
             # Original real human exp env config:
-            use_render=True,  # Open the interface
+            use_render=False,  # Open the interface
             # manual_control=True,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
@@ -144,7 +144,7 @@ if __name__ == '__main__':
             # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
             num_scenarios=1,
             traffic_density=0.0,
-            map="COT"
+            map="C"
         )
 
     # ===== Setup the training environment =====

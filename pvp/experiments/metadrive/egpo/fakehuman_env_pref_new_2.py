@@ -300,7 +300,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             advantage = total_reward_exp - total_advantage
             self.advantage = total_advantage - total_reward_exp
             self.total_r = total_reward
-            if len(self.advantages) < 10 or total_reward < 0:
+            if len(self.advantages) < 50 or total_reward < 0:
                 self.etakeover = True
                 if len(predicted_traj) == future_steps:
                     self.advantages.append(advantage)
@@ -311,7 +311,10 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                     self.etakeover = True
                 self.advantages.append(advantage)
         else:
-            predicted_traj_exp, predicted_traj = [], []
+            predicted_traj_exp, acprob, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
+            
+            predicted_traj, acprob, total_reward, total_advantage = self._predict_agent_future_trajectory(self.last_obs, future_steps)
+            
         etakeover = self.etakeover
         # ===== Get expert action and determine whether to take over! =====
 
@@ -353,7 +356,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             else:
                 self.takeover = False
             # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
-        if self.config["use_render"]:
+        if self.config["use_render"] and self.total_steps % stop_freq == 0:
             if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
             else:
@@ -371,7 +374,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 color=(1,105/255,180/255)
                 colors.append(np.clip(np.array([*color,1]), 0., 1.0))
             self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) # draw points
-        if self.config["use_render"]:
+        if self.config["use_render"] and self.total_steps % stop_freq == 0:
             if hasattr(self,"drawer"):
                 drawer = self.drawer # create a point drawer
             else:
@@ -490,6 +493,11 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         o, info = super(HumanInTheLoopEnv, self)._get_reset_return(reset_info)
         self.last_obs = o
         self.last_takeover = False
+        if hasattr(self, "model"):
+            for step in range(len(self.pending_agent_traj)):
+                if len(self.pending_agent_traj[step]) > 0 and hasattr(self.model, "prefreplay_buffer"):
+                    self.model.prefreplay_buffer.add(self.pending_human_traj[step], self.pending_agent_traj[step])
+                
         self.pending_human_traj = []
         self.pending_agent_traj = []
         for npp in self.drawn_points:
