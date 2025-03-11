@@ -42,7 +42,7 @@ if __name__ == '__main__':
     parser.add_argument("--stop_freq", default=10, type=int, help="The future steps.")
     parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--cpl_loss_weight", default=0, type=float, help="CPL loss weight.")
-    parser.add_argument("--bc_loss_weight", default=0, type=float, help="BC loss weight.")
+    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     
     parser.add_argument("--ckpt", default="", type=str)
@@ -190,7 +190,7 @@ if __name__ == '__main__':
     if use_wandb:
         callbacks.append(
             WandbCallback(
-                trial_name="TakeoverAdvantage_Crash,Algo_PVP_L=20+TDLoss"+get_time_str(),
+                trial_name="Takeover=CrashOnly,Algo_PVP_L=20+TDLoss"+get_time_str(),
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,

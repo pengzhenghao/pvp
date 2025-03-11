@@ -300,15 +300,16 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             advantage = total_reward_exp - total_advantage
             self.advantage = total_advantage - total_reward_exp
             self.total_r = total_reward
-            if len(self.advantages) < 50 or total_reward < 0:
+            if len(self.advantages) < 25 or total_reward < 0:
                 self.etakeover = True
                 if len(predicted_traj) == future_steps:
                     self.advantages.append(advantage)
             else:
                 q = np.quantile(list(self.advantages), self.config["free_level"])
-                self.etakeover = (advantage > q)
-                if advantage > q:
-                    self.etakeover = True
+                # self.etakeover = (advantage > q)
+                # if advantage > q:
+                #     self.etakeover = True
+                self.etakeover = False
                 self.advantages.append(advantage)
         else:
             predicted_traj_exp, acprob, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
