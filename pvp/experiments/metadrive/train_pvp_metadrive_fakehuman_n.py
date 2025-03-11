@@ -129,7 +129,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            gradient_steps=5,
+            gradient_steps=1,
         ),
 
         # Experiment log
