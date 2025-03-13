@@ -194,7 +194,7 @@ if __name__ == '__main__':
     if use_wandb:
         callbacks.append(
             WandbCallback(
-                trial_name="Ours,fu20stop40,bcw=1"+"L="+str(args.future_steps_pvp)+get_time_str(),
+                trial_name="Ours,fu20stop40,bcw=1"+"L="+str(args.future_steps_pvp)+"Toverdelay="+str(args.takeover_delay)+get_time_str(),
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,
