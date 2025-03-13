@@ -47,6 +47,9 @@ if __name__ == '__main__':
     parser.add_argument("--cpl_loss_weight", default=0, type=float, help="CPL loss weight.")
     parser.add_argument("--bc_loss_weight", default=5.0, type=float, help="BC loss weight.")
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
+    parser.add_argument("--qloss2", action="store_true", help="Whether to use a toy environment.")
+    
+    
     
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--learning_starts", default=10, type=int)
@@ -138,6 +141,7 @@ if __name__ == '__main__':
             device="auto",
             gradient_steps=1,
             future_steps=args.future_steps_pvp,
+            qloss2 = args.qloss2,
         ),
 
         # Experiment log
