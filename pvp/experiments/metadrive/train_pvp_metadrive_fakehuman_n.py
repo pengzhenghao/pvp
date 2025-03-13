@@ -37,10 +37,11 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--free_level", type=float, default=0.9)
     parser.add_argument("--future_steps", default=20, type=int, help="The future steps.")
-    parser.add_argument("--stop_freq", default=10, type=int, help="The future steps.")
+    parser.add_argument("--stop_freq", default=40, type=int, help="The future steps.")
+    parser.add_argument("--takeover_delay", default=20, type=int, help="The takeover delay.")
     parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--cpl_loss_weight", default=0, type=float, help="CPL loss weight.")
-    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
+    parser.add_argument("--bc_loss_weight", default=5.0, type=float, help="BC loss weight.")
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     
     parser.add_argument("--ckpt", default="", type=str)
@@ -96,6 +97,7 @@ if __name__ == '__main__':
             future_steps=args.future_steps,
             takeover_see=args.takeover_see,
             stop_freq=args.stop_freq,
+            takeover_delay = args.takeover_delay,
         ),
 
         # Algorithm config
@@ -183,7 +185,7 @@ if __name__ == '__main__':
     if use_wandb:
         callbacks.append(
             WandbCallback(
-                trial_name="PVPCrashonly"+get_time_str(),
+                trial_name="PVPCrashonly,fu20stop40,bcw=5"+get_time_str(),
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,

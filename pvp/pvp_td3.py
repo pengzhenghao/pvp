@@ -187,8 +187,8 @@ class PVPTD3(TD3):
                 # masked_bc_loss = masked_bc_loss.mean()
 
                 if self.extra_config["only_bc_loss"]:
-                    # actor_loss = masked_bc_loss  #.mean()
-                    actor_loss = bc_loss.mean()  #.mean()
+                    actor_loss = masked_bc_loss  #.mean()
+                    # actor_loss = bc_loss.mean()  #.mean()
 
                 else:
                     if self.extra_config["add_bc_loss"]:
@@ -521,8 +521,8 @@ class PVPTD3_PREF(TD3):
             current_q_neg_values = self.critic(neg_obs_reshape, neg_action_reshape)
             
             
-            stat_recorder["q_value_behavior"].append(current_q_behavior_values[0].mean().item())
-            stat_recorder["q_value_novice"].append(current_q_novice_values[0].mean().item())
+            stat_recorder["q_value_behavior"].append((replay_data.interventions * current_q_behavior_values[0]).mean().item() / th.mean(replay_data.interventions).item())
+            stat_recorder["q_value_novice"].append((replay_data.interventions * current_q_novice_values[0]).mean().item() / th.mean(replay_data.interventions).item())
             
             stat_recorder["q_value_pos"].append((mask_reshape * current_q_pos_values[0]).mean().item() / th.mean(mask_reshape).item())
             stat_recorder["q_value_neg"].append((mask_reshape * current_q_neg_values[0]).mean().item() / th.mean(mask_reshape).item())
@@ -585,8 +585,8 @@ class PVPTD3_PREF(TD3):
                 # masked_bc_loss = masked_bc_loss.mean()
 
                 if self.extra_config["only_bc_loss"]:
-                    # actor_loss = masked_bc_loss  #.mean()
-                    actor_loss = bc_loss.mean()  #.mean()
+                    actor_loss = masked_bc_loss  #.mean()
+                    #actor_loss = bc_loss.mean()  #.mean()
 
                 else:
                     if self.extra_config["add_bc_loss"]:

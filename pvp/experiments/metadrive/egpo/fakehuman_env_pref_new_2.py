@@ -89,6 +89,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     from collections import deque 
     advantages = deque(maxlen = 200)
     drawn_points = []
+    delaytake = 0
     
     def __init__(self, config):
         super(FakeHumanEnvPref, self).__init__(config)
@@ -127,6 +128,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 "future_steps": 15,
                 "takeover_see": 15,
                 "stop_freq": 5,
+                "takeover_delay": 10,
             }
         )
         return config
@@ -283,6 +285,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             actions = self.discrete_to_continuous(actions)
 
         self.agent_action = copy.copy(actions)
+        self.b_action = copy.copy(actions)
         self.last_takeover = self.takeover
         
         future_steps = self.config["future_steps"]
@@ -300,7 +303,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             advantage = total_reward_exp - total_advantage
             self.advantage = total_advantage - total_reward_exp
             self.total_r = total_reward
-            if len(self.advantages) < 25 or total_reward < 0:
+            if len(self.advantages) < 1 or total_reward < 0:
+                self.delaytake = self.config["takeover_delay"] #max(0, min(10, len(predicted_traj) - 1))
                 self.etakeover = True
                 if len(predicted_traj) == future_steps:
                     self.advantages.append(advantage)
@@ -312,11 +316,16 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 self.etakeover = False
                 self.advantages.append(advantage)
         else:
-            predicted_traj_exp, acprob, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
+            # predicted_traj_exp, acprob, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=True)
             
             predicted_traj, acprob, total_reward, total_advantage = self._predict_agent_future_trajectory(self.last_obs, future_steps)
             
         etakeover = self.etakeover
+        
+        if self.delaytake  > 0:
+            self.delaytake -= 1
+        if len(predicted_traj) <= 5:
+            self.delaytake = 0
         # ===== Get expert action and determine whether to take over! =====
 
         if self.config["disable_expert"]:
@@ -350,9 +359,9 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 if self.config["use_discrete"]:
                     expert_action = self.continuous_to_discrete(expert_action)
                     expert_action = self.discrete_to_continuous(expert_action)
-
-                actions = expert_action
-
+                if self.delaytake == 0:
+                    actions = expert_action
+                self.b_action = copy.deepcopy(expert_action)
                 self.takeover = True
             else:
                 self.takeover = False
@@ -461,6 +470,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
 
         assert i["takeover"] == self.takeover
 
+        i["raw_action"] = copy.deepcopy(self.b_action)
         if self.config["use_discrete"]:
             i["raw_action"] = self.continuous_to_discrete(i["raw_action"])
         return o, r, d, i
