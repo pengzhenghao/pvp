@@ -22,8 +22,10 @@ if __name__ == '__main__':
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
-
+    parser.add_argument("--bc_loss_weight", type=float, default=0.0)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
+    parser.add_argument("--adaptive_batch_size", default="True", type=str)
+    parser.add_argument("--only_bc_loss", default="True", type=str)
     parser.add_argument(
         "--device",
         required=True,
@@ -64,6 +66,10 @@ if __name__ == '__main__':
 
         # Algorithm config
         algo=dict(
+            adaptive_batch_size=args.adaptive_batch_size,
+            bc_loss_weight=args.bc_loss_weight,
+            only_bc_loss=args.only_bc_loss,
+            add_bc_loss="True" if args.bc_loss_weight > 0.0 else "False",
             use_balance_sample=True,
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
@@ -73,6 +79,7 @@ if __name__ == '__main__':
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
             learning_rate=1e-4,
+            agent_data_ratio=1.0,
             q_value_bound=1,
             optimize_memory_usage=True,
             buffer_size=50_000,  # We only conduct experiment less than 50K steps

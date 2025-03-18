@@ -105,7 +105,7 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         self.takeover_recorder.append(self.takeover)
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             super(HumanInTheLoopEnv, self).render(
-                mode="top_down",
+                #mode="top_down",
                 text={
                     "Total Cost": round(self.total_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),

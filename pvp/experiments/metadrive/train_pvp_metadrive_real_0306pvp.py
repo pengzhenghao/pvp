@@ -9,8 +9,7 @@ import os
 from pathlib import Path
 import uuid
 
-from pvp.experiments.metadrive.egpo.fakehuman_env_pref_new_2 import FakeHumanEnvPref
-from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+from pvp.experiments.metadrive.human_in_the_loop_env_new import HumanInTheLoopEnv
 from pvp.pvp_td3 import PVPTD3_PREF as PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -29,24 +28,24 @@ if __name__ == '__main__':
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="cpl", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="cplreal0317", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
-    parser.add_argument("--batch_size", default=1024, type=int)
+    parser.add_argument("--batch_size", default=128, type=int)
     parser.add_argument("--free_level", type=float, default=0.9)
     parser.add_argument("--future_steps", default=20, type=int, help="The future steps.")
     parser.add_argument("--future_steps_pvp", default=20, type=int, help="The future steps.")
     
-    parser.add_argument("--stop_freq", default=40, type=int, help="The future steps.")
-    parser.add_argument("--takeover_see", default=1, type=int, help="The takeover sees how many steps.")
+    parser.add_argument("--stop_freq", default=10, type=int, help="The future steps.")
+    parser.add_argument("--takeover_see", default=10, type=int, help="The takeover sees how many steps.")
     
-    parser.add_argument("--takeover_delay", default=20, type=int, help="The takeover delay.")
+    parser.add_argument("--takeover_delay", default=10, type=int, help="The takeover delay.")
     
     parser.add_argument("--cpl_loss_weight", default=0, type=float, help="CPL loss weight.")
     parser.add_argument("--bc_loss_weight", default=5.0, type=float, help="BC loss weight.")
-    parser.add_argument("--toy_env", action="store_false", help="Whether to use a toy environment.")
+    parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--qloss2", action="store_true", help="Whether to use a toy environment.")
     
     
@@ -55,13 +54,13 @@ if __name__ == '__main__':
     parser.add_argument("--learning_starts", default=10, type=int)
     parser.add_argument("--adaptive_batch_size", default="True", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    # parser.add_argument(
-    #     "--device",
-    #     required=True,
-    #     choices=['wheel', 'gamepad', 'keyboard'],
-    #     type=str,
-    #     help="The control device, selected from [wheel, gamepad, keyboard]."
-    # )
+    parser.add_argument(
+        "--device",
+        required=True,
+        choices=['wheel', 'gamepad', 'keyboard'],
+        type=str,
+        help="The control device, selected from [wheel, gamepad, keyboard]."
+    )
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -87,7 +86,7 @@ if __name__ == '__main__':
     print(f"We start logging training data into {trial_dir}")
 
     free_level = args.free_level
-
+    control_device = args.device
     # ===== Setup the config =====
     config = dict(
 
@@ -96,12 +95,10 @@ if __name__ == '__main__':
 
             # Original real human exp env config:
             use_render=True,  # Open the interface
-            # manual_control=True,  # Allow receiving control signal from external device
-            # controller=control_device,
-            # window_size=(1600, 1100),
+            manual_control=True,  # Allow receiving control signal from external device
+            controller=control_device,
+            window_size=(1600, 1100),
 
-            # FakeHumanEnv config:
-            free_level=free_level,
             future_steps=args.future_steps,
             takeover_see=args.takeover_see,
             stop_freq=args.stop_freq,
@@ -159,11 +156,11 @@ if __name__ == '__main__':
             # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
             num_scenarios=1,
             traffic_density=0.0,
-            map="C"
+            map="COT"
         )
 
     # ===== Setup the training environment =====
-    train_env = FakeHumanEnvPref(config=config["env_config"], )
+    train_env = HumanInTheLoopEnv(config=config["env_config"], )
     train_env = Monitor(env=train_env, filename=str(trial_dir))
     # Store all shared control data to the files.
     train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
