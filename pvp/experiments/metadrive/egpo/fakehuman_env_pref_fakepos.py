@@ -194,7 +194,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         if self.total_steps % stop_freq == 0:
             predicted_traj_exp, acprob_exp, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=expert_action_clip)
             
-            predicted_traj, acprob, total_reward, total_advantage, all_states = self._predict_agent_future_trajectory(self.last_obs, future_steps, return_all_states=True)
+            predicted_traj, acprob, total_reward, total_advantage, all_states = self._predict_agent_future_trajectory(self.last_obs, future_steps, realmode=True, return_all_states=True)
             
             predicted_traj_real, acprob_real, total_reward_real, total_advantage_real = self._predict_agent_future_trajectory(self.last_obs, future_steps, realmode=True)
             
