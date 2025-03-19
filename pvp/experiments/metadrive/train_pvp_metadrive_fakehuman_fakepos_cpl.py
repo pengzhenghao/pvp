@@ -225,10 +225,16 @@ if __name__ == '__main__':
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
+    
+    if args.cpl_loss_weight == 0:
+        wbname = "baseline:HG" + get_time_str()
+    else:
+        wbname = "CPL_" + "d=" + str(args.stop_img_samples) + "w=" + str(args.imgfuturesteps) + "bc=" + str(args.bc_loss_weight) + "bias=" + str(args.bias) + "_" + get_time_str()
+        #add alpha=0.1, bias=0.5 to wbname
     if use_wandb:
         callbacks.append(
             WandbCallback(
-                trial_name=trial_name,
+                trial_name=wbname,
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,
