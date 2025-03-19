@@ -244,7 +244,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 self.takeover = True
                 
                 drawer = self.drawer 
-                if self.config["use_render"] and self.total_steps % stop_freq == 0:
+                if self.total_steps % stop_freq == 0:
                     
                     for npp in self.drawn_points:
                         npp.detachNode()
@@ -262,11 +262,13 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                         predicted_traj_exp_2, acprob_exp, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(predicted_traj[sti]["obs"], img_future_steps, use_exp=self.b_action)
                         if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                             self.model.imagreplay_buffer.add(predicted_traj_exp_2, predicted_traj[sti+1:])
-                        for j in range(0, len(predicted_traj_exp_2), 1):
-                            points.append((predicted_traj_exp_2[j]["next_pos"][0], predicted_traj_exp_2[j]["next_pos"][1], 0.5)) # define line 1 for test
-                            color=(0, 0, 0.5)
-                            colors.append(np.clip(np.array([*color,1]), 0., 1.0))
-                    self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) 
+                        if self.config["use_render"]:
+                            for j in range(0, len(predicted_traj_exp_2), 1):
+                                points.append((predicted_traj_exp_2[j]["next_pos"][0], predicted_traj_exp_2[j]["next_pos"][1], 0.5)) # define line 1 for test
+                                color=(0, 0, 0.5)
+                                colors.append(np.clip(np.array([*color,1]), 0., 1.0))
+                    if self.config["use_render"]:   
+                        self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) 
                     self.set_state(cur_state)
             else:
                 self.takeover = False

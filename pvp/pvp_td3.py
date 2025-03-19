@@ -1191,37 +1191,19 @@ class PVPTD3_IMAG(TD3):
 
                 # ====== The key of Proxy Value Objective =====
 
-                # if self.extra_config["qloss2"]:
-                    
-                #     A = current_q_pos * mask_reshape
-                #     A = th.reshape(A, (batch_size, -1))
-                #     B = self.q_value_bound * mask_reshape * th.ones_like(current_q_pos)
-                #     B = th.reshape(B, (batch_size, -1))
-                #     A = th.mean(A, dim = -1)
-                #     B = th.mean(B, dim = -1)
-                #     l += self.cql_coefficient * th.mean(F.mse_loss(A, B, reduction="none"))
-                    
-                #     A = current_q_neg * mask_reshape
-                #     A = th.reshape(A, (batch_size, -1))
-                #     B = -self.q_value_bound * mask_reshape * th.ones_like(current_q_neg)
-                #     B = th.reshape(B, (batch_size, -1))
-                #     A = th.mean(A, dim = -1)
-                #     B = th.mean(B, dim = -1)
-                #     l += self.cql_coefficient * th.mean(F.mse_loss(A, B, reduction="none"))
-                    
-                # else:
-                #     l += th.mean(
-                #         self.cql_coefficient *
-                #         F.mse_loss(
-                #             current_q_pos * mask_reshape, self.q_value_bound * mask_reshape * th.ones_like(current_q_pos), reduction="none"
-                #         )
-                #     )
-                #     l += th.mean(
-                #         self.cql_coefficient *
-                #         F.mse_loss(
-                #             current_q_neg * mask_reshape, -self.q_value_bound * mask_reshape * th.ones_like(current_q_neg), reduction="none"
-                #         )
-                #     )
+
+                l += th.mean(
+                        self.cql_coefficient *
+                        F.mse_loss(
+                            current_q_pos * mask_reshape, self.q_value_bound * mask_reshape * th.ones_like(current_q_pos), reduction="none"
+                        )
+                    )
+                l += th.mean(
+                        self.cql_coefficient *
+                        F.mse_loss(
+                            current_q_neg * mask_reshape, -self.q_value_bound * mask_reshape * th.ones_like(current_q_neg), reduction="none"
+                        )
+                    )
 
                 critic_loss.append(l)
             critic_loss = sum(critic_loss)

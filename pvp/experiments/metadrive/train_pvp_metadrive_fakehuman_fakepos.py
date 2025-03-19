@@ -206,14 +206,14 @@ if __name__ == '__main__':
         CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
     
-    if args.qloss2:
-        ss = "qloss2"
+    if args.only_bc_loss=="True":
+        ss = "bcloss"
     else:
         ss = ""
     if use_wandb:
         callbacks.append(
             WandbCallback(
-                trial_name="Ours,fu20stop40,bcw=1"+"L="+str(args.future_steps_pvp)+"Toverdelay="+str(args.takeover_delay)+ss+"_"+get_time_str(),
+                trial_name="Ours"+"imgfuturesteps="+str(args.imgfuturesteps)+"stopimg"+str(args.stop_img_samples)+ss+"_"+get_time_str(),  
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,
