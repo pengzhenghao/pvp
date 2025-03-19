@@ -38,6 +38,8 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     "takeover_see": 20,
     "stop_freq": 10,
     "takeover_delay": 10,
+    "img_future_steps": 3,
+    "stop_img_samples": 5, 
 }
 
 class HumanInTheLoopEnv(SafeMetaDriveEnv):
@@ -154,7 +156,8 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         
         future_steps = self.config["future_steps"]
         stop_freq = self.config["stop_freq"]
-        
+        img_future_steps = self.config["img_future_steps"]
+        stop_img_samples = self.config["stop_img_samples"]
         predicted_traj_exp = []
         
         if self.takeover:
@@ -209,13 +212,18 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
                     colors.append(np.clip(np.array([*color,1]), 0., 1.0))
                     
                 cur_state = self.get_state()
-                for st in all_states:
+                for sti in range(min(len(all_states) - 1, stop_img_samples)):
+                    st = all_states[sti]
                     self.set_state(st)
-                    predicted_traj_exp_2, acprob_exp, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=self.b_action)
-                    for j in range(0, len(predicted_traj_exp_2), 1):
-                        points.append((predicted_traj_exp_2[j]["next_pos"][0], predicted_traj_exp_2[j]["next_pos"][1], 0.5)) # define line 1 for test
-                        color=(0, 0, 0.5)
-                        colors.append(np.clip(np.array([*color,1]), 0., 1.0))
+                    predicted_traj_exp_2, acprob_exp, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(predicted_traj[sti]["obs"], img_future_steps, use_exp=self.b_action)
+                    # print(predicted_traj[sti+1]["pos"])
+                    # print(predicted_traj_exp_2[0]["pos"])
+                    if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                        self.model.imagreplay_buffer.add(predicted_traj_exp_2, predicted_traj[sti+1:])
+                    # for j in range(0, len(predicted_traj_exp_2), 1):
+                    #     points.append((predicted_traj_exp_2[j]["next_pos"][0], predicted_traj_exp_2[j]["next_pos"][1], 0.5)) # define line 1 for test
+                    #     color=(0, 0, 0.5)
+                    #     colors.append(np.clip(np.array([*color,1]), 0., 1.0))
                 
                 self.set_state(cur_state)
                     
@@ -254,6 +262,7 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
             for step in range(len(self.pending_agent_traj)):
                     if len(self.pending_agent_traj[step]) > 0 and hasattr(self, "model") and hasattr(self.model, "prefreplay_buffer"):
                         self.model.prefreplay_buffer.add(self.pending_human_traj[step], self.pending_agent_traj[step])
+            
             self.pending_agent_traj = []
             self.pending_human_traj = []
         while self.in_pause:
@@ -321,10 +330,11 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         
         total_advantage = 0
         for step in range(n_steps):
+            old_pos = copy.deepcopy(self.vehicle.position)
             if use_exp is None:
-                if hasattr(self, "model"):
-                    action, _ = self.model.policy.predict(obs, deterministic=True)
-                else:
+                # if hasattr(self, "model"):
+                #     action, _ = self.model.policy.predict(obs, deterministic=True)
+                # else:
                     action = self.agent_action
             else:
                 action  = use_exp
@@ -410,6 +420,7 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
                 "reward": r,
                 "next_obs": new_obs.copy(),
                 "done": d,
+                "pos": old_pos,
                 "next_pos": copy.deepcopy(self.vehicle.position),
                 "action_exp": action_cont.copy(),
                 "action_nov": action_cont.copy(),
