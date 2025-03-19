@@ -57,6 +57,8 @@ if __name__ == '__main__':
     
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--learning_starts", default=10, type=int)
+    parser.add_argument("--stop_img_samples", default=5, type=int)
+    
     parser.add_argument("--adaptive_batch_size", default="True", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     # parser.add_argument(
@@ -111,6 +113,7 @@ if __name__ == '__main__':
             stop_freq=args.stop_freq,
             takeover_delay = args.takeover_delay,
             img_future_steps = args.imgfuturesteps,
+            stop_img_samples = args.stop_img_samples,
         ),
 
         # Algorithm config
