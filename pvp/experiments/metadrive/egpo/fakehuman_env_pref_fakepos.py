@@ -22,7 +22,7 @@ def get_expert():
     from pvp.sb3.ppo import PPO
     from pvp.sb3.ppo.policies import ActorCriticPolicy
 
-    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
+    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": False})
 
     # Initialize agent
     algo_config = dict(

@@ -101,7 +101,7 @@ if __name__ == '__main__':
         env_config=dict(
 
             # Original real human exp env config:
-            use_render=True,  # Open the interface
+            use_render=False,  # Open the interface
             # manual_control=True,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
