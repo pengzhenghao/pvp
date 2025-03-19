@@ -201,7 +201,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             advantage = total_reward_exp - total_advantage
             self.advantage = total_advantage - total_reward_exp
             self.total_r = total_reward
-            if len(self.advantages) < 5 or total_reward_real < 0:
+            if len(self.advantages) < 1 or total_reward_real < 0:
                 self.delaytake = self.config["takeover_delay"] #max(0, min(10, len(predicted_traj) - 1))
                 self.etakeover = True
                 if len(predicted_traj_real) == future_steps:
@@ -533,10 +533,10 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 break
         self.set_state(saved_state)
         from pvp.sb3.common.utils import safe_mean
-        if total_reward > 15:
-            total_reward += values_n.item()
-        else:
-            total_reward = -100
+        # if total_reward > 15:
+        total_reward += values_n.item()
+        # else:
+        #     total_reward = -100
         if return_all_states:
             return traj, safe_mean(lstprob[:self.config["takeover_see"]]), total_reward, total_advantage, all_states
         

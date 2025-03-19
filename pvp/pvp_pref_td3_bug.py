@@ -481,24 +481,13 @@ class PREF_IMAG(TD3):
         self.policy_target = copy.deepcopy(self.policy)
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         # Switch to train mode (this affects batch norm / dropout)
-        self.policy.set_training_mode(True)
+        self.policy.actor.set_training_mode(True)
         # Update optimizers learning rate
-        self._update_learning_rate([self.policy.optimizer])
+        self._update_learning_rate([self.policy.actor.optimizer])
 
         stat_recorder = defaultdict(list)
 
         for gradient_step in range(gradient_steps):
-            # Sample replay buffer
-            # replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
-            #
-            # # We need to sample because `log_std` may have changed between two gradient steps
-            # if self.use_sde:
-            #     self.actor.reset_noise()
-            #
-            # # Action by the current actor for the sampled state
-            # actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
-            # log_prob = log_prob.reshape(-1, 1)
-
             # ========== Compute the CPL loss ==========
             bc_loss_weight = self.bc_loss_weight 
 
@@ -520,41 +509,17 @@ class PREF_IMAG(TD3):
             mask = replay_data.mask
             
             pos_obs, pos_action = getattr(replay_data, self.poso), getattr(replay_data, self.posa)
-            pos_obs_reshape = th.reshape(pos_obs, (-1, pos_obs.shape[-1]))
-            pos_action_reshape = th.reshape(pos_action, (-1, pos_action.shape[-1]))
-            # mean, log_std, _ = self.policy.actor.get_action_dist_params(pos_obs_reshape)
-            # dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
-            
-            
-            _, log_probs_tmp1, entropy1 = self.policy.evaluate_actions(pos_obs_reshape, pos_action_reshape)
-            
-            log_prob_pos = log_probs_tmp1
-            
-            log_prob_pos = th.reshape(log_prob_pos, pos_obs.shape[:-1]) * mask
-            if self.use_bcmse_only:
-                policy_mean = th.reshape(mean, pos_action.shape)
-                actdiff = th.mean((policy_mean - pos_action) ** 2, dim = -1)
-                loss = th.mean(actdiff * mask)
-            elif self.use_bc_only:
-                loss = -log_prob_pos.mean()
-            log_prob_pos = log_prob_pos.sum(dim = -1)
             
             def get_log_prob(policy, pos_obs, pos_action):
                     pos_obs_reshape = th.reshape(pos_obs, (-1, pos_obs.shape[-1]))
                     pos_action_reshape = th.reshape(pos_action, (-1, pos_action.shape[-1]))
-                    # mean, log_std, _ = policy.actor.get_action_dist_params(pos_obs_reshape)
-                    # dist = policy.actor.action_dist.proba_distribution(mean, log_std)
-                    #log_prob_pos = dist.log_prob(pos_action_reshape)
-                    # log_prob_pos = -((mean - pos_action_reshape) ** 2).sum(dim = -1)
-                    
-                    _, log_probs_tmp1, entropy1 = policy.evaluate_actions(pos_obs_reshape, pos_action_reshape)
-            
-                    log_prob_pos = log_probs_tmp1
-            
+                    mean = policy.actor(pos_obs_reshape)
+                    log_prob_pos = -((mean - pos_action_reshape) ** 2).sum(dim = -1)
                     log_prob_pos = th.reshape(log_prob_pos, pos_obs.shape[:-1]) * mask
                     log_prob_pos = log_prob_pos.sum(dim = -1)
                     return log_prob_pos
             
+            log_prob_pos = get_log_prob(self.policy, pos_obs, pos_action)
             if self.use_ref:
                 with th.no_grad():
                     log_prob_pos_ref = get_log_prob(self.policy_ref, pos_obs, pos_action)
@@ -562,20 +527,8 @@ class PREF_IMAG(TD3):
 
             
             neg_obs, neg_action = getattr(replay_data, self.nego), getattr(replay_data, self.nega)
-            neg_obs_reshape = th.reshape(neg_obs, (-1, neg_obs.shape[-1]))
-            neg_action_reshape = th.reshape(neg_action, (-1, neg_action.shape[-1]))
-            # mean, log_std, _ = self.policy.actor.get_action_dist_params(neg_obs_reshape)
-            # dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
-            # #log_prob_neg = dist.log_prob(neg_action_reshape)
             
-            # log_prob_neg = -((mean - neg_action_reshape) ** 2).sum(dim = -1)
-            
-            _, log_probs_tmpneg1, entropyneg1 = self.policy.evaluate_actions(neg_obs_reshape, neg_action_reshape)
-            
-            log_prob_neg = log_probs_tmpneg1
-            
-            log_prob_neg = th.reshape(log_prob_neg, neg_obs.shape[:-1]) * mask
-            log_prob_neg = log_prob_neg.sum(dim = -1)
+            log_prob_neg = get_log_prob(self.policy, neg_obs, neg_action)
             
             if self.use_ref:
                 with th.no_grad():
@@ -586,31 +539,8 @@ class PREF_IMAG(TD3):
             label = torch.ones_like(adv_pos)
             cpl_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=self.bias, cbias=self.cbias)
 
-
-            # if replay_data_human is not None:
-            #     human_action = replay_data_human.actions_behavior
-            #     agent_action = replay_data_human.actions_novice
-
-            #     mean, log_std, _ = self.policy.actor.get_action_dist_params(replay_data_human.observations)
-            #     dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
-
-            #     log_prob_human = dist.log_prob(human_action)  #.sum(dim=-1)  # Don't do the sum...
-            #     log_prob_agent = dist.log_prob(agent_action)  #.sum(dim=-1)
-            #     adv_human = alpha * log_prob_human
-            #     adv_agent = alpha * log_prob_agent
-            #     # If label = 1, then adv_human > adv_agent
-            #     label = torch.ones_like(adv_human)
-            #     cpl_loss, accuracy = biased_bce_with_logits(adv_agent, adv_human, label.float(), bias=0.5)
-
             if replay_data_human is not None:
-                # mean, log_std, _ = self.policy.actor.get_action_dist_params(replay_data_human.observations)
-                # dist = self.policy.actor.action_dist.proba_distribution(mean, log_std)
-                # log_prob_bc = dist.log_prob(replay_data_human.actions_behavior)
-                
-                _, log_probs_tmp1, entropy1 = self.policy.evaluate_actions(replay_data_human.observations, replay_data_human.actions_behavior)
-                
-                new_action = self.policy(replay_data_human.observations)[0]
-                #actions, values, log_prob
+                new_action = self.policy.actor(replay_data_human.observations)
                 bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean() ##-log_probs_tmp1.mean()
 
             # Aggregate losses
@@ -629,19 +559,6 @@ class PREF_IMAG(TD3):
             stat_recorder["cpl_accuracy"].append(accuracy.item() if accuracy is not None else float('nan'))
             stat_recorder["loss"].append(loss.item() if loss is not None else float('nan'))
 
-            # if self.policy_kwargs["share_features_extractor"] == "critic":
-            #     self._optimize_actor(actor_loss=actor_loss)
-            #     # self._optimize_critics(merged_critic_loss=merged_critic_loss)
-            # elif self.policy_kwargs["share_features_extractor"] == "actor":
-            #     raise ValueError()
-            # else:
-            #     self._optimize_actor(actor_loss=actor_loss)
-            #     # self._optimize_critics(merged_critic_loss=merged_critic_loss)
-
-            # Update target networks
-            # if gradient_step % self.target_update_interval == 0:
-            #     polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
-            #     polyak_update(self.cost_critic.parameters(), self.cost_critic_target.parameters(), self.tau)
 
         self._n_updates += gradient_steps
 
@@ -653,9 +570,9 @@ class PREF_IMAG(TD3):
             self.logger.record("train/{}".format(key), np.mean(values))
 
     def _optimize_actor(self, actor_loss):
-        self.policy.optimizer.zero_grad()
+        self.policy.actor.optimizer.zero_grad()
         actor_loss.backward()
-        self.policy.optimizer.step()
+        self.policy.actor.optimizer.step()
 
     # def _optimize_critics(self, merged_critic_loss):
     #     self.critic.optimizer.zero_grad()

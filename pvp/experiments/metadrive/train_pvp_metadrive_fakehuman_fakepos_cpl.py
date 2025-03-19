@@ -18,7 +18,7 @@ from pvp.sb3.common.monitor import Monitor
 from pvp.sb3.common.vec_env import SubprocVecEnv
 from pvp.sb3.common.wandb_callback import WandbCallback
 from pvp.sb3.haco import HACOReplayBuffer
-# from pvp.sb3.td3.policies import TD3Policy
+from pvp.sb3.td3.policies import TD3Policy
 from pvp.sb3.ppo.policies import MlpPolicy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     parser.add_argument("--takeover_see", default=20, type=int, help="The takeover sees how many steps.")
     parser.add_argument("--takeover_delay", default=0, type=int, help="The takeover delay.")
     
-    parser.add_argument("--imgfuturesteps", type=int, default=5)
+    parser.add_argument("--imgfuturesteps", type=int, default=1)
     parser.add_argument("--imgweight", default=1.0, type=float)
     
     parser.add_argument("--stop_img_samples", default=5, type=int)
@@ -52,9 +52,9 @@ if __name__ == '__main__':
     
     parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
     parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
-    parser.add_argument("--alpha", default=0.01, type=float, help="Alpha parameter.")
-    parser.add_argument("--cpl_loss_weight", default=0.0, type=float, help="CPL loss weight.")
-    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
+    parser.add_argument("--alpha", default=0.1, type=float, help="Alpha parameter.")
+    parser.add_argument("--cpl_loss_weight", default=1.0, type=float, help="CPL loss weight.")
+    parser.add_argument("--bc_loss_weight", default=0.0, type=float, help="BC loss weight.")
     parser.add_argument("--poso", default="pos_observations", type=str,
                         help="Name of the positive observations dataset.")
     parser.add_argument("--posa", default="pos_actions", type=str,
@@ -134,7 +134,7 @@ if __name__ == '__main__':
 
         # Algorithm config
         algo=dict(
-            policy=MlpPolicy,
+            policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
             replay_buffer_kwargs=dict(
                 discard_reward=True,  # We run in reward-free manner!
