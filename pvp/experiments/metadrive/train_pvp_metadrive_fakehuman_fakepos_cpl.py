@@ -3,64 +3,76 @@ Compared to original file:
 1. use fakehumanenv
 2. new config: free_level
 3. buffer_size and total_timesteps set to 150_000
+4. use CPL
 """
 import argparse
 import os
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 from pvp.experiments.metadrive.egpo.fakehuman_env_pref_fakepos import FakeHumanEnvPref
-from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
-from pvp.pvp_td3 import PVPTD3_IMAG as PVPTD3
+from pvp.pvp_pref_td3_bug import PREF_IMAG as PREF
+# from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
+from pvp.sb3.common.vec_env import SubprocVecEnv
 from pvp.sb3.common.wandb_callback import WandbCallback
 from pvp.sb3.haco import HACOReplayBuffer
-from pvp.sb3.td3.policies import TD3Policy
+# from pvp.sb3.td3.policies import TD3Policy
+from pvp.sb3.ppo.policies import MlpPolicy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
-from pvp.sb3.common.vec_env import DummyVecEnv, VecFrameStack, SubprocVecEnv
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--exp_name", default="pvpwithnew", type=str, help="The name for this batch of experiments."
+        "--exp_name", default="pref", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--wandb", action="store_false", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="fakepos", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
-    parser.add_argument("--batch_size", default=1024, type=int)
+    
     parser.add_argument("--free_level", type=float, default=0.9)
     parser.add_argument("--future_steps", default=20, type=int, help="The future steps.")
-    parser.add_argument("--future_steps_pvp", default=-1, type=int, help="The future steps.")
+    #parser.add_argument("--future_steps_cpl", default=3, type=int, help="The future steps.")
     
     parser.add_argument("--stop_freq", default=10, type=int, help="The future steps.")
     parser.add_argument("--takeover_see", default=20, type=int, help="The takeover sees how many steps.")
-    
     parser.add_argument("--takeover_delay", default=0, type=int, help="The takeover delay.")
     
-    parser.add_argument("--cpl_loss_weight", default=0, type=float, help="CPL loss weight.")
-    parser.add_argument("--bc_loss_weight", default=5.0, type=float, help="BC loss weight.")
-    parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
-    parser.add_argument("--qloss2", action="store_true", help="Whether to use a toy environment.")
-    
-    parser.add_argument("--imgbuffer", action="store_false", help="Whether to use a toy environment.")
-    
-    parser.add_argument("--imgfuturesteps", type=int, default=1)
+    parser.add_argument("--imgfuturesteps", type=int, default=5)
     parser.add_argument("--imgweight", default=1.0, type=float)
     
-    
-    parser.add_argument("--ckpt", default="", type=str)
-    parser.add_argument("--learning_starts", default=10, type=int)
     parser.add_argument("--stop_img_samples", default=5, type=int)
     
-    parser.add_argument("--adaptive_batch_size", default="True", type=str)
-    parser.add_argument("--only_bc_loss", default="False", type=str)
+    
+    
+    parser.add_argument("--bias", default=0.5, type=float, help="Bias parameter.")
+    parser.add_argument("--cbias", default=0., type=float, help="CBias parameter.")
+    parser.add_argument("--alpha", default=0.01, type=float, help="Alpha parameter.")
+    parser.add_argument("--cpl_loss_weight", default=0.0, type=float, help="CPL loss weight.")
+    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="BC loss weight.")
+    parser.add_argument("--poso", default="pos_observations", type=str,
+                        help="Name of the positive observations dataset.")
+    parser.add_argument("--posa", default="pos_actions", type=str,
+                        help="Name of the positive actions dataset.")
+    parser.add_argument("--nego", default="neg_observations", type=str,
+                        help="Name of the negative observations dataset.")
+    parser.add_argument("--nega", default="neg_actions", type=str,
+                        help="Name of the negative actions dataset.")
+    parser.add_argument("--use_bc_only", action="store_true",
+                        help="Use BC only if set, otherwise False.")
+    parser.add_argument("--use_bcmse_only", action="store_true",
+                        help="Use BC MSE only if set, otherwise False.")
+    
+    
+    parser.add_argument("--toy_env", action="store_false", help="Whether to use a toy environment.")
+    
+    
+    
     # parser.add_argument(
     #     "--device",
     #     required=True,
@@ -74,13 +86,18 @@ if __name__ == '__main__':
     # control_device = args.device
     experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
     seed = args.seed
-    trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
-    print("Trial name is set to: ", trial_name)
+    trial_name = "{}_{}_{}".format(args.trial_name, get_time_str(), args.seed)
 
     use_wandb = args.wandb
     
+    
     project_name = args.wandb_project
     team_name = args.wandb_team
+    
+    # if args.future_steps_cpl == 0:
+    #     future_steps_cpl = args.future_steps
+    # else:
+    #     future_steps_cpl = args.future_steps_cpl
     if not use_wandb:
         print("[WARNING] Please note that you are not using wandb right now!!!")
 
@@ -92,9 +109,8 @@ if __name__ == '__main__':
     os.makedirs(trial_dir, exist_ok=False)  # Avoid overwritting old experiment
     print(f"We start logging training data into {trial_dir}")
 
-    free_level = args.free_level
-
     # ===== Setup the config =====
+    free_level = args.free_level
     config = dict(
 
         # Environment config
@@ -118,14 +134,7 @@ if __name__ == '__main__':
 
         # Algorithm config
         algo=dict(
-            # intervention_start_stop_td=args.intervention_start_stop_td,
-            adaptive_batch_size=args.adaptive_batch_size,
-            bc_loss_weight=args.bc_loss_weight,
-            only_bc_loss=args.only_bc_loss,
-            add_bc_loss="True" if args.bc_loss_weight > 0.0 else "False",
-            use_balance_sample=True,
-            agent_data_ratio=1.0,
-            policy=TD3Policy,
+            policy=MlpPolicy,
             replay_buffer_class=HACOReplayBuffer,
             replay_buffer_kwargs=dict(
                 discard_reward=True,  # We run in reward-free manner!
@@ -133,11 +142,13 @@ if __name__ == '__main__':
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
             learning_rate=1e-4,
-            q_value_bound=1,
+
+            # learning_rate=1e-4,
+            # q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=50_000,  # We only conduct experiment less than 50K steps
-            learning_starts=args.learning_starts,  # The number of steps before
-            batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
+            buffer_size=150_000,  # We only conduct experiment less than 50K steps
+            learning_starts=10,  # The number of steps before
+            batch_size=1024,  # Reduce the batch size for real-time copilot
             tau=0.005,
             gamma=0.99,
             train_freq=(1, "step"),
@@ -147,11 +158,22 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            gradient_steps=1,
-            # future_steps=args.future_steps_pvp,
-            imgbuffer = args.imgbuffer,
+            bias=args.bias,
+            cbias=args.cbias,
+            alpha=args.alpha,
+            poso=args.poso,
+            posa=args.posa,
+            nego=args.nego,
+            nega=args.nega,
+            cpl_loss_weight=args.cpl_loss_weight,
+            bc_loss_weight=args.bc_loss_weight,
+            use_bc_only=args.use_bc_only,
+            use_bcmse_only=args.use_bcmse_only,
+            stop_freq=args.stop_freq,
             img_future_steps = args.imgfuturesteps,
             imgweight=args.imgweight,
+            use_ref=False,
+            gradient_steps=1,
         ),
 
         # Experiment log
@@ -161,9 +183,6 @@ if __name__ == '__main__':
         trial_name=trial_name,
         log_dir=str(trial_dir)
     )
-    if config["env_config"]["use_render"]:
-        config["use_wandb"] = False
-        use_wandb = False
     if args.toy_env:
         config["env_config"].update(
             # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
@@ -171,7 +190,9 @@ if __name__ == '__main__':
             traffic_density=0.0,
             map="COT"
         )
-
+    if  config["env_config"]["use_render"]:
+        use_wandb = False
+        config["use_wandb"] = False
     # ===== Setup the training environment =====
     train_env = FakeHumanEnvPref(config=config["env_config"], )
     train_env = Monitor(env=train_env, filename=str(trial_dir))
@@ -179,7 +200,6 @@ if __name__ == '__main__':
     train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
-
 
     # ===== Also build the eval env =====
     def _make_eval_env():
@@ -201,19 +221,14 @@ if __name__ == '__main__':
         eval_env = SubprocVecEnv([_make_eval_env])
 
     # ===== Setup the callbacks =====
-    save_freq = args.save_freq  # Number of steps per model checkpoint
+    save_freq = 2000  # Number of steps per model checkpoint
     callbacks = [
-        CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
+        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
-    
-    if args.only_bc_loss=="True":
-        ss = "bcloss"
-    else:
-        ss = ""
     if use_wandb:
         callbacks.append(
             WandbCallback(
-                trial_name="Ours"+"imgfuturesteps="+str(args.imgfuturesteps)+"stopimg"+str(args.stop_img_samples)+ss+"_"+get_time_str(),  
+                trial_name=trial_name,
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,
@@ -223,17 +238,21 @@ if __name__ == '__main__':
     callbacks = CallbackList(callbacks)
 
     # ===== Setup the training algorithm =====
-    model = PVPTD3(**config["algo"])
+    model = PREF(**config["algo"])
+    
+    # if True:
+    #     ckpt = "/home/caihy/pvp/runs/pref_freelevel0.99/cpl_2025-02-26_20-07-42_0/models/rl_model_6000_steps.zip" #"/home/caihy/pvp/bl.zip"
+    #     print(f"Loading checkpoint from {ckpt}!")
+    #     from pvp.sb3.common.save_util import load_from_zip_file
+    #     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
+    #     model.set_parameters(params, exact_match=False, device=model.device)
+    #     model.use_ref = False
+    #     import copy
+    #     model.policy_ref = copy.deepcopy(model.policy)
+    #     model.policy_ref.eval()
+    
     
     train_env.env.env.model = model
-    
-    if args.ckpt:
-        ckpt = Path(args.ckpt)
-        print(f"Loading checkpoint from {ckpt}!")
-        from pvp.sb3.common.save_util import load_from_zip_file
-        data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
-        model.set_parameters(params, exact_match=True, device=model.device)
-
     if eval_env == None:
         eval_freq = -1
     else:
@@ -246,20 +265,20 @@ if __name__ == '__main__':
         reset_num_timesteps=True,
 
         # eval
-        # eval_env=None,
-        # eval_freq=-1,
-        # n_eval_episodes=2,
-        # eval_log_path=None,
-
-        # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
         n_eval_episodes=50,
-        eval_log_path=str(trial_dir),
+        eval_log_path=None,
+
+        # eval
+        # eval_env=eval_env,
+        # eval_freq=500,
+        # n_eval_episodes=10,
+        # eval_log_path=str(trial_dir),
 
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=False,
-        load_buffer=False,
+        # save_buffer=False,
+        # load_buffer=False,
     )
