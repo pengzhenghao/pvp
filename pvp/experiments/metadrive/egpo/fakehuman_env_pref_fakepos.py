@@ -533,8 +533,9 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 break
         self.set_state(saved_state)
         from pvp.sb3.common.utils import safe_mean
-        if total_reward > 15:
-            total_reward += values_n.item()
+        if total_reward > 5:
+            #total_reward += values_n.item()
+            pass
         else:
             total_reward = -100
         if return_all_states:
