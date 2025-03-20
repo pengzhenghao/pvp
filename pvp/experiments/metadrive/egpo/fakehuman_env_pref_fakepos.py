@@ -86,7 +86,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
     expert = None
     pending_human_traj = []
     pending_agent_traj = []
-    etakeover = True
+    etakeover = False
     from collections import deque 
     advantages = deque(maxlen = 200)
     drawn_points = []
@@ -191,8 +191,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             enoise = np.random.randn(2) * 0.4
             
             expert_action_clip = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
-            
-        if self.total_steps % stop_freq == 0:
+        
+        if (self.total_steps % stop_freq == 0) or self.last_takeover:
             predicted_traj_exp, acprob_exp, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=expert_action_clip)
             
             predicted_traj, acprob, total_reward, total_advantage, all_states = self._predict_agent_future_trajectory(self.last_obs, future_steps, realmode=False, return_all_states=True)
@@ -212,7 +212,8 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 # self.etakeover = (advantage > q)
                 # if advantage > q:
                 #     self.etakeover = True
-                self.etakeover = False
+                if (self.total_steps % stop_freq == 0):
+                    self.etakeover = False
                 self.advantages.append(advantage)
         else:
             predicted_traj = []
@@ -245,7 +246,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 self.takeover = True
                 
                 drawer = self.drawer 
-                if self.total_steps % stop_freq == 0:
+                if True:
                     
                     for npp in self.drawn_points:
                         npp.detachNode()
@@ -274,7 +275,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             else:
                 self.takeover = False
             # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
-        if self.config["use_render"] and self.total_steps % stop_freq == 0:
+        if self.config["use_render"] and (len(predicted_traj) > 0):
             drawer = self.drawer 
             if not etakeover:
                 for npp in self.drawn_points:
@@ -287,18 +288,18 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 color=(self.takeover,1 - self.takeover,0)
                 colors.append(np.clip(np.array([*color,1]), 0., 1.0))
             self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) # draw points
-        if self.config["use_render"] and self.total_steps % stop_freq == 0:
-            if hasattr(self,"drawer"):
-                drawer = self.drawer # create a point drawer
-            else:
-                self.drawer = self.engine.make_point_drawer(scale=3)
-                drawer = self.drawer 
-            points, colors = [], []
-            for j in range(len(predicted_traj_exp)):
-                points.append((predicted_traj_exp[j]["next_pos"][0], predicted_traj_exp[j]["next_pos"][1], 0.5)) # define line 1 for test
-                color=(0, 0, 1)
-                colors.append(np.clip(np.array([*color,1]), 0., 1.0))
-            self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) # draw points
+        # if self.config["use_render"] and (predicted_traj_exp is not None) and (len(predicted_traj_exp) > 0):
+        #     if hasattr(self,"drawer"):
+        #         drawer = self.drawer # create a point drawer
+        #     else:
+        #         self.drawer = self.engine.make_point_drawer(scale=3)
+        #         drawer = self.drawer 
+        #     points, colors = [], []
+        #     for j in range(len(predicted_traj_exp)):
+        #         points.append((predicted_traj_exp[j]["next_pos"][0], predicted_traj_exp[j]["next_pos"][1], 0.5)) # define line 1 for test
+        #         color=(0, 0, 1)
+        #         colors.append(np.clip(np.array([*color,1]), 0., 1.0))
+        #     self.drawn_points = self.drawn_points + drawer.draw_points(points, colors) # draw points
         if self.takeover:
             
             self.pending_agent_traj.append(predicted_traj)
@@ -400,6 +401,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 
         self.last_obs = o
         self.last_takeover = False
+        self.etakeover = False
         if hasattr(self, "model"):
             for step in range(len(self.pending_agent_traj)):
                 if len(self.pending_agent_traj[step]) > 0 and hasattr(self.model, "prefreplay_buffer"):

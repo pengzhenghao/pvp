@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--trial_name", type=str, default="cpl", help="Folder to store the logs.")
     
-    parser.add_argument("--batch_size", default=1024, type=int)
+    parser.add_argument("--batch_size", default=2048, type=int)
     parser.add_argument("--free_level", type=float, default=0.9)
     parser.add_argument("--future_steps", default=20, type=int, help="The future steps.")
     parser.add_argument("--future_steps_pvp", default=-1, type=int, help="The future steps.")
@@ -152,6 +152,7 @@ if __name__ == '__main__':
             imgbuffer = args.imgbuffer,
             img_future_steps = args.imgfuturesteps,
             imgweight=args.imgweight,
+            policy_delay = 1,
         ),
 
         # Experiment log
