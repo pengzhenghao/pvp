@@ -194,7 +194,7 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
         if self.total_steps % stop_freq == 0:
             predicted_traj_exp, acprob_exp, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=expert_action_clip)
             
-            predicted_traj, acprob, total_reward, total_advantage, all_states = self._predict_agent_future_trajectory(self.last_obs, future_steps, realmode=True, return_all_states=True)
+            predicted_traj, acprob, total_reward, total_advantage, all_states = self._predict_agent_future_trajectory(self.last_obs, future_steps, realmode=False, return_all_states=True)
             
             predicted_traj_real, acprob_real, total_reward_real, total_advantage_real = self._predict_agent_future_trajectory(self.last_obs, future_steps, realmode=True)
             
@@ -533,10 +533,10 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
                 break
         self.set_state(saved_state)
         from pvp.sb3.common.utils import safe_mean
-        # if total_reward > 15:
-        total_reward += values_n.item()
-        # else:
-        #     total_reward = -100
+        if total_reward > 15:
+            total_reward += values_n.item()
+        else:
+            total_reward = -100
         if return_all_states:
             return traj, safe_mean(lstprob[:self.config["takeover_see"]]), total_reward, total_advantage, all_states
         

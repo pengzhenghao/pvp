@@ -542,6 +542,9 @@ class PREF_IMAG(TD3):
             if replay_data_human is not None:
                 new_action = self.policy.actor(replay_data_human.observations)
                 bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean() ##-log_probs_tmp1.mean()
+                stat_recorder["new_action_steering"] = new_action[:, 0].mean().item()
+                stat_recorder["new_action_abs_steering"] = th.abs(new_action[:, 0]).mean().item()
+                stat_recorder["new_action_accerler"] = new_action[:, 1].mean().item()
 
             # Aggregate losses
             if bc_loss is None and cpl_loss is None:
