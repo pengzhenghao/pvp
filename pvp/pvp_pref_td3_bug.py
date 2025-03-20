@@ -409,6 +409,7 @@ class PREF_IMAG(TD3):
         use_ref=False,
         imgweight=1.0,
         img_future_steps=1,
+        bc_on_fake=False,
     ):
 
         assert replay_buffer_class == HACOReplayBuffer
@@ -417,6 +418,7 @@ class PREF_IMAG(TD3):
         self.poso, self.posa, self.nego, self.nega = poso, posa, nego, nega
         self.cpl_loss_weight, self.use_bcmse_only = cpl_loss_weight, use_bcmse_only
         self.use_ref = use_ref
+        self.bc_on_fake = bc_on_fake
 
         super().__init__(
             policy,
@@ -554,6 +556,9 @@ class PREF_IMAG(TD3):
                 loss = bc_loss_weight * (bc_loss
                                      if bc_loss is not None else 0.0) + self.cpl_loss_weight * (cpl_loss if cpl_loss is not None else 0.0)
 
+            if self.bc_on_fake:
+                loss = -log_prob_pos.mean()
+            
             self._optimize_actor(actor_loss=loss)
 
             # Stats

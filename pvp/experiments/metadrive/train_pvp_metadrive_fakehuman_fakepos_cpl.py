@@ -67,7 +67,8 @@ if __name__ == '__main__':
                         help="Use BC only if set, otherwise False.")
     parser.add_argument("--use_bcmse_only", action="store_true",
                         help="Use BC MSE only if set, otherwise False.")
-    
+    parser.add_argument("--bc_on_fake", action="store_true",
+                        help="Use BC only if set, otherwise False.")
     
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     
@@ -172,6 +173,7 @@ if __name__ == '__main__':
             stop_freq=args.stop_freq,
             img_future_steps = args.imgfuturesteps,
             imgweight=args.imgweight,
+            bc_on_fake = args.bc_on_fake,
             use_ref=False,
             gradient_steps=1,
         ),
@@ -226,7 +228,9 @@ if __name__ == '__main__':
         CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
     
-    if args.cpl_loss_weight == 0:
+    if args.bc_on_fake:
+        wbname = "BConFakePos" + get_time_str()
+    elif args.cpl_loss_weight == 0:
         wbname = "baseline_HG" + get_time_str()
     else:
         wbname = "CPL_" + "d=" + str(args.stop_img_samples) + "w=" + str(args.imgfuturesteps) + "bc=" + str(args.bc_loss_weight) + "bias=" + str(args.bias) + "_" + get_time_str()
