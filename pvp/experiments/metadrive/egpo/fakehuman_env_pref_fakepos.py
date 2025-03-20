@@ -188,8 +188,9 @@ class FakeHumanEnvPref(HumanInTheLoopEnv):
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
             expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
+            enoise = np.random.randn(2) * 0.4
             
-            expert_action_clip = np.clip(expert_action, self.action_space.low, self.action_space.high)
+            expert_action_clip = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
             
         if self.total_steps % stop_freq == 0:
             predicted_traj_exp, acprob_exp, total_reward_exp, total_advantage_exp = self._predict_agent_future_trajectory(self.last_obs, future_steps, use_exp=expert_action_clip)

@@ -227,9 +227,9 @@ if __name__ == '__main__':
     ]
     
     if args.cpl_loss_weight == 0:
-        wbname = "baseline_HG" + get_time_str()
+        wbname = "BADEXPERT_baseline_HG" + get_time_str()
     else:
-        wbname = "CPL_" + "d=" + str(args.stop_img_samples) + "w=" + str(args.imgfuturesteps) + "bc=" + str(args.bc_loss_weight) + "bias=" + str(args.bias) + "_" + get_time_str()
+        wbname = "BADEXPERT_CPL_" + "d=" + str(args.stop_img_samples) + "w=" + str(args.imgfuturesteps) + "bc=" + str(args.bc_loss_weight) + "bias=" + str(args.bias) + "_" + get_time_str()
         #add alpha=0.1, bias=0.5 to wbname
     if use_wandb:
         callbacks.append(

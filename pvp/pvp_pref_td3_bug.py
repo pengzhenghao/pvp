@@ -509,14 +509,16 @@ class PREF_IMAG(TD3):
             mask = replay_data.mask
             
             pos_obs, pos_action = getattr(replay_data, self.poso), getattr(replay_data, self.posa)
-            
+            mask_reshape = mask.view(-1)
+
             def get_log_prob(policy, pos_obs, pos_action):
                     pos_obs_reshape = th.reshape(pos_obs, (-1, pos_obs.shape[-1]))
                     pos_action_reshape = th.reshape(pos_action, (-1, pos_action.shape[-1]))
                     mean = policy.actor(pos_obs_reshape)
                     log_prob_pos = -((mean - pos_action_reshape) ** 2).sum(dim = -1)
-                    log_prob_pos = th.reshape(log_prob_pos, pos_obs.shape[:-1]) * mask
-                    log_prob_pos = log_prob_pos.sum(dim = -1)
+                    #log_prob_pos = th.reshape(log_prob_pos, pos_obs.shape[:-1]) * mask
+                    #log_prob_pos = log_prob_pos.sum(dim = -1)
+                    log_prob_pos = log_prob_pos * mask_reshape
                     return log_prob_pos
             
             log_prob_pos = get_log_prob(self.policy, pos_obs, pos_action)
