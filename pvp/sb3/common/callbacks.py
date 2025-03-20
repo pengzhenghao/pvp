@@ -448,6 +448,11 @@ class EvalCallback(EventCallback):
 
             # Dump log so the evaluation results are printed with the correct timestep
             self.logger.record("time/total_timesteps", self.num_timesteps)
+            try:
+                import wandb
+                wandb.log(self.logger.name_to_value, step=self.num_timesteps)
+            except:
+                pass
             self.logger.dump(self.num_timesteps)
 
             if mean_reward > self.best_mean_reward:

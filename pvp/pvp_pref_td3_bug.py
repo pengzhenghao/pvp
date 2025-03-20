@@ -565,7 +565,8 @@ class PREF_IMAG(TD3):
         self.logger.record("train/num_traj", self.imagreplay_buffer.pos)
         self.logger.record("train/n_updates", self._n_updates)
         self.logger.record("train/human_involved_steps", self.human_data_buffer.pos)
-        
+        import wandb
+        wandb.log(self.logger.name_to_value, step=self.num_timesteps)
         for key, values in stat_recorder.items():
             self.logger.record("train/{}".format(key), np.mean(values))
 
