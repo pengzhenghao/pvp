@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
-    parser.add_argument("--policy_delay", default=1, type=int)
+    parser.add_argument("--policy_delay", default=0, type=int)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
