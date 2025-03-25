@@ -171,7 +171,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             action_prob = action_prob[0]
             expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
             
-            if self.total_steps % update_future_freq == 0:
+            if (self.total_steps % update_future_freq == 0) or self.last_takeover:
                 predicted_traj, self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
                 if self.config["use_render"]:
                     points, colors = [], []
