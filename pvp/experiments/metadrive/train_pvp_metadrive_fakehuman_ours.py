@@ -31,7 +31,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=2500, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", type=bool, default=True, help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="table1", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="AIM", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
@@ -181,7 +181,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
+    eval_env = make_vec_env(_make_eval_env, n_envs=1, vec_env_cls=SubprocVecEnv)
     
     # ===== Setup the callbacks =====
     save_freq = args.save_freq // num_train_envs  # Number of steps per model checkpoint
@@ -235,7 +235,7 @@ if __name__ == '__main__':
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=True,
+        save_buffer=False,
         load_buffer=False,
         save_path_human = Path(log_dir) / Path("human_buffer_tb1_ours") / (str(seed)),
         save_path_replay = Path(log_dir) / Path("novice_buffer_tb1_ours") / (str(seed)),

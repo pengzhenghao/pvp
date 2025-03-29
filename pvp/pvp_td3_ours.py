@@ -405,6 +405,44 @@ class PVPTD3ENS(PVPTD3):
             ##start train classifier
             num_gd_steps = self.policy_delay * 8
             for _ in range(num_gd_steps):
+                
+                    if self.replay_buffer.pos == 0:
+                        replay_data = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+                    elif self.human_data_buffer.pos == 0:
+                        replay_data = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+                    else:
+                        replay_data_agent = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+                        replay_data_human = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+                        replay_data = concat_samples(replay_data_agent, replay_data_human)
+                    with th.no_grad():
+                        # Select action according to policy and add clipped noise
+                        noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
+                        noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
+                        next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
+
+                        # Compute the next Q-values: min over all critics targets
+                        next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
+                        next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
+                        
+                        rew = (0.5 - replay_data.interventions) * 2
+                        
+                        target_q_values = rew + (1 - replay_data.dones) * self.gamma * next_q_values
+                    
+                    # Get current Q-values estimates for each critic network
+                    current_q_behavior_values = self.critic(replay_data.observations, replay_data.actions_behavior)
+                    current_q_novice_values = self.critic(replay_data.observations, replay_data.actions_novice)
+
+                    stat_recorder["q_value_behavior"] = (current_q_behavior_values[0].mean().item())
+                    stat_recorder["q_value_novice"] = (current_q_novice_values[0].mean().item())
+
+                    # Compute critic loss
+                    td_loss = 0
+                    for (current_q_behavior, current_q_novice) in zip(current_q_behavior_values, current_q_novice_values):
+                        td_loss += 0.5 * F.mse_loss(current_q_behavior, target_q_values)
+                        
+                    stat_recorder["td_loss"] = (td_loss.item())
+                    
+                    
                     with th.no_grad():
                         replay_data_human = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env)
                         new_action, _ = self.predict(replay_data_human.observations.cpu().numpy())
@@ -418,8 +456,10 @@ class PVPTD3ENS(PVPTD3):
                         ((replay_data_human.actions_behavior - new_action) ** 2).mean(dim=-1) > self.switch2robot_thresh * 1.5
                     ).float()
                     
-                    loss_class = th.mean((current_c_behavior + 1) ** 2 + (current_c_novice * no_overlap - 1) ** 2)
-                        
+                    loss_class = td_loss
+                    #loss_class = td_loss + th.mean((current_c_behavior + 1) ** 2 + (current_c_novice * no_overlap - 1) ** 2)
+                    #loss_class = th.mean((current_c_behavior + 1) ** 2 + (current_c_novice * no_overlap - 1) ** 2)
+                    
                     self.classifier.critic.optimizer.zero_grad()
                     loss_class.backward()
                     self.classifier.critic.optimizer.step()
