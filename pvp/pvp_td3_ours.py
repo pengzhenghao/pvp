@@ -307,7 +307,7 @@ class PVPTD3ENS(PVPTD3):
         for key in dd:
             if hasattr(self, key):
                 stat_recorder[key].append(getattr(self, key))
-        
+        stat_recorder["takeover_rate"] = self.human_data_buffer.pos / self.num_timesteps
         self.init_bc_steps = 200
         
         if not hasattr(self, "trained"):
@@ -456,9 +456,9 @@ class PVPTD3ENS(PVPTD3):
                         ((replay_data_human.actions_behavior - new_action) ** 2).mean(dim=-1) > self.switch2robot_thresh * 1.5
                     ).float()
                     
-                    loss_class = td_loss
+                    #loss_class = td_loss
                     #loss_class = td_loss + th.mean((current_c_behavior + 1) ** 2 + (current_c_novice * no_overlap - 1) ** 2)
-                    #loss_class = th.mean((current_c_behavior + 1) ** 2 + (current_c_novice * no_overlap - 1) ** 2)
+                    loss_class = th.mean((current_c_behavior + 1) ** 2 + (current_c_novice * no_overlap - 1) ** 2)
                     
                     self.classifier.critic.optimizer.zero_grad()
                     loss_class.backward()
