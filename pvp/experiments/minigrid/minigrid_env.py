@@ -622,7 +622,10 @@ class MinigridWrapperWithFakeHumanRobotGate(gym.Wrapper):
         self.classifier.set_training_mode(False)
         th_obs = th.from_numpy(self.model._last_obs).to(self.classifier.device)
         unc = self.classifier.q_net(th_obs).squeeze()
-        return unc[(int)(action)].item()
+        import torch.nn.functional as F
+        pi = F.softmax(unc, dim=0)
+        H = -th.sum(pi * th.log(pi + 1e-10)) 
+        return H.item()
 
     def get_expert_action(self):
         if not hasattr(self, "model"):
@@ -639,20 +642,24 @@ class MinigridWrapperWithFakeHumanRobotGate(gym.Wrapper):
         
         self.last_enable_human = self.enable_human
         ready_robot_gate = False
+        tmp_expert_action = self.get_expert_action()
+        if self.enable_human:
+            expert_action = tmp_expert_action
+        else:
+            expert_action = None
+        
+        x = np.random.binomial(n=1, p=0.5)
+        
         if not hasattr(self, "model"):
             self.enable_human = False
-        elif self.total_steps <= self.model.init_bc_steps:
+        elif (self.total_steps <= self.model.init_bc_steps) or (expert_action == 5) or x == 1:
             self.enable_human = True
         else:
             ready_robot_gate = True
             if not self.last_enable_human and current_unc > self.model.switch2human_thresh:
                 self.enable_human = True
         
-        tmp_expert_action = self.get_expert_action()
-        if self.enable_human:
-            expert_action = tmp_expert_action
-        else:
-            expert_action = None
+        
         # if tmp_expert_action == 5:
         #     expert_action = tmp_expert_action
         #     self.enable_human = True

@@ -348,8 +348,10 @@ class PVPDQN(DQN):
                     replay_data = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env, discard_rgb=discard_rgb, return_features=return_features)
                 
                 current_q_values = self.classifier.q_net(replay_data.observations)
-                current_novice_q_value_method1 = th.gather(current_q_values, dim=1, index=replay_data.actions_novice.long())
-            self.switch2human_thresh = th.quantile(current_novice_q_value_method1, self.thr_classifier).item()
+                pi = F.softmax(current_q_values, dim=1)
+                H = -torch.sum(pi * torch.log(pi + 1e-10), dim=1)
+                #current_novice_q_value_method1 = th.gather(current_q_values, dim=1, index=replay_data.actions_novice.long())
+            self.switch2human_thresh = th.quantile(H, self.thr_classifier).item()
             
         self.delay += 1
         # Increase update counter
