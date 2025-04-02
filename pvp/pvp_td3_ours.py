@@ -362,7 +362,7 @@ class PVPTD3ENS(PVPTD3):
 
             actions_train_data, _ = self.predict(observation=train_data.observations.cpu().numpy())
             actions_train_data = th.Tensor(actions_train_data).to(self.device)
-            discre = th.mean((train_data.actions_behavior - actions_train_data) ** 2, dim = -1)
+            discre = th.mean(th.abs(train_data.actions_behavior - actions_train_data), dim = -1)
             #change train_data.actions_novice to new actions  chy: 0108
             
             self.switch2robot_thresh = th.mean(discre).item()
@@ -453,7 +453,7 @@ class PVPTD3ENS(PVPTD3):
                     current_c_novice = self.classifier.critic(replay_data_human.observations, new_action)[0]
                     
                     no_overlap = (
-                        ((replay_data_human.actions_behavior - new_action) ** 2).mean(dim=-1) > self.switch2robot_thresh * 1.5
+                        (th.abs(replay_data_human.actions_behavior - new_action)).mean(dim=-1) > self.switch2robot_thresh * 1.5
                     ).float()
                     
                     #loss_class = td_loss
