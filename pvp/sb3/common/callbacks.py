@@ -350,10 +350,10 @@ class EvalCallback(EventCallback):
         info = locals_["info"]
 
         if locals_["done"]:
-            maybe_is_success = info.get("is_success")
-            if maybe_is_success is not None:
-                self._is_success_buffer.append(maybe_is_success)
-
+            # maybe_is_success = info.get("is_success")
+            # if maybe_is_success is not None:
+            #     self._is_success_buffer.append(maybe_is_success)
+            maybe_is_success = None
             maybe_is_success2 = info.get("arrive_dest", None)
             if maybe_is_success2 is not None:
                 self._is_success_buffer.append(maybe_is_success2)

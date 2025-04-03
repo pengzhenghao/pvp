@@ -3,11 +3,10 @@ import time
 from collections import deque
 
 import numpy as np
-from pvp.experiments.metadrive.base_prediction_env import BasePredictionEnv
-from metadrive.engine.core.onscreen_message import ScreenMessage
-from metadrive.envs.safe_metadrive_env import SafeMetaDriveEnv
-from metadrive.policy.manual_control_policy import TakeoverPolicyWithoutBrake
-from metadrive.utils.math import safe_clip
+from pvp.experiments.metaurban.base_prediction_env import BasePredictionEnv
+from metaurban.engine.core.onscreen_message import ScreenMessage
+from metaurban.policy.manual_control_policy import TakeoverPolicyWithoutBrake
+from metaurban.utils.math import safe_clip
 
 ScreenMessage.SCALE = 0.1
 
@@ -34,12 +33,14 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
         "show_line_to_navi_mark": True,  # Show the line to next navigation checkpoint.
     },
     "horizon": 1500,
+    
+    "object_density": 0.6,
 }
 
 
 class HumanInTheLoopEnv(BasePredictionEnv):
     """
-    Human-in-the-loop Env Wrapper for the Safety Env in MetaDrive.
+    Human-in-the-loop Env Wrapper for the Safety Env in metaurban.
     Add code for computing takeover cost and add information to the interface.
     """
     total_steps = 0
@@ -83,7 +84,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
             engine_info["takeover_cost"] = cost
         engine_info["total_takeover_cost"] = self.total_takeover_cost
         engine_info["native_cost"] = engine_info["cost"]
-        engine_info["episode_native_cost"] = self.episode_cost
+        # engine_info["episode_native_cost"] = self.episode_cost
         self.total_cost += engine_info["cost"]
         engine_info["total_cost"] = self.total_cost
         # engine_info["total_cost_so_far"] = self.total_cost

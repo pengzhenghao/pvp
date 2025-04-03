@@ -1,17 +1,17 @@
-from metadrive.component.pgblock.first_block import FirstPGBlock
-from metadrive.policy.idm_policy import IDMPolicy
-from metadrive.envs.safe_metadrive_env import SafeMetaDriveEnv
-from metadrive.utils import Config
-from metadrive.utils.math import norm
+from metaurban.component.pgblock.first_block import FirstPGBlock
+from metaurban.policy.idm_policy import IDMPolicy
+from metaurban import SidewalkStaticMetaUrbanEnv
+from metaurban.utils import Config
+from metaurban.utils.math import norm
 from panda3d.core import LVector3
 import math
 import torch
-from metadrive.utils.coordinates_shift import panda_vector, metadrive_vector, panda_heading
+from metaurban.utils.coordinates_shift import panda_vector
 from collections import deque
 import numpy as np
 import copy
 
-class BasePredictionEnv(SafeMetaDriveEnv):
+class BasePredictionEnv(SidewalkStaticMetaUrbanEnv):
     def default_config(self) -> Config:
         config = super(BasePredictionEnv, self).default_config()
         config.update(
@@ -29,9 +29,9 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         """
         Fetch more information
         """
-        from metadrive.component.vehicle.base_vehicle import BaseVehicle
+        from metaurban.component.vehicle.base_vehicle import BaseVehicle
         vehicle = self.vehicle
-        state = super(BaseVehicle, vehicle).get_state()
+        state = vehicle.get_state()
         state.update(
             {
                 "steering": vehicle.steering,
@@ -73,30 +73,31 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         })
         
         if vehicle.navigation is not None:
-            state["spawn_road"] = vehicle.navigation.spawn_road
-            state["destination"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
-            state["checkpoints"] = vehicle.navigation.checkpoints 
-            state["_target_checkpoints_index"] = vehicle.navigation._target_checkpoints_index
+            state["navi"] = copy.deepcopy(vehicle.navigation.get_state())
+            # state["spawn_road"] = vehicle.navigation.spawn_road
+            # state["destination"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
+            # state["checkpoints"] = vehicle.navigation.checkpoints 
+            # state["_target_checkpoints_index"] = vehicle.navigation._target_checkpoints_index
 
-            state["current_road"] = (vehicle.navigation.current_road.start_node, vehicle.navigation.current_road.end_node) if vehicle.navigation.current_road is not None else None
-            state["next_road"] = (vehicle.navigation.next_road.start_node, vehicle.navigation.next_road.end_node) if vehicle.navigation.next_road is not None else None
-            state["final_road"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
+            # state["current_road"] = (vehicle.navigation.current_road.start_node, vehicle.navigation.current_road.end_node) if vehicle.navigation.current_road is not None else None
+            # state["next_road"] = (vehicle.navigation.next_road.start_node, vehicle.navigation.next_road.end_node) if vehicle.navigation.next_road is not None else None
+            # state["final_road"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
 
-            state["current_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.current_ref_lanes] if vehicle.navigation.current_ref_lanes is not None else None
-            state["next_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.next_ref_lanes] if vehicle.navigation.next_ref_lanes is not None else None
-            state["total_length"] = vehicle.navigation.total_length
-            state["travelled_length"] = vehicle.navigation.travelled_length
-            state["_last_long_in_ref_lane"] = vehicle.navigation._last_long_in_ref_lane
+            # state["current_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.current_ref_lanes] if vehicle.navigation.current_ref_lanes is not None else None
+            # state["next_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.next_ref_lanes] if vehicle.navigation.next_ref_lanes is not None else None
+            # state["total_length"] = vehicle.navigation.total_length
+            # state["travelled_length"] = vehicle.navigation.travelled_length
+            # state["_last_long_in_ref_lane"] = vehicle.navigation._last_long_in_ref_lane
 
-            state["_navi_info"] = vehicle.navigation._navi_info.tolist() if hasattr(vehicle.navigation, "_navi_info") and vehicle.navigation._navi_info is not None else None
-            state["navi_arrow_dir"] = vehicle.navigation.navi_arrow_dir if hasattr(vehicle.navigation, "navi_arrow_dir") else None
+            # state["_navi_info"] = vehicle.navigation._navi_info.tolist() if hasattr(vehicle.navigation, "_navi_info") and vehicle.navigation._navi_info is not None else None
+            # state["navi_arrow_dir"] = vehicle.navigation.navi_arrow_dir if hasattr(vehicle.navigation, "navi_arrow_dir") else None
             
         return copy.deepcopy(state)
         
     def set_state(self, state):
-        from metadrive.component.vehicle.base_vehicle import BaseVehicle
+        from metaurban.component.vehicle.base_vehicle import BaseVehicle
         vehicle = self.vehicle
-        super(BaseVehicle, vehicle).set_state(state)
+        vehicle.set_state(state)
         vehicle.set_throttle_brake(float(state["throttle_brake"]))
         vehicle.set_steering(float(state["steering"]))
         vehicle.last_current_action = deque(state["last_current_action"], maxlen=2)
@@ -127,65 +128,66 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         vehicle.on_crosswalk = state["on_crosswalk"]
         vehicle.contact_results = set(state["contact_results"]) if "contact_results" in state else set()
         if vehicle.navigation is not None:
-            from metadrive.component.road_network import Road
-            vehicle.navigation.spawn_road = state.get("spawn_road", None)
-            dest = state.get("destination", None)
-            if dest is not None:
-                # 通过目的地信息重构 final_road 对象
-                vehicle.navigation.final_road = Road(dest[0], dest[1])
-            else:
-                vehicle.navigation.final_road = None
+            vehicle.navigation.set_state(state["navi"])
+            # from metaurban.component.road_network import Road
+            # vehicle.navigation.spawn_road = state.get("spawn_road", None)
+            # dest = state.get("destination", None)
+            # if dest is not None:
+            #     # 通过目的地信息重构 final_road 对象
+            #     vehicle.navigation.final_road = Road(dest[0], dest[1])
+            # else:
+            #     vehicle.navigation.final_road = None
 
-            # 恢复路线规划相关信息
-            vehicle.navigation.checkpoints = state.get("checkpoints", None)
-            vehicle.navigation._target_checkpoints_index = state.get("_target_checkpoints_index", None)
+            # # 恢复路线规划相关信息
+            # vehicle.navigation.checkpoints = state.get("checkpoints", None)
+            # vehicle.navigation._target_checkpoints_index = state.get("_target_checkpoints_index", None)
 
-            # 恢复当前、下一、最终道路（重构 Road 对象）
-            current_road = state.get("current_road", None)
-            if current_road is not None:
-                vehicle.navigation.current_road = Road(current_road[0], current_road[1])
-            else:
-                vehicle.navigation.current_road = None
+            # # 恢复当前、下一、最终道路（重构 Road 对象）
+            # current_road = state.get("current_road", None)
+            # if current_road is not None:
+            #     vehicle.navigation.current_road = Road(current_road[0], current_road[1])
+            # else:
+            #     vehicle.navigation.current_road = None
 
-            next_road = state.get("next_road", None)
-            if next_road is not None:
-                vehicle.navigation.next_road = Road(next_road[0], next_road[1])
-            else:
-                vehicle.navigation.next_road = None
+            # next_road = state.get("next_road", None)
+            # if next_road is not None:
+            #     vehicle.navigation.next_road = Road(next_road[0], next_road[1])
+            # else:
+            #     vehicle.navigation.next_road = None
 
-            final_road = state.get("final_road", None)
-            if final_road is not None:
-                vehicle.navigation.final_road = Road(final_road[0], final_road[1])
-            else:
-                vehicle.navigation.final_road = None
+            # final_road = state.get("final_road", None)
+            # if final_road is not None:
+            #     vehicle.navigation.final_road = Road(final_road[0], final_road[1])
+            # else:
+            #     vehicle.navigation.final_road = None
 
-            # 恢复参考车道信息：这里假定你能通过 vehicle.navigation.map.road_network.get_lane(lane_index)
-            current_ref_lane_indices = state.get("current_ref_lane_indices", None)
-            if current_ref_lane_indices is not None:
-                vehicle.navigation.current_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in current_ref_lane_indices]
-            else:
-                vehicle.navigation.current_ref_lanes = None
+            # # 恢复参考车道信息：这里假定你能通过 vehicle.navigation.map.road_network.get_lane(lane_index)
+            # current_ref_lane_indices = state.get("current_ref_lane_indices", None)
+            # if current_ref_lane_indices is not None:
+            #     vehicle.navigation.current_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in current_ref_lane_indices]
+            # else:
+            #     vehicle.navigation.current_ref_lanes = None
 
-            next_ref_lane_indices = state.get("next_ref_lane_indices", None)
-            if next_ref_lane_indices is not None:
-                vehicle.navigation.next_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in next_ref_lane_indices]
-            else:
-                vehicle.navigation.next_ref_lanes = None
+            # next_ref_lane_indices = state.get("next_ref_lane_indices", None)
+            # if next_ref_lane_indices is not None:
+            #     vehicle.navigation.next_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in next_ref_lane_indices]
+            # else:
+            #     vehicle.navigation.next_ref_lanes = None
 
-            # 恢复路线长度信息
-            vehicle.navigation.total_length = state.get("total_length", 0.0)
-            vehicle.navigation.travelled_length = state.get("travelled_length", 0.0)
-            vehicle.navigation._last_long_in_ref_lane = state.get("_last_long_in_ref_lane", 0.0)
+            # # 恢复路线长度信息
+            # vehicle.navigation.total_length = state.get("total_length", 0.0)
+            # vehicle.navigation.travelled_length = state.get("travelled_length", 0.0)
+            # vehicle.navigation._last_long_in_ref_lane = state.get("_last_long_in_ref_lane", 0.0)
 
-            # 恢复导航信息向量
-            navi_info_list = state.get("_navi_info", None)
-            if navi_info_list is not None:
-                vehicle.navigation._navi_info = np.array(navi_info_list)
-            else:
-                vehicle.navigation._navi_info = None
+            # # 恢复导航信息向量
+            # navi_info_list = state.get("_navi_info", None)
+            # if navi_info_list is not None:
+            #     vehicle.navigation._navi_info = np.array(navi_info_list)
+            # else:
+            #     vehicle.navigation._navi_info = None
 
-            # 恢复箭头方向等信息
-            vehicle.navigation.navi_arrow_dir = state.get("navi_arrow_dir", None)
+            # # 恢复箭头方向等信息
+            # vehicle.navigation.navi_arrow_dir = state.get("navi_arrow_dir", None)
 
     
     def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, return_all_states = False):
@@ -310,7 +312,7 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         """
         from panda3d.core import VBase4, NodePath, Material
         from panda3d.core import LVecBase4f
-        from metadrive.engine.asset_loader import AssetLoader
+        from metaurban.engine.asset_loader import AssetLoader
         drawer = self.drawer
         new_points = []
         for k, point in enumerate(points):

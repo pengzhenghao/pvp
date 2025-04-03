@@ -6,11 +6,11 @@ import pathlib
 import gymnasium as gym
 import numpy as np
 import torch
-from metadrive.engine.logger import get_logger
-from metadrive.examples.ppo_expert.numpy_expert import ckpt_path
-from metadrive.policy.env_input_policy import EnvInputPolicy
+from metaurban.engine.logger import get_logger
+from metaurban.examples.ppo_expert.numpy_expert import ckpt_path
+from metaurban.policy.env_input_policy import EnvInputPolicy
 
-from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+from pvp.experiments.metaurban.human_in_the_loop_env import HumanInTheLoopEnv
 
 FOLDER_PATH = pathlib.Path(__file__).parent
 
@@ -44,7 +44,7 @@ def get_expert():
     )
     model = PPO(**algo_config)
 
-    ckpt = FOLDER_PATH / "metadrive_pvp_20m_steps"
+    ckpt = "/home/caihy/metaurban/pretrained_policy_576k.zip" #FOLDER_PATH / "metadrive_pvp_20m_steps"
 
     print(f"Loading checkpoint from {ckpt}!")
     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
@@ -187,11 +187,13 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
 
         if self.takeover:
-            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             if self.config["use_discrete"]:
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)
             actions = expert_action
+            
+        if self.takeover and (self.total_steps % update_future_freq == 0):
+            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             
@@ -239,7 +241,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             engine_info["takeover_cost"] = cost
         engine_info["total_takeover_cost"] = self.total_takeover_cost
         engine_info["native_cost"] = engine_info["cost"]
-        engine_info["episode_native_cost"] = self.episode_cost
+        # engine_info["episode_native_cost"] = self.episode_cost
         self.total_cost += engine_info["cost"]
         self.total_takeover_count += 1 if self.takeover else 0
         engine_info["total_takeover_count"] = self.total_takeover_count
@@ -255,7 +257,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return o, info
 
 if __name__ == "__main__":
-    env = FakeHumanEnv(dict(use_render=True, num_scenarios=1, traffic_density=0))
+    env = FakeHumanEnv(dict(use_render=False, num_scenarios=1, traffic_density=0))
     env.reset()
     ss = 0
     while True:
