@@ -73,25 +73,21 @@ class BasePredictionEnv(SidewalkStaticMetaUrbanEnv):
         })
         
         if vehicle.navigation is not None:
-            state["navi"] = copy.deepcopy(vehicle.navigation.get_state())
-            # state["spawn_road"] = vehicle.navigation.spawn_road
-            # state["destination"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
-            # state["checkpoints"] = vehicle.navigation.checkpoints 
-            # state["_target_checkpoints_index"] = vehicle.navigation._target_checkpoints_index
-
-            # state["current_road"] = (vehicle.navigation.current_road.start_node, vehicle.navigation.current_road.end_node) if vehicle.navigation.current_road is not None else None
-            # state["next_road"] = (vehicle.navigation.next_road.start_node, vehicle.navigation.next_road.end_node) if vehicle.navigation.next_road is not None else None
-            # state["final_road"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
-
-            # state["current_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.current_ref_lanes] if vehicle.navigation.current_ref_lanes is not None else None
-            # state["next_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.next_ref_lanes] if vehicle.navigation.next_ref_lanes is not None else None
-            # state["total_length"] = vehicle.navigation.total_length
-            # state["travelled_length"] = vehicle.navigation.travelled_length
-            # state["_last_long_in_ref_lane"] = vehicle.navigation._last_long_in_ref_lane
-
-            # state["_navi_info"] = vehicle.navigation._navi_info.tolist() if hasattr(vehicle.navigation, "_navi_info") and vehicle.navigation._navi_info is not None else None
-            # state["navi_arrow_dir"] = vehicle.navigation.navi_arrow_dir if hasattr(vehicle.navigation, "navi_arrow_dir") else None
-            
+            state["navi"] = {
+                "mask_delta": vehicle.navigation.mask_delta,
+                "sidewalks": copy.deepcopy(vehicle.navigation.sidewalks),
+                "crosswalks": copy.deepcopy(vehicle.navigation.crosswalks),
+                "walkable_regions_mask": copy.deepcopy(vehicle.navigation.walkable_regions_mask),
+                "_route_completion": vehicle.navigation._route_completion,
+                "checkpoints": copy.deepcopy(vehicle.navigation.checkpoints),
+                "start_end_sampling_mask": copy.deepcopy(vehicle.navigation.start_end_sampling_mask),
+                "start_points": copy.deepcopy(vehicle.navigation.start_points),
+                "end_points": copy.deepcopy(vehicle.navigation.end_points),
+                "next_ref_lanes": copy.deepcopy(vehicle.navigation.next_ref_lanes),
+                "last_current_long": copy.deepcopy(vehicle.navigation.last_current_long),
+                "last_current_lat": copy.deepcopy(vehicle.navigation.last_current_lat),
+                "last_current_heading_theta_at_long": copy.deepcopy(vehicle.navigation.last_current_heading_theta_at_long),
+            }
         return copy.deepcopy(state)
         
     def set_state(self, state):
@@ -128,69 +124,21 @@ class BasePredictionEnv(SidewalkStaticMetaUrbanEnv):
         vehicle.on_crosswalk = state["on_crosswalk"]
         vehicle.contact_results = set(state["contact_results"]) if "contact_results" in state else set()
         if vehicle.navigation is not None:
-            vehicle.navigation.set_state(state["navi"])
-            # from metaurban.component.road_network import Road
-            # vehicle.navigation.spawn_road = state.get("spawn_road", None)
-            # dest = state.get("destination", None)
-            # if dest is not None:
-            #     # 通过目的地信息重构 final_road 对象
-            #     vehicle.navigation.final_road = Road(dest[0], dest[1])
-            # else:
-            #     vehicle.navigation.final_road = None
-
-            # # 恢复路线规划相关信息
-            # vehicle.navigation.checkpoints = state.get("checkpoints", None)
-            # vehicle.navigation._target_checkpoints_index = state.get("_target_checkpoints_index", None)
-
-            # # 恢复当前、下一、最终道路（重构 Road 对象）
-            # current_road = state.get("current_road", None)
-            # if current_road is not None:
-            #     vehicle.navigation.current_road = Road(current_road[0], current_road[1])
-            # else:
-            #     vehicle.navigation.current_road = None
-
-            # next_road = state.get("next_road", None)
-            # if next_road is not None:
-            #     vehicle.navigation.next_road = Road(next_road[0], next_road[1])
-            # else:
-            #     vehicle.navigation.next_road = None
-
-            # final_road = state.get("final_road", None)
-            # if final_road is not None:
-            #     vehicle.navigation.final_road = Road(final_road[0], final_road[1])
-            # else:
-            #     vehicle.navigation.final_road = None
-
-            # # 恢复参考车道信息：这里假定你能通过 vehicle.navigation.map.road_network.get_lane(lane_index)
-            # current_ref_lane_indices = state.get("current_ref_lane_indices", None)
-            # if current_ref_lane_indices is not None:
-            #     vehicle.navigation.current_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in current_ref_lane_indices]
-            # else:
-            #     vehicle.navigation.current_ref_lanes = None
-
-            # next_ref_lane_indices = state.get("next_ref_lane_indices", None)
-            # if next_ref_lane_indices is not None:
-            #     vehicle.navigation.next_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in next_ref_lane_indices]
-            # else:
-            #     vehicle.navigation.next_ref_lanes = None
-
-            # # 恢复路线长度信息
-            # vehicle.navigation.total_length = state.get("total_length", 0.0)
-            # vehicle.navigation.travelled_length = state.get("travelled_length", 0.0)
-            # vehicle.navigation._last_long_in_ref_lane = state.get("_last_long_in_ref_lane", 0.0)
-
-            # # 恢复导航信息向量
-            # navi_info_list = state.get("_navi_info", None)
-            # if navi_info_list is not None:
-            #     vehicle.navigation._navi_info = np.array(navi_info_list)
-            # else:
-            #     vehicle.navigation._navi_info = None
-
-            # # 恢复箭头方向等信息
-            # vehicle.navigation.navi_arrow_dir = state.get("navi_arrow_dir", None)
-
+            vehicle.navigation.mask_delta = state["navi"]["mask_delta"]
+            vehicle.navigation.sidewalks = copy.deepcopy(state["navi"]["sidewalks"])
+            vehicle.navigation.crosswalks = copy.deepcopy(state["navi"]["crosswalks"])
+            vehicle.navigation.walkable_regions_mask = copy.deepcopy(state["navi"]["walkable_regions_mask"])
+            vehicle.navigation._route_completion = state["navi"]["_route_completion"]
+            vehicle.navigation.checkpoints = copy.deepcopy(state["navi"]["checkpoints"])
+            vehicle.navigation.start_end_sampling_mask = copy.deepcopy(state["navi"]["start_end_sampling_mask"])
+            vehicle.navigation.start_points = copy.deepcopy(state["navi"]["start_points"])
+            vehicle.navigation.end_points = copy.deepcopy(state["navi"]["end_points"])
+            vehicle.navigation.next_ref_lanes = copy.deepcopy(state["navi"]["next_ref_lanes"])
+            vehicle.navigation.last_current_long = copy.deepcopy(state["navi"]["last_current_long"])
+            vehicle.navigation.last_current_lat = copy.deepcopy(state["navi"]["last_current_lat"])
+            vehicle.navigation.last_current_heading_theta_at_long = copy.deepcopy(state["navi"]["last_current_heading_theta_at_long"])
     
-    def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, return_all_states = False):
+    def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, return_all_states = False, use_expert = False):
         info = dict()
         saved_state = self.get_state()
         
@@ -198,6 +146,7 @@ class BasePredictionEnv(SidewalkStaticMetaUrbanEnv):
         traj = []
         obs = current_obs
         total_reward = 0
+        total_cost = 0
         failure = False
         
         for step in range(n_steps):
@@ -208,6 +157,8 @@ class BasePredictionEnv(SidewalkStaticMetaUrbanEnv):
                 if hasattr(self, "model"):
                      action, _ = self.model.policy.predict(obs, deterministic=True)
             
+            if use_expert:
+                action, _ = self.expert.predict(obs, deterministic=True)
             if self.config["use_discrete"]:
                 action = self.discrete_to_continuous(action)
             actions = self._preprocess_actions(action) 
@@ -252,7 +203,7 @@ class BasePredictionEnv(SidewalkStaticMetaUrbanEnv):
             self.vehicle.navigation.update_localization(self.vehicle)
             r = self.reward_function('default_agent')[0]
             total_reward += r
-            
+            total_cost += self.cost_function('default_agent')[0]
             if return_all_states:
                 all_states.append(self.get_state())
             d = self.done_function('default_agent')[0]
@@ -278,13 +229,15 @@ class BasePredictionEnv(SidewalkStaticMetaUrbanEnv):
         
         self.set_state(saved_state)
         
+        if total_reward <= 10 or total_cost > 0:
+            total_reward = -100
+        
         failure = failure or (total_reward <= 10) #CHY: Failure if too slow.
         
-        if total_reward <= 10:
-            total_reward = -100
         info["all_states"] = all_states
         info["failure"] = failure
         info["total_reward"] = total_reward
+        info["total_cost"] = total_cost
         
         return traj, info
     

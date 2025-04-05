@@ -14,6 +14,7 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
 import pathlib
+from metaurban.obs.state_obs import LidarStateObservation
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -34,20 +35,20 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
-    parser.add_argument("--future_steps_preference", default=3, type=int)
+    parser.add_argument("--future_steps_preference", default=9, type=int)
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
     parser.add_argument("--alpha", default=0.1, type=float)
     parser.add_argument("--bias", default=0.5, type=float)
-    
+    parser.add_argument("--horizon", default=1000, type=int)
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_dpow={}_L={}_metaurban".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
+    experiment_batch_name = "{}_bcw={}_dpow={}_L={}_murbanobj0.1_bamboo".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_metaurban"
+        experiment_batch_name = "BCLossOnly_murbanobj0.1"
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -67,6 +68,7 @@ if __name__ == '__main__':
     os.makedirs(trial_dir, exist_ok=False)  # Avoid overwritting old experiment
     print(f"We start logging training data into {trial_dir}")
 
+    #TODO: Current Horizon is too short 150, original: 1000
     # ===== Setup the config =====
     config = dict(
 
@@ -85,6 +87,61 @@ if __name__ == '__main__':
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
             expert_noise=args.expert_noise,
+            map="X",
+            training=True,
+            object_density=0.1,
+            crswalk_density=1,
+            spawn_human_num=10,
+            spawn_robotdog_num=10,
+            spawn_deliveryrobot_num=10,
+            show_mid_block_map=False,
+            show_ego_navigation=False,
+            debug=False,
+            horizon=args.horizon,
+            on_continuous_line_done=False,
+            out_of_route_done=True,
+            vehicle_config=dict(
+                show_lidar=True,
+                show_navi_mark=True,
+                show_line_to_navi_mark=False,
+                show_dest_mark=False,
+                use_saver=False, overtake_stat=False
+            ),
+            show_sidewalk=True,
+            show_crosswalk=True,
+            # scenario setting
+            random_spawn_lane_index=False,
+            num_scenarios=1000,
+            traffic_density=0,
+            accident_prob=0,
+            crash_vehicle_done=True,
+            crash_object_done=True,
+            relax_out_of_road_done=True,
+            drivable_area_extension=75,
+            
+            # ===== Reward Scheme =====
+            # See: https://github.com/metaurbanrse/metaurban/issues/283
+            success_reward=8.0,
+            out_of_road_penalty=3.0,
+            on_lane_line_penalty=1.,
+            crash_vehicle_penalty=2.,
+            crash_object_penalty=2.0,
+            crash_human_penalty=2.0,
+            crash_building_penalty=2.0,
+            driving_reward=2.0,
+            steering_range_penalty=2.0,
+            heading_penalty=0.0,
+            lateral_penalty=2.0,
+            max_lateral_dist=5.,
+            speed_reward=0.5,
+            no_negative_reward=False,
+
+            # ===== Cost Scheme =====
+            crash_vehicle_cost=2.0,
+            crash_object_cost=2.0,
+            out_of_road_cost=2.0,
+            crash_human_cost=2.0,
+            agent_observation=LidarStateObservation,
         ),
 
         # Algorithm config
@@ -134,8 +191,9 @@ if __name__ == '__main__':
         config["env_config"].update(
             # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
             num_scenarios=1,
-            traffic_density=0.0,
-            map="COT",
+            object_density=0.3,
+            horizon=1000,
+            map="X",
             use_render=True
         )
         
@@ -153,7 +211,61 @@ if __name__ == '__main__':
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
             start_seed=1000,
-            horizon=1500,
+            map="X",
+            training=True,
+            object_density=0.1,
+            crswalk_density=1,
+            spawn_human_num=10,
+            spawn_robotdog_num=10,
+            spawn_deliveryrobot_num=10,
+            show_mid_block_map=False,
+            show_ego_navigation=False,
+            debug=False,
+            horizon=args.horizon,
+            on_continuous_line_done=False,
+            out_of_route_done=True,
+            vehicle_config=dict(
+                show_lidar=True,
+                show_navi_mark=True,
+                show_line_to_navi_mark=False,
+                show_dest_mark=False,
+                use_saver=False, overtake_stat=False
+            ),
+            show_sidewalk=True,
+            show_crosswalk=True,
+            # scenario setting
+            random_spawn_lane_index=False,
+            num_scenarios=1000,
+            traffic_density=0,
+            accident_prob=0,
+            crash_vehicle_done=True,
+            crash_object_done=True,
+            relax_out_of_road_done=True,
+            drivable_area_extension=75,
+            
+            # ===== Reward Scheme =====
+            # See: https://github.com/metaurbanrse/metaurban/issues/283
+            success_reward=8.0,
+            out_of_road_penalty=3.0,
+            on_lane_line_penalty=1.,
+            crash_vehicle_penalty=2.,
+            crash_object_penalty=2.0,
+            crash_human_penalty=2.0,
+            crash_building_penalty=2.0,
+            driving_reward=2.0,
+            steering_range_penalty=2.0,
+            heading_penalty=0.0,
+            lateral_penalty=2.0,
+            max_lateral_dist=5.,
+            speed_reward=0.5,
+            no_negative_reward=True,
+
+            # ===== Cost Scheme =====
+            crash_vehicle_cost=2.0,
+            crash_object_cost=2.0,
+            out_of_road_cost=2.0,
+            crash_human_cost=2.0,
+            agent_observation=LidarStateObservation,
         )
         from pvp.experiments.metaurban.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor

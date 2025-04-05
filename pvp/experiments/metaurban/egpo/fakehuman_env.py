@@ -185,6 +185,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
+            # predicted_traj_real, info_real = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, use_expert=True)
+            # self.render_traj(predicted_traj_real, (0, 0, 1))
 
         if self.takeover:
             if self.config["use_discrete"]:
@@ -192,7 +194,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 expert_action = self.discrete_to_continuous(expert_action)
             actions = expert_action
             
-        if self.takeover: #and (self.total_steps % update_future_freq == 0):
+        if self.takeover and (self.total_steps % update_future_freq == 0):
             predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
@@ -257,7 +259,62 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return o, info
 
 if __name__ == "__main__":
-    env = FakeHumanEnv(dict(use_render=False, num_scenarios=1, traffic_density=0))
+    from metaurban.obs.state_obs import LidarStateObservation
+    env = FakeHumanEnv(dict(use_render=True,         map="X",
+            training=True,
+            object_density=0.1,
+            crswalk_density=1,
+            spawn_human_num=10,
+            spawn_robotdog_num=10,
+            spawn_deliveryrobot_num=10,
+            show_mid_block_map=False,
+            show_ego_navigation=False,
+            debug=False,
+            horizon=300,
+            on_continuous_line_done=False,
+            out_of_route_done=True,
+            vehicle_config=dict(
+                show_lidar=True,
+                show_navi_mark=True,
+                show_line_to_navi_mark=False,
+                show_dest_mark=False,
+                use_saver=False, overtake_stat=False
+            ),
+            show_sidewalk=True,
+            show_crosswalk=True,
+            # scenario setting
+            random_spawn_lane_index=False,
+            num_scenarios=1000,
+            traffic_density=0,
+            accident_prob=0,
+            crash_vehicle_done=True,
+            crash_object_done=True,
+            relax_out_of_road_done=True,
+            drivable_area_extension=75,
+            
+            # ===== Reward Scheme =====
+            # See: https://github.com/metaurbanrse/metaurban/issues/283
+            success_reward=8.0,
+            out_of_road_penalty=3.0,
+            on_lane_line_penalty=1.,
+            crash_vehicle_penalty=2.,
+            crash_object_penalty=2.0,
+            crash_human_penalty=2.0,
+            crash_building_penalty=2.0,
+            driving_reward=2.0,
+            steering_range_penalty=2.0,
+            heading_penalty=0.0,
+            lateral_penalty=2.0,
+            max_lateral_dist=5.,
+            speed_reward=0.5,
+            no_negative_reward=False,
+
+            # ===== Cost Scheme =====
+            crash_vehicle_cost=2.0,
+            crash_object_cost=2.0,
+            out_of_road_cost=2.0,
+            crash_human_cost=2.0,
+            agent_observation=LidarStateObservation,))
     env.reset()
     ss = 0
     while True:
