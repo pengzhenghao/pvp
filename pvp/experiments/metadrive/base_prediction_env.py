@@ -1,6 +1,7 @@
 from metadrive.component.pgblock.first_block import FirstPGBlock
 from metadrive.policy.idm_policy import IDMPolicy
 from metadrive.envs.safe_metadrive_env import SafeMetaDriveEnv
+from metadrive.envs.top_down_env import TopDownMetaDrive
 from metadrive.utils import Config
 from metadrive.utils.math import norm
 from panda3d.core import LVector3
@@ -11,7 +12,7 @@ from collections import deque
 import numpy as np
 import copy
 
-class BasePredictionEnv(SafeMetaDriveEnv):
+class BasePredictionEnv(TopDownMetaDrive):
     def default_config(self) -> Config:
         config = super(BasePredictionEnv, self).default_config()
         config.update(

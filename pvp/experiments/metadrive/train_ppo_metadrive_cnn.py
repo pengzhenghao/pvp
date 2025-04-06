@@ -56,8 +56,7 @@ if __name__ == '__main__':
     print(f"We start logging training data into {trial_dir}")
 
     # ===== Setup the config =====
-    sensor_size = (84, 84) 
-    from metadrive.component.sensors.rgb_camera import RGBCamera
+    # from metadrive.component.sensors.rgb_camera import RGBCamera
     from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
     config = dict(
         # ===== Environment =====
@@ -66,22 +65,20 @@ if __name__ == '__main__':
             manual_control=False,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
-            image_observation=True, 
-            vehicle_config=dict(image_source="rgb_camera"),
-            sensors={"rgb_camera": (RGBCamera, *sensor_size)},
-            stack_size=3,
-            # num_scenarios=1,
-            # traffic_density=0.0,
-            # map="COT"
+            start_seed=0,
+            horizon=1500,
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT"
         ),
-        num_train_envs=50,
+        num_train_envs=1,
 
         # ===== Training =====
         algo=dict(
             policy=ActorCriticPolicy,
             policy_kwargs=dict(
                 features_extractor_class=OurFeaturesExtractor,
-                features_extractor_kwargs=dict(features_dim=275),
+                features_extractor_kwargs=dict(features_dim=256),
                 net_arch=[
                     256,
                 ]
@@ -135,15 +132,11 @@ if __name__ == '__main__':
         eval_env_config = dict(
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
-            start_seed=1000,
+            start_seed=0,
             horizon=1500,
-            image_observation=True, 
-            vehicle_config=dict(image_source="rgb_camera"),
-            sensors={"rgb_camera": (RGBCamera, *sensor_size)},
-            stack_size=3,
-            # num_scenarios=1,
-            # traffic_density=0.0,
-            # map="COT"
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT"
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
@@ -151,7 +144,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = SubprocVecEnv([_make_eval_env] * 10)
+    eval_env = SubprocVecEnv([_make_eval_env])
 
     # ===== Setup the callbacks =====
     save_freq = 1_0000  # Number of steps per model checkpoint

@@ -186,7 +186,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             engine_info["takeover_cost"] = cost
         engine_info["total_takeover_cost"] = self.total_takeover_cost
         engine_info["native_cost"] = engine_info["cost"]
-        engine_info["episode_native_cost"] = self.episode_cost
+        # engine_info["episode_native_cost"] = self.episode_cost
         self.total_cost += engine_info["cost"]
         self.total_takeover_count += 1 if self.takeover else 0
         engine_info["total_takeover_count"] = self.total_takeover_count
@@ -204,11 +204,12 @@ from metadrive.component.sensors.rgb_camera import RGBCamera
 from metadrive.utils.doc_utils import generate_gif
 from IPython.display import Image
 if __name__ == "__main__":
-    sensor_size = (200, 100) 
-    env = FakeHumanEnv(dict(free_level=0.95, use_render=True, image_observation=True, 
-         vehicle_config=dict(image_source="rgb_camera"),
-         sensors={"rgb_camera": (RGBCamera, *sensor_size)},
-         stack_size=3,))
+    # sensor_size = (200, 100) 
+    env = FakeHumanEnv(dict(free_level=0.95, use_render=True))
+    # env = FakeHumanEnv(dict(free_level=0.95, use_render=True, image_observation=True, 
+    #      vehicle_config=dict(image_source="rgb_camera"),
+    #      sensors={"rgb_camera": (RGBCamera, *sensor_size)},
+    #      stack_size=3,))
     env.reset()
     
     global _expert 
@@ -223,7 +224,7 @@ if __name__ == "__main__":
         else:
             o, _, done, info = env.step([0, 0.1])
         ss += 1
-        ret=o["image"][..., -1]*255 # [0., 1.] to [0, 255]
+        ret=o[..., 0]*255 # [0., 1.] to [0, 255]
         ret=ret.astype(np.uint8)
         frames.append(ret[..., ::-1])
         # done = tm or tc
