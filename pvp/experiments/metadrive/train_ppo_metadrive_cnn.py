@@ -67,9 +67,9 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
             start_seed=0,
             horizon=1500,
-            num_scenarios=1,
-            traffic_density=0.0,
-            map="COT"
+            # num_scenarios=1,
+            # traffic_density=0.0,
+            # map="COT"
         ),
         num_train_envs=1,
 
@@ -78,14 +78,14 @@ if __name__ == '__main__':
             policy=ActorCriticPolicy,
             policy_kwargs=dict(
                 features_extractor_class=OurFeaturesExtractor,
-                features_extractor_kwargs=dict(features_dim=256),
+                features_extractor_kwargs=dict(features_dim=1024),
                 net_arch=[
                     256,
                 ]
             ),
             n_steps=512,  # n_steps * n_envs = total_batch_size
             n_epochs=20,
-            learning_rate=5e-5,
+            learning_rate=1e-4, #5e-5,
             batch_size=256,
             clip_range=0.1,
             vf_coef=0.5,
@@ -147,7 +147,7 @@ if __name__ == '__main__':
     eval_env = SubprocVecEnv([_make_eval_env])
 
     # ===== Setup the callbacks =====
-    save_freq = 1_0000  # Number of steps per model checkpoint
+    save_freq = 50000  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
@@ -176,14 +176,14 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=10_0000,
+        total_timesteps=20_000_000,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
         eval_env=eval_env,
-        eval_freq=2000,
-        n_eval_episodes=50,
+        eval_freq=50000,
+        n_eval_episodes=10,
         eval_log_path=str(trial_dir),
 
         # logging
