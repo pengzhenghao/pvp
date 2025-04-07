@@ -71,7 +71,7 @@ if __name__ == '__main__':
             # traffic_density=0.0,
             # map="COT"
         ),
-        num_train_envs=1,
+        num_train_envs=4,
 
         # ===== Training =====
         algo=dict(
@@ -83,10 +83,10 @@ if __name__ == '__main__':
                     256,
                 ]
             ),
-            n_steps=64,  # n_steps * n_envs = total_batch_size
+            n_steps=512,  # n_steps * n_envs = total_batch_size
             n_epochs=20,
             learning_rate=5e-5,
-            batch_size=64,
+            batch_size=256,
             clip_range=0.1,
             vf_coef=0.5,
             ent_coef=0.0,

@@ -459,8 +459,15 @@ def obs_as_tensor(obs: Union[np.ndarray, Dict[Union[str, int], np.ndarray]],
         try:
             return th.as_tensor(obs).to(device)
         except:
-            obs = obs[0]
-            return {key: th.as_tensor(_obs).to(device) for (key, _obs) in obs.items()}
+            # final_obs = []
+            # for obss in obs:
+            #     final_obs.append({key: th.as_tensor(_obs).to(device) for (key, _obs) in obss.items()})
+            
+            # return final_obs
+            keys = obs[0].keys()  # Get the keys from the first dictionary
+            result = {key: th.stack([th.as_tensor(d[key]).to(device) for d in obs]) for key in keys}
+            return result
+            
     elif isinstance(obs, dict):
         return {key: th.as_tensor(_obs).to(device) for (key, _obs) in obs.items()}
     else:
