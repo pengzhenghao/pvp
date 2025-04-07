@@ -79,8 +79,8 @@ class OurFeaturesExtractor(BaseFeaturesExtractor):
 class OurFeaturesExtractorCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim):
         super(OurFeaturesExtractorCNN, self).__init__(observation_space, features_dim)
-        obs_shape = observation_space.shape
-        self.use_dict_obs_space = False
+        obs_shape = observation_space["image"].shape
+        self.use_dict_obs_space = True
 
         input_image_size = obs_shape[:2]
         self.filters = predefined_filters[input_image_size]
@@ -100,18 +100,12 @@ class OurFeaturesExtractorCNN(BaseFeaturesExtractor):
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         if self.use_dict_obs_space:
-            assert False
-            obs_image = observations["image"]
-            if obs_image.ndim == 3:
-                obs_image = obs_image.permute(2, 0, 1).reshape(5, 84, 84)
-            elif len(obs_image.shape) == 4:  # Check if the shape is (H, W, C1, C2)
-                H, W, C1, C2 = obs_image.shape
-                obs_image = obs_image.permute(2, 3, 0, 1).reshape(C1 * C2, H, W)
+            obs = observations["image"]
+            if obs.ndim == 3:
+                obs = obs.permute(2, 0, 1).reshape(5, 84, 84)
             else:
-                N, H, W, C1, C2 = obs_image.shape
-                obs_image = obs_image.permute(0, 3, 4, 1, 2).reshape(N, C1 * C2, H, W)
-            
-            obs_feat = th.squeeze(self.cnn(obs_image))
+                obs = obs.permute(0, 3, 1, 2).reshape(-1, 5, 84, 84)
+            obs_feat = th.squeeze(self.cnn(obs))
             other_feat = th.squeeze(observations["state"])
             ret = th.cat([obs_feat, other_feat], dim=-1)
             if ret.ndim == 1:
@@ -122,11 +116,6 @@ class OurFeaturesExtractorCNN(BaseFeaturesExtractor):
                 obs = obs.permute(2, 0, 1).reshape(5, 84, 84)
             else:
                 obs = obs.permute(0, 3, 1, 2).reshape(-1, 5, 84, 84)
-            # if len(obs.shape) == 4:  # Check if the shape is (H, W, C1, C2)
-            #     H, W, C1, C2 = obs.shape
-            #     obs = obs.permute(2, 3, 0, 1).reshape(C1 * C2, H, W)  # Combine C1 and C2 into one channel dimension
-            # else:
-            #     assert False
             ret = self.cnn(obs)
         assert ret.shape[-1] == self._features_dim
         return ret

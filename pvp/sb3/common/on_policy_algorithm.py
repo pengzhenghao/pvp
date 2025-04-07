@@ -108,7 +108,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         self._setup_lr_schedule()
         self.set_random_seed(self.seed)
 
-        buffer_cls = DictRolloutBuffer if isinstance(self.observation_space, gym.spaces.Dict) else RolloutBuffer
+        buffer_cls = DictRolloutBuffer #if isinstance(self.observation_space, gym.spaces.Dict) else RolloutBuffer
 
         self.rollout_buffer = buffer_cls(
             self.n_steps,
