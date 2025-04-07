@@ -78,15 +78,15 @@ if __name__ == '__main__':
             policy=ActorCriticPolicy,
             policy_kwargs=dict(
                 features_extractor_class=OurFeaturesExtractor,
-                features_extractor_kwargs=dict(features_dim=1024),
+                features_extractor_kwargs=dict(features_dim=256),
                 net_arch=[
                     256,
                 ]
             ),
             n_steps=512,  # n_steps * n_envs = total_batch_size
-            n_epochs=20,
-            learning_rate=1e-4, #5e-5,
-            batch_size=256,
+            n_epochs=200,
+            learning_rate=5e-5,
+            batch_size=512,
             clip_range=0.1,
             vf_coef=0.5,
             ent_coef=0.0,
