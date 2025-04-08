@@ -391,9 +391,10 @@ class COMB(PVPTD3):
             stat_recorder["new_action_abs_steering"] = th.abs(new_action[:, 0]).mean().item()
             stat_recorder["new_action_accerler"] = new_action[:, 1].mean().item()
 
-            pos_obs, pos_action = preference_data.pos_observations.squeeze(), preference_data.pos_actions.squeeze()
-            neg_obs, neg_action = preference_data.neg_observations.squeeze(), preference_data.neg_actions.squeeze()
-            
+            pos_obs, pos_action = preference_data.pos_observations, preference_data.pos_actions.squeeze()
+            neg_obs, neg_action = preference_data.neg_observations, preference_data.neg_actions.squeeze()
+            pos_obs = {key: value.squeeze() for key, value in preference_data.pos_observations.items()}
+            neg_obs = {key: value.squeeze() for key, value in preference_data.neg_observations.items()}
             def get_log_prob(obs, target_action):
                 mean = self.actor(obs)
                 log_prob = -((mean - target_action) ** 2).sum(dim = -1)

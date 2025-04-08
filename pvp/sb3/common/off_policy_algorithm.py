@@ -184,8 +184,9 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         self.set_random_seed(self.seed)
 
         # Use DictReplayBuffer if needed
+        import gymnasium
         if self.replay_buffer_class is None:
-            if isinstance(self.observation_space, gym.spaces.Dict):
+            if isinstance(self.observation_space, gym.spaces.Dict) or isinstance(self.observation_space, gymnasium.spaces.Dict):
                 self.replay_buffer_class = DictReplayBuffer
             else:
                 self.replay_buffer_class = ReplayBuffer

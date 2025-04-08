@@ -33,7 +33,8 @@ def dict_to_obs(obs_space: gym.spaces.Space, obs_dict: Dict[Any, np.ndarray]) ->
         If space is Dict, function is identity; if space is Tuple, converts dict to Tuple;
         otherwise, space is unstructured and returns the value raw_obs[None].
     """
-    if isinstance(obs_space, gym.spaces.Dict):
+    import gymnasium
+    if isinstance(obs_space, gym.spaces.Dict) or isinstance(obs_space, gymnasium.spaces.Dict):
         return obs_dict
     elif isinstance(obs_space, gym.spaces.Tuple):
         assert len(obs_dict) == len(obs_space.spaces), "size of observation does not match size of observation space"
@@ -58,7 +59,8 @@ def obs_space_info(obs_space: gym.spaces.Space) -> Tuple[List[str], Dict[Any, Tu
         dtypes: a dict mapping keys to dtypes.
     """
     check_for_nested_spaces(obs_space)
-    if isinstance(obs_space, gym.spaces.Dict):
+    import gymnasium
+    if isinstance(obs_space, gym.spaces.Dict) or isinstance(obs_space, gymnasium.spaces.Dict):
         assert isinstance(obs_space.spaces, OrderedDict), "Dict space must have ordered subspaces"
         subspaces = obs_space.spaces
     elif isinstance(obs_space, gym.spaces.Tuple):

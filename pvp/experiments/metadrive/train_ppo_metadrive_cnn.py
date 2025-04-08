@@ -61,17 +61,17 @@ if __name__ == '__main__':
     config = dict(
         # ===== Environment =====
         env_config=dict(
-            use_render=False,  # Open the interface
+            use_render=True,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
             start_seed=0,
             horizon=1500,
-            # num_scenarios=1,
-            # traffic_density=0.0,
-            # map="COT"
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT"
         ),
-        num_train_envs=4,
+        num_train_envs=1,
 
         # ===== Training =====
         algo=dict(
@@ -147,7 +147,7 @@ if __name__ == '__main__':
     eval_env = SubprocVecEnv([_make_eval_env])
 
     # ===== Setup the callbacks =====
-    save_freq = 50000  # Number of steps per model checkpoint
+    save_freq = 500000  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
@@ -167,7 +167,7 @@ if __name__ == '__main__':
     model = PPO(**config["algo"])
 
     if args.ckpt:
-        ckpt = Path(args.ckpt)
+        ckpt = "/home/caihy/pvp/runs/ppo_metadrive/ppo_metadrive_2025-04-06_22-54-09_042b609a/best_model.zip" #"/home/caihy/pvp/ppocnn2.zip" #Path(args.ckpt)
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)

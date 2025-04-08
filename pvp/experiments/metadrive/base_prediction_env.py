@@ -256,7 +256,7 @@ class BasePredictionEnv(TopDownMetaDrive):
                 all_states.append(self.get_state())
             d = self.done_function('default_agent')[0]
 
-            new_obs = self.get_single_observation().observe(self.vehicle)
+            new_obs = self.get_single_observation().observe(self.vehicle, render=False)
             
             traj.append({
                 "obs": obs.copy(),

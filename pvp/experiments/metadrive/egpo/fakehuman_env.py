@@ -11,7 +11,7 @@ from metadrive.examples.ppo_expert.numpy_expert import ckpt_path
 from metadrive.policy.env_input_policy import EnvInputPolicy
 
 from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
-
+from metadrive.envs.safe_metadrive_env import SafeMetaDriveEnv
 FOLDER_PATH = pathlib.Path(__file__).parent
 
 logger = get_logger()
@@ -22,6 +22,7 @@ def get_expert():
     from pvp.sb3.ppo import PPO
     from pvp.sb3.ppo.policies import ActorCriticPolicy
 
+    from pvp.experiments.metadrive.human_in_the_loop_env_backup import HumanInTheLoopEnv
     train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": False})
 
     # Initialize agent
@@ -93,6 +94,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             self._num_bins = 13
             self._grid = np.linspace(-1, 1, self._num_bins)
             self._actions = np.array(np.meshgrid(self._grid, self._grid)).T.reshape(-1, 2)
+        from metadrive.obs.state_obs import LidarStateObservation
+        self.lidar = LidarStateObservation(self.config)
 
     @property
     def action_space(self) -> gym.Space:
@@ -137,8 +140,10 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return continuous_action
 
     def decide_takeover(self, obs, future_steps_predict):
+        self.config["use_render"] = False
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         assert info_real["failure"] == (info_real["total_reward"] < 0)
+        self.config["use_render"] = True
         self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
     
@@ -173,12 +178,14 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 global _expert
                 self.expert = _expert
         
-        last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
-        distribution = self.expert.get_distribution(last_obs)
-        log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
-        action_prob = log_prob.exp().detach().cpu().numpy()
-        action_prob = action_prob[0]
-        expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
+        # last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
+        # distribution = self.expert.get_distribution(last_obs)
+        # log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
+        # action_prob = log_prob.exp().detach().cpu().numpy()
+        # action_prob = action_prob[0]
+        
+        lidar_o = self.lidar.observe(self.agent)
+        expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
         enoise = np.random.randn(2) * expert_noise_bound
         expert_action = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
         
@@ -187,12 +194,15 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
 
         if self.takeover:
-            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             if self.config["use_discrete"]:
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)
             actions = expert_action
+        if self.takeover: #and (self.total_steps % update_future_freq == 0):
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                self.config["use_render"] = False
+                predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+                self.config["use_render"] = True
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
@@ -200,8 +210,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
-        if not self.config["disable_expert"]:
-            i["takeover_log_prob"] = log_prob.item()
+        # if not self.config["disable_expert"]:
+        #     i["takeover_log_prob"] = log_prob.item()
 
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             self.render(
@@ -239,7 +249,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             engine_info["takeover_cost"] = cost
         engine_info["total_takeover_cost"] = self.total_takeover_cost
         engine_info["native_cost"] = engine_info["cost"]
-        engine_info["episode_native_cost"] = self.episode_cost
+        # engine_info["episode_native_cost"] = self.episode_cost
         self.total_cost += engine_info["cost"]
         self.total_takeover_count += 1 if self.takeover else 0
         engine_info["total_takeover_count"] = self.total_takeover_count
@@ -260,9 +270,10 @@ if __name__ == "__main__":
     ss = 0
     while True:
         if ss < 10:
-            _, _, done, info = env.step([0, 1])
+            o, _, done, info = env.step([0, 1])
         else:
-            _, _, done, info = env.step([0, 0.1])
+            o, _, done, info = env.step([0, 0.1])
+            
         ss += 1
         # done = tm or tc
         # env.render(mode="topdown")

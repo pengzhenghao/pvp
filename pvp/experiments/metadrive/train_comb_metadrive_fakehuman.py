@@ -16,6 +16,11 @@ from pvp.utils.utils import get_time_str
 import pathlib
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
+    import sys
+    import gymnasium
+
+    # Alias gymnasium as gym
+    sys.modules["gym"] = gymnasium
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--exp_name", default="pvp_metadrive_fakehuman", type=str, help="The name for this batch of experiments."
@@ -45,9 +50,9 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_dpow={}_L={}".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
+    experiment_batch_name = "{}_bcw={}_dpow={}_L={}_CNN".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_"
+        experiment_batch_name = "BCLossOnly_CNN"
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -68,6 +73,7 @@ if __name__ == '__main__':
     print(f"We start logging training data into {trial_dir}")
 
     # ===== Setup the config =====
+    from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
     config = dict(
 
         # Environment config
@@ -104,7 +110,14 @@ if __name__ == '__main__':
             replay_buffer_kwargs=dict(
                 discard_reward=True,  # We run in reward-free manner!
             ),
-            policy_kwargs=dict(net_arch=[256, 256]),
+            policy_kwargs=dict(
+                features_extractor_class=OurFeaturesExtractor,
+                features_extractor_kwargs=dict(features_dim=275),
+                net_arch=[
+                    256,
+                ]
+                #TODO: share_features_extractor=False,
+            ),
             env=None,
             learning_rate=1e-4,
             q_value_bound=1,
@@ -136,7 +149,7 @@ if __name__ == '__main__':
             num_scenarios=1,
             traffic_density=0.0,
             map="COT",
-            use_render=True
+            use_render=False
         )
         
     # ===== Setup the training environment =====
@@ -164,7 +177,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 5000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
