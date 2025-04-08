@@ -50,9 +50,9 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_dpow={}_L={}_CNN".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
+    experiment_batch_name = "{}_bcw={}_dpow={}_L={}_OCNN".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_CNN"
+        experiment_batch_name = "BCLossOnly_OCNN"
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -177,7 +177,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 5000
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 1000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
