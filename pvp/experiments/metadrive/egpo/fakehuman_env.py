@@ -23,7 +23,7 @@ def get_expert():
     from pvp.sb3.ppo.policies import ActorCriticPolicy
 
     from pvp.experiments.metadrive.human_in_the_loop_env_backup import HumanInTheLoopEnv
-    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": False})
+    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
 
     # Initialize agent
     algo_config = dict(
@@ -140,10 +140,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return continuous_action
 
     def decide_takeover(self, obs, future_steps_predict):
-        self.config["use_render"] = False
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         assert info_real["failure"] == (info_real["total_reward"] < 0)
-        self.config["use_render"] = True
         self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
     
@@ -191,7 +189,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         
         if (self.total_steps % update_future_freq == 0):
             self.render_reset()
-            self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
+            self.takeover = True
+            # self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
 
         if self.takeover:
             if self.config["use_discrete"]:
@@ -200,9 +199,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             actions = expert_action
         if self.takeover: #and (self.total_steps % update_future_freq == 0):
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
-                self.config["use_render"] = False
                 predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
-                self.config["use_render"] = True
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
@@ -265,7 +262,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return o, info
 
 if __name__ == "__main__":
-    env = FakeHumanEnv(dict(use_render=True, num_scenarios=1, traffic_density=0))
+    env = FakeHumanEnv(dict(use_render=True, num_scenarios=1))
     env.reset()
     ss = 0
     while True:
@@ -275,6 +272,8 @@ if __name__ == "__main__":
             o, _, done, info = env.step([0, 0.1])
             
         ss += 1
+        
+        # print(np.array2string(o["image"][:, :, -1], threshold=np.inf))
         # done = tm or tc
         # env.render(mode="topdown")
         if done:
