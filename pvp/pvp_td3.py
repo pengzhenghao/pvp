@@ -415,9 +415,9 @@ class COMB(PVPTD3):
             self.critic.optimizer.zero_grad()
             critic_loss.backward()
             self.critic.optimizer.step()
-            stat_recorder["adv_pos"] = adv_pos.item()
-            stat_recorder["adv_neg"] = adv_neg.item()
-            stat_recorder["adv_diff"] = adv_pos.item() - adv_neg.item()
+            stat_recorder["adv_pos"] = adv_pos.mean().item()
+            stat_recorder["adv_neg"] = adv_neg.mean().item()
+            stat_recorder["adv_diff"] = adv_pos.mean().item() - adv_neg.mean().item()
             
             bc_loss_weight, dpo_loss_weight = self.extra_config["bc_loss_weight"], self.extra_config["dpo_loss_weight"]
             if self.extra_config["only_bc_loss"]:

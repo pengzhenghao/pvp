@@ -45,9 +45,9 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_dpow={}_L={}".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
+    experiment_batch_name = "{}_bcw={}_dpow={}_L={}_RLHF".format("Ours", args.bc_loss_weight, args.dpo_loss_weight, args.future_steps_preference)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_"
+        experiment_batch_name = "BCLossOnly_RLHF"
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
