@@ -24,9 +24,9 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=500, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
-    parser.add_argument("--log_dir", type=str, default="/home/zhenghao/pvp", help="Folder to store the logs.")
+    parser.add_argument("--wandb_project", type=str, default="HinLoopPref", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
+    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
@@ -34,6 +34,10 @@ if __name__ == '__main__':
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
+    parser.add_argument("--future_steps_predict", default=20, type=int)
+    parser.add_argument("--update_future_freq", default=10, type=int)
+    parser.add_argument("--future_steps_preference", default=1, type=int)
+    parser.add_argument("--expert_noise", default=0, type=float)
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -71,7 +75,12 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            free_level=free_level,
+            # free_level=free_level,
+            use_render=False,
+            future_steps_predict=args.future_steps_predict,
+            update_future_freq=args.update_future_freq,
+            future_steps_preference=args.future_steps_preference,
+            expert_noise=args.expert_noise,
         ),
 
         # Algorithm config
@@ -118,10 +127,13 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    train_env = FakeHumanEnv(config=config["env_config"], )
-    train_env = Monitor(env=train_env, filename=str(trial_dir))
-    # Store all shared control data to the files.
-    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+    def _make_train_env():  
+        train_env = FakeHumanEnv(config=config["env_config"], )
+        train_env = Monitor(env=train_env, filename=str(trial_dir))
+        # Store all shared control data to the files.
+        train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+        return train_env
+    train_env = SubprocVecEnv([_make_train_env])
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
@@ -177,8 +189,8 @@ if __name__ == '__main__':
 
         # eval
         eval_env=eval_env,
-        eval_freq=150,
-        n_eval_episodes=1,
+        eval_freq=500,
+        n_eval_episodes=20,
         eval_log_path=str(trial_dir),
 
         # logging

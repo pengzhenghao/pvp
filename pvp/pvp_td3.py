@@ -8,7 +8,7 @@ import os
 import pathlib
 from collections import defaultdict
 from typing import Any, Dict, List, Union, Optional
-
+from pvp.sb3.common.utils import get_schedule_fn, update_learning_rate, polyak_update
 import numpy as np
 import torch as th
 import torch
@@ -86,13 +86,23 @@ class PVPTD3(TD3):
             )
         else:
             self.human_data_buffer = self.replay_buffer
+    # def _update_learning_rate(self, optimizers: Dict) -> None:
+    #     """PZH: We now support setting different lr for different optimizer."""
+    #     assert set(optimizers.keys()) == set(self.lr_schedule.keys())
+    #     for name, lr_schedule in self.lr_schedule.items():
+    #         self.logger.record("train/learning_rate_{}".format(name), lr_schedule(self._current_progress_remaining))
+    #         optimizer = optimizers[name]
+    #         update_learning_rate(optimizer, lr_schedule(self._current_progress_remaining))
 
+    # def _setup_lr_schedule(self) -> None:
+    #     """PZH: We now support setting different lr for different optimizer."""
+    #     self.lr_schedule = {k: get_schedule_fn(v) for k, v in self.learning_rate.items()}
     def train(self, gradient_steps: int, batch_size: int = 100) -> None:
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
 
         # Update learning rate according to lr schedule
-        self._update_learning_rate([self.actor.optimizer, self.critic.optimizer])
+        self._update_learning_rate({"actor": self.actor.optimizer, "critic": self.critic.optimizer})
 
         with_human_proxy_value_loss = self.extra_config["with_human_proxy_value_loss"]
         with_agent_proxy_value_loss = self.extra_config["with_agent_proxy_value_loss"]
@@ -391,9 +401,10 @@ class COMB(PVPTD3):
             stat_recorder["new_action_abs_steering"] = th.abs(new_action[:, 0]).mean().item()
             stat_recorder["new_action_accerler"] = new_action[:, 1].mean().item()
 
-            pos_obs, pos_action = preference_data.pos_observations.squeeze(), preference_data.pos_actions.squeeze()
-            neg_obs, neg_action = preference_data.neg_observations.squeeze(), preference_data.neg_actions.squeeze()
-            
+            pos_obs, pos_action = preference_data.pos_observations, preference_data.pos_actions.squeeze()
+            neg_obs, neg_action = preference_data.neg_observations, preference_data.neg_actions.squeeze()
+            pos_obs = {key: value.squeeze() for key, value in preference_data.pos_observations.items()}
+            neg_obs = {key: value.squeeze() for key, value in preference_data.neg_observations.items()}
             def get_log_prob(obs, target_action):
                 mean = self.actor(obs)
                 log_prob = -((mean - target_action) ** 2).sum(dim = -1)

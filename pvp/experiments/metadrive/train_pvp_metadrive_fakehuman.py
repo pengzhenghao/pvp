@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}".format("PVP", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_delay2GD10".format("PVP", args.bc_loss_weight)
     if args.only_bc_loss=="True":
         experiment_batch_name = "BCLossOnlyS"
     seed = args.seed
@@ -108,7 +108,11 @@ if __name__ == '__main__':
             ),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
-            learning_rate=1e-4,
+            learning_rate=dict(
+                actor=1e-4,
+                critic=5e-4,
+            ),
+
             q_value_bound=1,
             optimize_memory_usage=True,
             buffer_size=50_000,  # We only conduct experiment less than 50K steps

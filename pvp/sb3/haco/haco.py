@@ -170,7 +170,7 @@ class HACO(SAC):
 
             critic_loss = []
             for (current_q_behavior, current_q_novice) in zip(current_q_behavior_values, current_q_novice_values):
-                l = 0.5 * F.mse_loss(current_q_behavior, target_q_values)
+                l = 0 # 0.5 * F.mse_loss(current_q_behavior, target_q_values)
 
                 # PZH: Here is the CQL loss
                 l -= th.mean(replay_data.interventions * self.cql_coefficient * (current_q_behavior - current_q_novice))

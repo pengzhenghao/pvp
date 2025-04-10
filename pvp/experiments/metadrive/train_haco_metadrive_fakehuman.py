@@ -19,10 +19,14 @@ if __name__ == '__main__':
     )
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
-    parser.add_argument("--log_dir", type=str, default="/data/zhenghao/pvp", help="Folder to store the logs.")
+    parser.add_argument("--wandb_project", type=str, default="HinLoopPref", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
+    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
+    parser.add_argument("--future_steps_predict", default=20, type=int)
+    parser.add_argument("--update_future_freq", default=10, type=int)
+    parser.add_argument("--future_steps_preference", default=3, type=int)
+    parser.add_argument("--expert_noise", default=0, type=float)
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -61,8 +65,13 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            free_level=free_level,
+            # free_level=free_level,
             cos_similarity=True,
+            use_render=True,
+            future_steps_predict=args.future_steps_predict,
+            update_future_freq=args.update_future_freq,
+            future_steps_preference=args.future_steps_preference,
+            expert_noise=args.expert_noise,
         ),
 
         # Algorithm config
@@ -111,6 +120,13 @@ if __name__ == '__main__':
         trial_name=trial_name,
         log_dir=str(trial_dir)
     )
+    config["env_config"].update(
+            # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT",
+            use_render=True
+        )
 
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -134,7 +150,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = SubprocVecEnv([_make_eval_env])
+    # eval_env = SubprocVecEnv([_make_eval_env])
 
     # ===== Setup the callbacks =====
     save_freq = 10000  # Number of steps per model checkpoint
@@ -170,8 +186,8 @@ if __name__ == '__main__':
         # eval_log_path=None,
 
         # eval
-        eval_env=eval_env,
-        eval_freq=150,
+        eval_env=None,
+        eval_freq=-1,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
