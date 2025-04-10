@@ -67,7 +67,7 @@ if __name__ == '__main__':
             # FakeHumanEnv config:
             # free_level=free_level,
             cos_similarity=True,
-            use_render=True,
+            use_render=False,  # Open the interface
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -120,13 +120,6 @@ if __name__ == '__main__':
         trial_name=trial_name,
         log_dir=str(trial_dir)
     )
-    config["env_config"].update(
-            # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
-            num_scenarios=1,
-            traffic_density=0.0,
-            map="COT",
-            use_render=True
-        )
 
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -150,7 +143,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    # eval_env = SubprocVecEnv([_make_eval_env])
+    eval_env = SubprocVecEnv([_make_eval_env])
 
     # ===== Setup the callbacks =====
     save_freq = 10000  # Number of steps per model checkpoint
@@ -186,9 +179,9 @@ if __name__ == '__main__':
         # eval_log_path=None,
 
         # eval
-        eval_env=None,
-        eval_freq=-1,
-        n_eval_episodes=50,
+        eval_env=eval_env,
+        eval_freq=500,
+        n_eval_episodes=20,
         eval_log_path=str(trial_dir),
 
         # logging
