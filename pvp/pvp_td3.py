@@ -372,7 +372,7 @@ class COMB(PVPTD3):
         self.policy.set_training_mode(True)
 
         # Update learning rate according to lr schedule
-        self._update_learning_rate([self.actor.optimizer])
+        self._update_learning_rate([self.actor.optimizer, self.critic.optimizer])
 
         stat_recorder = defaultdict(list)
 
@@ -395,29 +395,47 @@ class COMB(PVPTD3):
             neg_obs, neg_action = preference_data.neg_observations.squeeze(), preference_data.neg_actions.squeeze()
             
             def get_log_prob(obs, target_action):
-                mean = self.actor(obs)
-                log_prob = -((mean - target_action) ** 2).sum(dim = -1)
+                log_prob = self.critic(obs, target_action) #-((mean - target_action) ** 2).sum(dim = -1)
                 return log_prob
             
             alpha, bias = self.extra_config["alpha"], self.extra_config["bias"]
-            log_prob_pos = get_log_prob(pos_obs, pos_action)
-            log_prob_neg = get_log_prob(neg_obs, neg_action)
-            adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
-            label = torch.ones_like(adv_pos)
-            dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
+            log_prob_pos_twin = get_log_prob(pos_obs, pos_action)
+            log_prob_neg_twin = get_log_prob(neg_obs, neg_action)
+            critic_loss = []
+            
+            for (log_prob_pos, log_prob_neg) in zip(log_prob_pos_twin, log_prob_neg_twin):
+                adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
+                label = torch.ones_like(adv_pos)
+                dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
+                critic_loss.append(dpo_loss + (log_prob_pos**2).mean() + (log_prob_neg**2).mean())
+                
+            critic_loss = sum(critic_loss) / 2
+
+            # Optimize the critics
+            self.critic.optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic.optimizer.step()
+            stat_recorder["adv_pos"] = adv_pos.item()
+            stat_recorder["adv_neg"] = adv_neg.item()
+            stat_recorder["adv_diff"] = adv_pos.item() - adv_neg.item()
             
             bc_loss_weight, dpo_loss_weight = self.extra_config["bc_loss_weight"], self.extra_config["dpo_loss_weight"]
             if self.extra_config["only_bc_loss"]:
                 bc_loss_weight, dpo_loss_weight = 1.0, 0.0
+                
+            new_action = self.actor(pos_obs)
+            actor_loss = -self.critic.q1_forward(pos_obs, new_action).mean()
             
-            loss = bc_loss_weight * bc_loss + dpo_loss_weight * dpo_loss
+            loss = bc_loss_weight * bc_loss + dpo_loss_weight * actor_loss
             
             self.actor.optimizer.zero_grad()
             loss.backward()
             self.actor.optimizer.step()
-            
+            # polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
+            # polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)
             stat_recorder["bc_loss"].append(bc_loss.item() if bc_loss is not None else float('nan'))
-            stat_recorder["cpl_loss"].append(dpo_loss.item() if dpo_loss is not None else float('nan'))
+            stat_recorder["actor_loss"].append(actor_loss.item() if actor_loss is not None else float('nan'))
+            stat_recorder["cpl_loss"].append(critic_loss.item() if critic_loss is not None else float('nan'))
             stat_recorder["cpl_accuracy"].append(accuracy.item() if accuracy is not None else float('nan'))
             stat_recorder["loss"].append(loss.item() if loss is not None else float('nan'))
 
