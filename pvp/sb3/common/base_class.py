@@ -582,10 +582,13 @@ class BaseAlgorithm(ABC):
             return
         set_random_seed(seed, using_cuda=self.device.type == th.device("cuda").type)
         self.action_space.seed(seed)
-        if self.env is not None:
-            self.env.seed(seed)
-        if self.eval_env is not None:
-            self.eval_env.seed(seed)
+        try:
+            if self.env is not None:
+                self.env.seed(seed)
+            if self.eval_env is not None:
+                self.eval_env.seed(seed)
+        except:
+            pass
 
     def set_parameters(
         self,
