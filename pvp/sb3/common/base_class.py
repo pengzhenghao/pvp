@@ -443,7 +443,10 @@ class BaseAlgorithm(ABC):
                 self._last_original_obs = self._vec_normalize_env.get_original_obs()
 
         if eval_env is not None and self.seed is not None:
-            eval_env.seed(self.seed)
+            try:
+                eval_env.seed(self.seed)
+            except:
+                pass
 
         eval_env = self._get_eval_env(eval_env)
 
