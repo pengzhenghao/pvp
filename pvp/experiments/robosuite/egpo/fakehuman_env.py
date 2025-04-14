@@ -206,7 +206,7 @@ class CustomWrapper(gym.Env):
         
         self.gripper_closed = self._env._check_grasp(gripper=self._env.robots[0].gripper, object_geoms=[g for g in self._env.nuts[self._env.nut_id].contact_geoms])
         self.last_obs = o
-        i["raw_action"] = self.agent_action
+        i["raw_action"] = copy.copy(action_)
         i["step_reward"] = step_reward
         i["action_diff"] = action_diff
         i["takeover"] = i["takeover_cost"] = self.takeover
