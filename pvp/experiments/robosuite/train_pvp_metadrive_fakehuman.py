@@ -202,7 +202,8 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 2000
+        from pvp.sb3.common.vec_env import DummyVecEnv
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 5000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -235,14 +236,14 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=500_000,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=20,
         eval_log_path=str(trial_dir),
 
         # logging

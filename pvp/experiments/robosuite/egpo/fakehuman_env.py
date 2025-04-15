@@ -63,9 +63,9 @@ class CustomWrapper(gym.Env):
                 "stop_img_samples": 3,
                 "future_steps_preference": 1,
                 "expert_noise": 0,
-                "switch_to_expert": 0.05,
+                "switch_to_expert": 0.1,
                 "eval": False,
-                "MAX_EP_LEN": 200,
+                "MAX_EP_LEN": 300,
                 })
         self.config.update(config)
         # if self.config["eval"]:
@@ -194,7 +194,7 @@ class CustomWrapper(gym.Env):
         settle_action = np.zeros(7)
         settle_action[-1] = action_[-1]
         # if action_[-1] == 1:
-        for _ in range(10):
+        for _ in range(2):
             o, r, d, i = self.env.step(settle_action)
             self.render()
             self.total_reward += r
@@ -220,9 +220,9 @@ class CustomWrapper(gym.Env):
         i["total_reward"] = self.total_reward
         self.t += 1
         d = (self.t >= self.config['MAX_EP_LEN']) or self._check_success()
-        i["success"] = int(self._check_success())
+        i["is_success"] = int(self._check_success())
         i["episode_length"] = self.t
-        r += i["success"]
+        r += i["is_success"]
         return o, r, d, i
 
     def _check_success(self):
@@ -268,7 +268,7 @@ if __name__ == "__main__":
         env.viewer.add_keyup_callback("any", input_device.on_release)
         env.viewer.add_keyrepeat_callback("any", input_device.on_press)
     active_robot = env.robots[arm_ == 'left']
-    robosuite_cfg = {'MAX_EP_LEN': 200, 'INPUT_DEVICE': input_device}
+    robosuite_cfg = {'INPUT_DEVICE': input_device}
     # expert_pol = HardcodedPolicy(env).act
     
     num_episodes = 50
