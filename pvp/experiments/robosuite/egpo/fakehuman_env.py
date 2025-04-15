@@ -63,7 +63,7 @@ class CustomWrapper(gym.Env):
                 "stop_img_samples": 3,
                 "future_steps_preference": 1,
                 "expert_noise": 0,
-                "switch_to_expert": 0.1,
+                "switch_to_expert": 0.2,
                 "eval": False,
                 "MAX_EP_LEN": 300,
                 })
@@ -208,7 +208,7 @@ class CustomWrapper(gym.Env):
         self.last_obs = o
         i["raw_action"] = copy.copy(action_)
         i["step_reward"] = step_reward
-        i["action_diff"] = action_diff
+        i["action_diff_new"] = np.mean((self.agent_action - expert_action) ** 2)
         i["takeover"] = i["takeover_cost"] = self.takeover
         i["gripper_closed"] = self.gripper_closed
         i["takeover_start"] = True if not self.last_takeover and self.takeover else False

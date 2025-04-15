@@ -195,7 +195,7 @@ if __name__ == '__main__':
         unwrapped_env = env
         env = GymWrapper(env)
         env = VisualizationWrapper(env, indicator_configs=None)
-        env = CustomWrapper(env, unwrapped_env, config=dict(eval=True))
+        env = CustomWrapper(env, unwrapped_env, config=dict(eval=True, use_render=render))
         eval_env = Monitor(env=env, filename=str(trial_dir))
         return eval_env
 
@@ -203,7 +203,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import DummyVecEnv
-        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 5000
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 20000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -243,7 +243,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=20,
+        n_eval_episodes=10,
         eval_log_path=str(trial_dir),
 
         # logging
