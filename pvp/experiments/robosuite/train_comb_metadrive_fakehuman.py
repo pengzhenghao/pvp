@@ -16,11 +16,8 @@ from pvp.utils.utils import get_time_str
 import pathlib
 import robosuite as suite
 from robosuite import load_controller_config
-from robosuite.utils.input_utils import input2action
-from robosuite.utils.transform_utils import pose2mat
 from robosuite.wrappers import VisualizationWrapper
 from robosuite.wrappers import GymWrapper
-from robosuite.devices import Keyboard
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -214,7 +211,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 200
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 10), 200
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
