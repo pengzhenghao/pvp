@@ -60,10 +60,6 @@ if __name__ == '__main__':
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
     print("Trial name is set to: ", trial_name)
-    seed = args.seed
-    #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
-    trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
-    print("Trial name is set to: ", trial_name)
 
     use_wandb = args.wandb
     project_name = args.wandb_project
