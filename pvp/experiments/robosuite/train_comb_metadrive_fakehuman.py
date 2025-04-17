@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.robosuite.egpo.fakehuman_env import CustomWrapper
+from pvp.experiments.robosuite.egpo.fakehuman_env import CustomWrapper, GymWrapper
 from pvp.pvp_td3 import COMB
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -17,7 +17,6 @@ import pathlib
 import robosuite as suite
 from robosuite import load_controller_config
 from robosuite.wrappers import VisualizationWrapper
-from robosuite.wrappers import GymWrapper
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
