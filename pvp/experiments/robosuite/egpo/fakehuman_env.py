@@ -172,6 +172,8 @@ class CustomWrapper(gym.Env):
     total_reward = 0
     rec = []
     t = 0
+    def seed(self, seed=None):
+        return
     def __init__(self, env, unwrapped_env, config):
         self.env = env
         self._env = unwrapped_env
