@@ -53,9 +53,13 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0410".format("Ours", args.bc_loss_weight)
+    experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_".format("Ours", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_"
+        experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_".format("HG", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
+    seed = args.seed
+    #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
+    trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
+    print("Trial name is set to: ", trial_name)
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -214,7 +218,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 2000
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 200
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
