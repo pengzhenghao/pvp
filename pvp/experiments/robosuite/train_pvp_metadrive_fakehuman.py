@@ -35,7 +35,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb_project", type=str, default="RoboSuitePref", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
-    parser.add_argument("--bc_loss_weight", type=float, default=0.0)
+    parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
     parser.add_argument("--with_agent_proxy_value_loss", default="True", type=str)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
@@ -48,6 +48,7 @@ if __name__ == '__main__':
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--simple_batch", default="True", type=str)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
+    parser.add_argument("--switch_to_expert", default=0.2, type=float)
     
     args = parser.parse_args()
 
@@ -87,6 +88,7 @@ if __name__ == '__main__':
 
             # FakeHumanEnv config:
             use_render=False,
+            switch_to_expert=args.switch_to_expert,
             # future_steps_predict=args.future_steps_predict,
             # update_future_freq=args.update_future_freq,
             # future_steps_preference=args.future_steps_preference,
@@ -203,7 +205,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import DummyVecEnv
-        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 20000
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 2000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -243,7 +245,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=10,
+        n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
         # logging

@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
+from pvp.experiments.robosuite.egpo.fakehuman_env import CustomWrapper
 from pvp.pvp_td3 import COMB
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -14,6 +14,13 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
 import pathlib
+import robosuite as suite
+from robosuite import load_controller_config
+from robosuite.utils.input_utils import input2action
+from robosuite.utils.transform_utils import pose2mat
+from robosuite.wrappers import VisualizationWrapper
+from robosuite.wrappers import GymWrapper
+from robosuite.devices import Keyboard
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -25,7 +32,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="HinLoopPref", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="RoboSuitePref", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
@@ -40,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
     parser.add_argument("--alpha", default=0.1, type=float)
     parser.add_argument("--bias", default=0.5, type=float)
+    parser.add_argument("--switch_to_expert", default=0.2, type=float)
     
     args = parser.parse_args()
 
@@ -81,6 +89,7 @@ if __name__ == '__main__':
 
             # FakeHumanEnv config:
             use_render=False,
+            switch_to_expert=args.switch_to_expert,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -140,8 +149,32 @@ if __name__ == '__main__':
         )
         
     # ===== Setup the training environment =====
-    train_env = FakeHumanEnv(config=config["env_config"], )
-    train_env = Monitor(env=train_env, filename=str(trial_dir))
+    render = config["env_config"]["use_render"]
+    controller_config = load_controller_config(default_controller='OSC_POSE')
+    configr = {
+        "env_name": "NutAssembly",
+        "robots": "UR5e",
+        "controller_configs": controller_config,
+    }
+    env = suite.make(
+            **configr,
+            has_renderer=render,
+            has_offscreen_renderer=False,
+            render_camera="agentview",
+            single_object_mode=2, # env has 1 nut instead of 2
+            nut_type="round",
+            ignore_done=True,
+            use_camera_obs=False,
+            reward_shaping=True,
+            control_freq=20,
+            hard_reset=True,
+            use_object_obs=True
+        )
+    unwrapped_env = env
+    env = GymWrapper(env)
+    env = VisualizationWrapper(env, indicator_configs=None)
+    env = CustomWrapper(env, unwrapped_env, config=config["env_config"])
+    train_env = Monitor(env=env, filename=str(trial_dir))
     # Store all shared control data to the files.
     train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
     config["algo"]["env"] = train_env
@@ -149,22 +182,39 @@ if __name__ == '__main__':
 
     # ===== Also build the eval env =====
     def _make_eval_env():
-        eval_env_config = dict(
-            use_render=False,  # Open the interface
-            manual_control=False,  # Allow receiving control signal from external device
-            start_seed=1000,
-            horizon=1500,
-        )
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
-        from pvp.sb3.common.monitor import Monitor
-        eval_env = HumanInTheLoopEnv(config=eval_env_config)
-        eval_env = Monitor(env=eval_env, filename=str(trial_dir))
+        render = False
+        controller_config = load_controller_config(default_controller='OSC_POSE')
+        configr = {
+            "env_name": "NutAssembly",
+            "robots": "UR5e",
+            "controller_configs": controller_config,
+        }
+        env = suite.make(
+                **configr,
+                has_renderer=render,
+                has_offscreen_renderer=False,
+                render_camera="agentview",
+                single_object_mode=2, # env has 1 nut instead of 2
+                nut_type="round",
+                ignore_done=True,
+                use_camera_obs=False,
+                reward_shaping=True,
+                control_freq=20,
+                hard_reset=True,
+                use_object_obs=True
+            )
+        unwrapped_env = env
+        env = GymWrapper(env)
+        env = VisualizationWrapper(env, indicator_configs=None)
+        env = CustomWrapper(env, unwrapped_env, config=dict(eval=True, use_render=render))
+        eval_env = Monitor(env=env, filename=str(trial_dir))
         return eval_env
 
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
+        from pvp.sb3.common.vec_env import DummyVecEnv
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 2000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -197,7 +247,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=500_000,
         callback=callbacks,
         reset_num_timesteps=True,
 

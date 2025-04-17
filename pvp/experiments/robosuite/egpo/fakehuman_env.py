@@ -33,7 +33,7 @@ class CustomWrapper(gym.Env):
     last_takeover = None
     last_obs = None
     expert = None
-    takeover = False
+    takeover = None
     last_turn = None
     from collections import deque 
     takeover_recorder = deque(maxlen=2000)
@@ -153,10 +153,115 @@ class CustomWrapper(gym.Env):
             self.render()
         self.gripper_closed = False
         self.last_obs = r
-        self.last_takeover = False
+        self.last_takeover = None
+        self.takeover = None
         self.t = 0
         return r
 
+    def get_state(self):
+        obj = self._env.robots[0].controller
+        np_array_attributes = {}
+        for attr_name in dir(obj):
+            # Skip private or special attributes (e.g., __init__, __class__)
+            if attr_name.startswith("_"):
+                continue
+            
+            # Get the attribute value
+            attr_value = getattr(obj, attr_name)
+            
+            # Check if the attribute is a NumPy array
+            if isinstance(attr_value, np.ndarray):
+                np_array_attributes[attr_name] = attr_value
+        
+        return copy.deepcopy(np_array_attributes)
+
+    def set_state(self, state):
+        obj = self._env.robots[0].controller
+        for attr_name, attr_value in state.items():
+            # Set the NumPy array attribute
+            try:
+                setattr(obj, attr_name, attr_value)
+            except:
+                pass
+                # TODO: torque_compensation is not settable
+
+    def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, return_all_states = False):
+        info = dict()
+        saved_state = copy.deepcopy(self._env.sim.get_state())
+        
+        controller_state = self.get_state()
+        grip = self._env.robots[0].gripper.current_action[0]
+        
+        last_turn = self.last_turn
+        traj = []
+        obs = current_obs
+        total_reward = 0
+        success = False
+        total_action_diff = 0
+        for step in range(n_steps):
+            action = action_behavior
+            if action_behavior is None:
+                action = self.agent_action
+                if hasattr(self, "model"):
+                     action, _ = self.model.policy.predict(obs, deterministic=True)
+            action_expert = self.expert_act(obs)
+            action_expert = np.clip(action_expert, -1, 1)
+            action_diff = np.linalg.norm(action - action_expert)
+            total_action_diff += action_diff
+            step_reward = 0
+            o, r, d, i = self.env.step(action)
+            # self.render()
+            step_reward += r
+            settle_action = np.zeros(7)
+            settle_action[-1] = action[-1]
+            for _ in range(2):
+                o, r, d, i = self.env.step(settle_action)
+                # self.render()
+                step_reward += r
+            d = self._check_success()
+            total_reward += step_reward
+            traj.append({
+                "obs": obs.copy(),
+                "action": action.copy(),
+                "reward": step_reward,
+                "next_obs": o.copy(),
+                "done": d,
+                "action_expert": action_expert.copy(),
+            })
+            obs = o.copy()
+            if d:
+                success = True
+
+        mean_action_diff = total_action_diff / n_steps
+        self.last_turn = last_turn
+        self._env.sim.set_state(saved_state)
+        self.set_state(controller_state)
+        self._env.robots[0].gripper.current_action[0] = grip
+        
+        info["success"] = success
+        info["total_reward"] = total_reward
+        info["mean_action_diff"] = mean_action_diff
+        return traj, info
+        
+    def decide_takeover(self, obs, future_steps_predict):
+        if self.config["eval"]:
+            return False
+        predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
+        #TODO: return other objectives. current: mean action difference
+        return info_real["mean_action_diff"] > self.config["switch_to_expert"] and not self.config["eval"]
+    
+    def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
+        for step in range(min(len(predicted_traj) - 1, future_steps_preference)):
+            step_info = {
+                "obs": predicted_traj[step]["obs"].copy(),
+                "action": expert_action.copy(),
+                "next_obs": predicted_traj[step]["obs"].copy(),
+                "done": False,
+            }
+            positive_traj = [step_info].copy()
+            negative_traj = predicted_traj[step+1:]
+            self.model.imagreplay_buffer.add(positive_traj, negative_traj)
+            
     def step(self, action):
         # abstract 10 actions as 1 action
         # get rid of x/y rotation, which is unintuitive for remote teleop
@@ -176,16 +281,23 @@ class CustomWrapper(gym.Env):
         enoise = np.random.randn(7) * expert_noise_bound
         expert_action = np.clip(enoise + expert_action, -1, 1)
         
-        action_diff = np.linalg.norm(action_ - expert_action)
-        if action_diff > self.config["switch_to_expert"] and not self.config["eval"]:
-            #TODO: check whether set action_[3]/[4] to 0.0 affects the takeover decision
+        if self.takeover == None or (self.total_steps % update_future_freq == 0):
+            self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
+
+        if self.takeover:
+            #TODO: add to preference buffer
+            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             action_ = expert_action
-            self.takeover = True
+            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
         else:
             self.takeover = False
-        
+
         step_reward = 0
+        # time.sleep(1)
         o, r, d, i = self.env.step(action_)
+        # time.sleep(1)
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
         self.total_reward += r
@@ -193,23 +305,18 @@ class CustomWrapper(gym.Env):
         self.render()
         settle_action = np.zeros(7)
         settle_action[-1] = action_[-1]
-        # if action_[-1] == 1:
         for _ in range(2):
             o, r, d, i = self.env.step(settle_action)
             self.render()
             self.total_reward += r
             step_reward += r
-        # if action_[-1] > 0:
-        #     self.gripper_closed = True
-        # else:
-        #     self.gripper_closed = False
         
         self.gripper_closed = self._env._check_grasp(gripper=self._env.robots[0].gripper, object_geoms=[g for g in self._env.nuts[self._env.nut_id].contact_geoms])
         self.last_obs = o
         i["raw_action"] = copy.copy(action_)
         i["step_reward"] = step_reward
         i["action_diff_new"] = np.mean((self.agent_action - expert_action) ** 2)
-        i["takeover"] = i["takeover_cost"] = self.takeover
+        i["takeover"] = i["takeover_cost"] = (self.takeover == True)
         i["gripper_closed"] = self.gripper_closed
         i["takeover_start"] = True if not self.last_takeover and self.takeover else False
         # condition = i["takeover_start"] if self.config["only_takeover_start_cost"] else self.takeover
@@ -234,7 +341,7 @@ class CustomWrapper(gym.Env):
 
 if __name__ == "__main__":
     
-    render = False
+    render = True
     controller_config = load_controller_config(default_controller='OSC_POSE')
     config = {
         "env_name": "NutAssembly",
