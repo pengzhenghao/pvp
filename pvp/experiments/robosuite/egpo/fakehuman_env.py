@@ -6,29 +6,156 @@ import pathlib
 import gymnasium as gym
 import numpy as np
 import torch
-from metadrive.engine.logger import get_logger
-from metadrive.examples.ppo_expert.numpy_expert import ckpt_path
-from metadrive.policy.env_input_policy import EnvInputPolicy
-
-from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
 
 FOLDER_PATH = pathlib.Path(__file__).parent
 
-logger = get_logger()
 
 import robosuite as suite
 from robosuite import load_controller_config
-from robosuite.utils.input_utils import input2action
 # from thrifty.utils.hardcoded_nut_assembly import HardcodedPolicy
 from robosuite.utils.transform_utils import pose2mat
 
 from robosuite.wrappers import VisualizationWrapper
-from robosuite.wrappers import GymWrapper
-from robosuite.devices import Keyboard
 import numpy as np
 import sys
 import time
 
+from gym import spaces
+from gym.core import Env
+from robosuite.wrappers import Wrapper
+
+class GymWrapper(Wrapper, Env):
+    """
+    Initializes the Gym wrapper. Mimics many of the required functionalities of the Wrapper class
+    found in the gym.core module
+
+    Args:
+        env (MujocoEnv): The environment to wrap.
+        keys (None or list of str): If provided, each observation will
+            consist of concatenated keys from the wrapped environment's
+            observation dictionary. Defaults to proprio-state and object-state.
+
+    Raises:
+        AssertionError: [Object observations must be enabled if no keys]
+    """
+
+    def __init__(self, env, keys=None):
+        # Run super method
+        super().__init__(env=env)
+        # Create name for gym
+        robots = "".join([type(robot.robot_model).__name__ for robot in self.env.robots])
+        self.name = robots + "_" + type(self.env).__name__
+
+        # Get reward range
+        self.reward_range = (0, self.env.reward_scale)
+
+        if keys is None:
+            keys = []
+            # Add object obs if requested
+            if self.env.use_object_obs:
+                keys += ["object-state"]
+            # Add image obs if requested
+            if self.env.use_camera_obs:
+                keys += [f"{cam_name}_image" for cam_name in self.env.camera_names]
+            # Iterate over all robots to add to state
+            for idx in range(len(self.env.robots)):
+                keys += ["robot{}_proprio-state".format(idx)]
+        self.keys = keys
+
+        # Gym specific attributes
+        self.env.spec = None
+        self.metadata = None
+
+        # set up observation and action spaces
+        obs = self.env.reset()
+        self.modality_dims = {key: obs[key].shape for key in self.keys}
+        flat_ob = self._flatten_obs(obs)
+        self.obs_dim = flat_ob.size
+        high = np.inf * np.ones(self.obs_dim)
+        low = -high
+        self.observation_space = spaces.Box(low=low, high=high)
+        low, high = self.env.action_spec
+        self.action_space = spaces.Box(low=low, high=high)
+
+    def _flatten_obs(self, obs_dict, verbose=False):
+        """
+        Filters keys of interest out and concatenate the information.
+
+        Args:
+            obs_dict (OrderedDict): ordered dictionary of observations
+            verbose (bool): Whether to print out to console as observation keys are processed
+
+        Returns:
+            np.array: observations flattened into a 1d array
+        """
+        ob_lst = []
+        for key in self.keys:
+            if key in obs_dict:
+                if verbose:
+                    print("adding key: {}".format(key))
+                ob_lst.append(np.array(obs_dict[key]).flatten())
+        return np.concatenate(ob_lst)
+
+    def reset(self):
+        """
+        Extends env reset method to return flattened observation instead of normal OrderedDict.
+
+        Returns:
+            np.array: Flattened environment observation space after reset occurs
+        """
+        ob_dict = self.env.reset()
+        return self._flatten_obs(ob_dict)
+
+    def step(self, action):
+        """
+        Extends vanilla step() function call to return flattened observation instead of normal OrderedDict.
+
+        Args:
+            action (np.array): Action to take in environment
+
+        Returns:
+            4-tuple:
+
+                - (np.array) flattened observations from the environment
+                - (float) reward from the environment
+                - (bool) whether the current episode is completed or not
+                - (dict) misc information
+        """
+        ob_dict, reward, done, info = self.env.step(action)
+        return self._flatten_obs(ob_dict), reward, done, info
+
+    def seed(self, seed=None):
+        """
+        Utility function to set numpy seed
+
+        Args:
+            seed (None or int): If specified, numpy seed to set
+
+        Raises:
+            TypeError: [Seed must be integer]
+        """
+        # Seed the generator
+        if seed is not None:
+            try:
+                np.random.seed(seed)
+            except:
+                TypeError("Seed must be an integer type!")
+
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        """
+        Dummy function to be compatible with gym interface that simply returns environment reward
+
+        Args:
+            achieved_goal: [NOT USED]
+            desired_goal: [NOT USED]
+            info: [NOT USED]
+
+        Returns:
+            float: environment reward
+        """
+        # Dummy args used to mimic Wrapper interface
+        return self.env.reward()
+    
 class CustomWrapper(gym.Env):
     last_takeover = None
     last_obs = None
@@ -43,6 +170,7 @@ class CustomWrapper(gym.Env):
     total_cost = 0
     agent_action = None
     total_reward = 0
+    rec = []
     t = 0
     def __init__(self, env, unwrapped_env, config):
         self.env = env
@@ -185,7 +313,7 @@ class CustomWrapper(gym.Env):
                 pass
                 # TODO: torque_compensation is not settable
 
-    def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, return_all_states = False):
+    def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, expert_mode = False):
         info = dict()
         saved_state = copy.deepcopy(self._env.sim.get_state())
         
@@ -206,6 +334,8 @@ class CustomWrapper(gym.Env):
                      action, _ = self.model.policy.predict(obs, deterministic=True)
             action_expert = self.expert_act(obs)
             action_expert = np.clip(action_expert, -1, 1)
+            if expert_mode:
+                action = action_expert
             action_diff = np.linalg.norm(action - action_expert)
             total_action_diff += action_diff
             step_reward = 0
@@ -248,7 +378,12 @@ class CustomWrapper(gym.Env):
             return False
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         #TODO: return other objectives. current: mean action difference
-        return info_real["mean_action_diff"] > self.config["switch_to_expert"] and not self.config["eval"]
+        predicted_traj_real2, info_real2 = self.predict_agent_future_trajectory(obs, future_steps_predict, expert_mode=True)
+        
+        if info_real["mean_action_diff"] > self.config["switch_to_expert"]:
+            self.rec.append(info_real2["total_reward"] - info_real["total_reward"])
+        # return info_real["mean_action_diff"] > self.config["switch_to_expert"] 
+        return (info_real2["total_reward"] - info_real["total_reward"] > self.config["switch_to_expert"]) or (info_real["total_reward"] < 2)
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
         for step in range(min(len(predicted_traj) - 1, future_steps_preference)):
@@ -283,8 +418,12 @@ class CustomWrapper(gym.Env):
         
         if self.takeover == None or (self.total_steps % update_future_freq == 0):
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
-
-        if self.takeover:
+            # if len(self.rec) > 0:
+            #     print("MEAN:", np.mean(self.rec))
+        
+        self.takeover2 = (expert_action[-1] * action_[-1] < 0) and not self.config["eval"]
+        
+        if self.takeover or self.takeover2:
             #TODO: add to preference buffer
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
@@ -316,7 +455,8 @@ class CustomWrapper(gym.Env):
         i["raw_action"] = copy.copy(action_)
         i["step_reward"] = step_reward
         i["action_diff_new"] = np.mean((self.agent_action - expert_action) ** 2)
-        i["takeover"] = i["takeover_cost"] = (self.takeover == True)
+        i["takeover"] = i["takeover_cost"] = (self.takeover == True) or (self.takeover2 == True)
+        i["grip_wrong"] = self.takeover2
         i["gripper_closed"] = self.gripper_closed
         i["takeover_start"] = True if not self.last_takeover and self.takeover else False
         # condition = i["takeover_start"] if self.config["only_takeover_start_cost"] else self.takeover
@@ -341,7 +481,7 @@ class CustomWrapper(gym.Env):
 
 if __name__ == "__main__":
     
-    render = True
+    render = False
     controller_config = load_controller_config(default_controller='OSC_POSE')
     config = {
         "env_name": "NutAssembly",
@@ -369,13 +509,7 @@ if __name__ == "__main__":
 
     arm_ = 'right'
     config_ = 'single-arm-opposed'
-    input_device = Keyboard(pos_sensitivity=0.5, rot_sensitivity=3.0)
-    if render:
-        env.viewer.add_keypress_callback("any", input_device.on_press)
-        env.viewer.add_keyup_callback("any", input_device.on_release)
-        env.viewer.add_keyrepeat_callback("any", input_device.on_press)
     active_robot = env.robots[arm_ == 'left']
-    robosuite_cfg = {'INPUT_DEVICE': input_device}
     # expert_pol = HardcodedPolicy(env).act
     
     num_episodes = 50
@@ -388,7 +522,6 @@ if __name__ == "__main__":
         print('Episode #{}'.format(i))
         o, total_ret, d, t = env.reset(), 0, False, 0
         curr_obs, curr_act = [], []
-        robosuite_cfg['INPUT_DEVICE'].start_control()
         while not d:
             # a = expert_pol(o)
             a = np.zeros(7) + 5
