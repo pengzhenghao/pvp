@@ -254,7 +254,7 @@ class CustomWrapper(gym.Env):
                 "stop_img_samples": 3,
                 "future_steps_preference": 1,
                 "expert_noise": 0,
-                "switch_to_expert": 0.2,
+                "switch_to_expert": 10,
                 "eval": False,
                 "MAX_EP_LEN": 600,
                 })
