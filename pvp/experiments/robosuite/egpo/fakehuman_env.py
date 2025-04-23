@@ -64,7 +64,7 @@ class GymWrapper(Wrapper, Env):
 
         # Gym specific attributes
         self.env.spec = None
-        self.metadata = None
+        self.metadata = {}
 
         # set up observation and action spaces
         obs = self.env.reset()
@@ -155,6 +155,67 @@ class GymWrapper(Wrapper, Env):
         """
         # Dummy args used to mimic Wrapper interface
         return self.env.reward()
+
+def get_expert():
+    from pvp.sb3.common.save_util import load_from_zip_file
+    from pvp.sb3.ppo import PPO
+    from pvp.sb3.ppo.policies import ActorCriticPolicy
+
+    if True:
+        render = False
+        controller_config = load_controller_config(default_controller='OSC_POSE')
+        configr = {
+            "env_name": "Wipe",
+            "robots": "UR5e",
+            "controller_configs": controller_config,
+        }
+        env = suite.make(
+                **configr,
+                has_renderer=render,
+                has_offscreen_renderer=False,
+                render_camera="agentview",
+                ignore_done=True,
+                use_camera_obs=False,
+                reward_shaping=True,
+                control_freq=20,
+                hard_reset=True,
+                use_object_obs=True
+            )
+        train_env = GymWrapper(env)
+        # train_env = VisualizationWrapper(train_env, indicator_configs=None)
+        
+    # Initialize agent
+    algo_config = dict(
+        policy=ActorCriticPolicy,
+        n_steps=1024,  # n_steps * n_envs = total_batch_size
+        n_epochs=20,
+        learning_rate=5e-5,
+        batch_size=256,
+        clip_range=0.1,
+        vf_coef=0.5,
+        ent_coef=0.0,
+        max_grad_norm=10.0,
+        # tensorboard_log=trial_dir,
+        create_eval_env=False,
+        verbose=2,
+        # seed=seed,
+        device="auto",
+        env=train_env
+    )
+    model = PPO(**algo_config)
+
+    ckpt = FOLDER_PATH / "best_model.zip"
+
+    print(f"Loading checkpoint from {ckpt}!")
+    data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
+    model.set_parameters(params, exact_match=True, device=model.device)
+    print(f"Model is loaded from {ckpt}!")
+
+    train_env.close()
+
+    return model.policy
+
+_expert = get_expert()
     
 class CustomWrapper(gym.Env):
     last_takeover = None
@@ -201,73 +262,21 @@ class CustomWrapper(gym.Env):
         # if self.config["eval"]:
         #     self.config["use_render"] = False
         self._render = self.config["use_render"]
-    
+        if self.expert is None:
+            global _expert
+            self.expert = _expert
     def obs_to_tensor(self, obs):
         obs_tensor = torch.as_tensor(obs).to("cuda")
         return obs_tensor
     
     def expert_act(self, o):
-        obj_pos, obj_quat = o[:3], o[3:7]
-        rel_quat = o[10:14]
-        eef_pos, eef_quat = o[32:35], o[35:39]
-        a = np.zeros(6)
-
-        pose = pose2mat((obj_pos, obj_quat))
-        grasp_point = (pose @ np.array([0.06, 0, 0, 1]))[:-1]
-
-        if self.gripper_closed and np.linalg.norm(grasp_point - eef_pos) > 0.02:
-            # open and lift gripper if it's not holding anything.
-            a[2] = 1.0
-            return a
-
-        if not self.gripper_closed and np.linalg.norm(grasp_point[:2] - eef_pos[:2]) > 0.005:
-            # move gripper to be aligned with washer handle.
-            a[0:2] = 10 * (grasp_point[:2] - eef_pos[:2])
-            self.last_turn = None
-            return a
-
-        if not self.gripper_closed and abs(rel_quat[0] + 1) > 0.01 and abs(rel_quat[1] + 1) > 0.01:
-            # rotate gripper to be perpendicular to the washer.
-            if abs(obj_pos[2] - eef_pos[2]) < 0.02:
-                a[2] = -30 * (obj_pos[2] - eef_pos[2])
-            if self.last_turn:
-                a[5] = self.last_turn
-            elif abs(rel_quat[0] + 1) < abs(rel_quat[1] + 1): # rotate CW
-                a[5] = -0.3
-                self.last_turn = -0.3
-            else: # rotate CCW
-                a[5] = 0.3
-                self.last_turn = 0.3
-            return a
-
-        if not self.gripper_closed and abs(obj_pos[2] - eef_pos[2]) > 0.0075:
-            # move gripper to the height of the washer.
-            a[2] = 30 * (obj_pos[2] - eef_pos[2])
-            return a
-
-        if not self.gripper_closed:
-            # grasp washer.
-            a[-1] = 1.
-            return a
-
-        cylinder_pos = np.array([0.22690132, -0.10067187, 1.0])
-        if np.linalg.norm(cylinder_pos[:2] - obj_pos[:2]) > 0.005 and abs(cylinder_pos[2] - eef_pos[2]) > 0.01:
-            # move washer to correct height.
-            a[-1] = 1.
-            target_height = 1.0
-            a[2] = 50 * (cylinder_pos[2] - eef_pos[2])
-            return a
-        
-        if np.linalg.norm(cylinder_pos[:2] - obj_pos[:2]) > 0.005:
-            # center above the cylinder.
-            a[-1] = 1.
-            a[0:2] = 50 * (cylinder_pos[:2] - obj_pos[:2])
-            return a
-
-        # lower washer down the cylinder.
-        a[-1] = 1.
-        a[2] = 50 * (0.83 - eef_pos[2])
-        return a
+        # last_obs, _ = self.expert.obs_to_tensor(o)
+        # distribution = self.expert.get_distribution(last_obs)
+        # log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
+        # action_prob = log_prob.exp().detach().cpu().numpy()
+        # action_prob = action_prob[0]
+        expert_action, _  = self.expert.predict(o, deterministic=True)
+        return expert_action
     
     def reset(self):
         r = self.env.reset()
@@ -315,7 +324,10 @@ class CustomWrapper(gym.Env):
         saved_state = copy.deepcopy(self._env.sim.get_state())
         
         controller_state = self.get_state()
-        # grip = self._env.robots[0].gripper.current_action[0]
+        L = len(self._env.wiped_markers)
+        # # grip = self._env.robots[0].gripper.current_action[0]
+        A = copy.deepcopy(self._env.sim.model.geom_rgba)
+        C = copy.deepcopy(self._env._observables)
         
         last_turn = self.last_turn
         traj = []
@@ -337,6 +349,8 @@ class CustomWrapper(gym.Env):
             total_action_diff += action_diff
             step_reward = 0
             o, r, d, i = self.env.step(action)
+            
+            # B = copy.deepcopy(self._env.sim.model.geom_rgba)
             # self.render()
             step_reward += r
             settle_action = np.zeros(6)
@@ -359,11 +373,14 @@ class CustomWrapper(gym.Env):
                 success = True
 
         mean_action_diff = total_action_diff / n_steps
-        self.last_turn = last_turn
+        # self.last_turn = last_turn
         self._env.sim.set_state(saved_state)
         self.set_state(controller_state)
-        # self._env.robots[0].gripper.current_action[0] = grip
-        
+        self._env.wiped_markers = self._env.wiped_markers[:L]
+        # # self._env.robots[0].gripper.current_action[0] = grip
+        # # self.render()
+        self._env.sim.model.geom_rgba[:] = A
+        self._env._observables = C
         info["success"] = success
         info["total_reward"] = total_reward
         info["mean_action_diff"] = mean_action_diff
@@ -372,10 +389,10 @@ class CustomWrapper(gym.Env):
     def decide_takeover(self, obs, future_steps_predict):
         if self.config["eval"]:
             return False
-        return False
+        predicted_traj_real2, info_real2 = self.predict_agent_future_trajectory(obs, future_steps_predict, expert_mode=True)
+        
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         #TODO: return other objectives. current: mean action difference
-        predicted_traj_real2, info_real2 = self.predict_agent_future_trajectory(obs, future_steps_predict, expert_mode=True)
         
         if info_real["mean_action_diff"] > self.config["switch_to_expert"]:
             self.rec.append(info_real2["total_reward"] - info_real["total_reward"])

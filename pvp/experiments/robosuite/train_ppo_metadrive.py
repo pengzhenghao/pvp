@@ -67,7 +67,7 @@ if __name__ == '__main__':
             # controller=control_device,
             # window_size=(1600, 1100),
         ),
-        num_train_envs=4,
+        num_train_envs=10,
 
         # ===== Training =====
         algo=dict(
@@ -166,10 +166,10 @@ if __name__ == '__main__':
         eval_env = Monitor(env=env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = SubprocVecEnv([_make_eval_env])
+    eval_env = SubprocVecEnv([_make_eval_env] * 5)
 
     # ===== Setup the callbacks =====
-    save_freq = 1_0000  # Number of steps per model checkpoint
+    save_freq = 2500  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
