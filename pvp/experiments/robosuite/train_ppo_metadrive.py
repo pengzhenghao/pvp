@@ -29,8 +29,8 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt", default=None, type=str, help="Path to previous checkpoint.")
     parser.add_argument("--debug", action="store_true", help="Set to True when debugging.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="Wipe", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     args = parser.parse_args()
 
     # FIXME: Remove this in future.
@@ -204,7 +204,7 @@ if __name__ == '__main__':
 
         # eval
         eval_env=eval_env,
-        eval_freq=2000,
+        eval_freq=2500,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
