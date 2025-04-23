@@ -195,7 +195,7 @@ class CustomWrapper(gym.Env):
                 "expert_noise": 0,
                 "switch_to_expert": 0.2,
                 "eval": False,
-                "MAX_EP_LEN": 300,
+                "MAX_EP_LEN": 600,
                 })
         self.config.update(config)
         # if self.config["eval"]:
@@ -210,27 +210,24 @@ class CustomWrapper(gym.Env):
         obj_pos, obj_quat = o[:3], o[3:7]
         rel_quat = o[10:14]
         eef_pos, eef_quat = o[32:35], o[35:39]
-        a = np.zeros(7)
+        a = np.zeros(6)
 
         pose = pose2mat((obj_pos, obj_quat))
         grasp_point = (pose @ np.array([0.06, 0, 0, 1]))[:-1]
 
         if self.gripper_closed and np.linalg.norm(grasp_point - eef_pos) > 0.02:
             # open and lift gripper if it's not holding anything.
-            a[-1] = -1.
             a[2] = 1.0
             return a
 
         if not self.gripper_closed and np.linalg.norm(grasp_point[:2] - eef_pos[:2]) > 0.005:
             # move gripper to be aligned with washer handle.
-            a[-1] = -1.
             a[0:2] = 10 * (grasp_point[:2] - eef_pos[:2])
             self.last_turn = None
             return a
 
         if not self.gripper_closed and abs(rel_quat[0] + 1) > 0.01 and abs(rel_quat[1] + 1) > 0.01:
             # rotate gripper to be perpendicular to the washer.
-            a[-1] = -1.
             if abs(obj_pos[2] - eef_pos[2]) < 0.02:
                 a[2] = -30 * (obj_pos[2] - eef_pos[2])
             if self.last_turn:
@@ -245,7 +242,6 @@ class CustomWrapper(gym.Env):
 
         if not self.gripper_closed and abs(obj_pos[2] - eef_pos[2]) > 0.0075:
             # move gripper to the height of the washer.
-            a[-1] = -1.
             a[2] = 30 * (obj_pos[2] - eef_pos[2])
             return a
 
@@ -276,9 +272,8 @@ class CustomWrapper(gym.Env):
     def reset(self):
         r = self.env.reset()
         self.render()
-        settle_action = np.zeros(7)
-        settle_action[-1] = -1
-        for _ in range(10):
+        settle_action = np.zeros(6)
+        for _ in range(0):
             r, r2, r3, r4 = self.env.step(settle_action)
             self.render()
         self.gripper_closed = False
@@ -320,7 +315,7 @@ class CustomWrapper(gym.Env):
         saved_state = copy.deepcopy(self._env.sim.get_state())
         
         controller_state = self.get_state()
-        grip = self._env.robots[0].gripper.current_action[0]
+        # grip = self._env.robots[0].gripper.current_action[0]
         
         last_turn = self.last_turn
         traj = []
@@ -344,9 +339,8 @@ class CustomWrapper(gym.Env):
             o, r, d, i = self.env.step(action)
             # self.render()
             step_reward += r
-            settle_action = np.zeros(7)
-            settle_action[-1] = action[-1]
-            for _ in range(2):
+            settle_action = np.zeros(6)
+            for _ in range(0):
                 o, r, d, i = self.env.step(settle_action)
                 # self.render()
                 step_reward += r
@@ -368,7 +362,7 @@ class CustomWrapper(gym.Env):
         self.last_turn = last_turn
         self._env.sim.set_state(saved_state)
         self.set_state(controller_state)
-        self._env.robots[0].gripper.current_action[0] = grip
+        # self._env.robots[0].gripper.current_action[0] = grip
         
         info["success"] = success
         info["total_reward"] = total_reward
@@ -378,6 +372,7 @@ class CustomWrapper(gym.Env):
     def decide_takeover(self, obs, future_steps_predict):
         if self.config["eval"]:
             return False
+        return False
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         #TODO: return other objectives. current: mean action difference
         predicted_traj_real2, info_real2 = self.predict_agent_future_trajectory(obs, future_steps_predict, expert_mode=True)
@@ -403,8 +398,8 @@ class CustomWrapper(gym.Env):
         # abstract 10 actions as 1 action
         # get rid of x/y rotation, which is unintuitive for remote teleop
         action_ = action.copy()
-        action_[3] = 0.
-        action_[4] = 0.
+        # action_[3] = 0.
+        # action_[4] = 0.
         
         self.agent_action = copy.copy(action_)
         self.last_takeover = self.takeover
@@ -415,7 +410,7 @@ class CustomWrapper(gym.Env):
         
         expert_action = self.expert_act(self.last_obs)
         expert_action = np.clip(expert_action, -1, 1)
-        enoise = np.random.randn(7) * expert_noise_bound
+        enoise = np.random.randn(6) * expert_noise_bound
         expert_action = np.clip(enoise + expert_action, -1, 1)
         
         if self.takeover == None or (self.total_steps % update_future_freq == 0):
@@ -423,7 +418,8 @@ class CustomWrapper(gym.Env):
             # if len(self.rec) > 0:
             #     print("MEAN:", np.mean(self.rec))
         
-        self.takeover2 = (expert_action[-1] * action_[-1] < 0) and not self.config["eval"]
+        # self.takeover2 = (expert_action[-1] * action_[-1] < 0) and not self.config["eval"]
+        self.takeover2 = False 
         
         if self.takeover or self.takeover2:
             #TODO: add to preference buffer
@@ -444,15 +440,15 @@ class CustomWrapper(gym.Env):
         self.total_reward += r
         step_reward += r
         self.render()
-        settle_action = np.zeros(7)
-        settle_action[-1] = action_[-1]
-        for _ in range(2):
+        settle_action = np.zeros(6)
+        for _ in range(0):
             o, r, d, i = self.env.step(settle_action)
             self.render()
             self.total_reward += r
             step_reward += r
         
-        self.gripper_closed = self._env._check_grasp(gripper=self._env.robots[0].gripper, object_geoms=[g for g in self._env.nuts[self._env.nut_id].contact_geoms])
+        # self.gripper_closed = self._env._check_grasp(gripper=self._env.robots[0].gripper, object_geoms=[g for g in self._env.nuts[self._env.nut_id].contact_geoms])
+        self.gripper_closed = False
         self.last_obs = o
         i["raw_action"] = copy.copy(action_)
         i["step_reward"] = step_reward
@@ -483,10 +479,10 @@ class CustomWrapper(gym.Env):
 
 if __name__ == "__main__":
     
-    render = False
+    render = True
     controller_config = load_controller_config(default_controller='OSC_POSE')
     config = {
-        "env_name": "NutAssembly",
+        "env_name": "Wipe",
         "robots": "UR5e",
         "controller_configs": controller_config,
     }
@@ -495,8 +491,6 @@ if __name__ == "__main__":
             has_renderer=render,
             has_offscreen_renderer=False,
             render_camera="agentview",
-            single_object_mode=2, # env has 1 nut instead of 2
-            nut_type="round",
             ignore_done=True,
             use_camera_obs=False,
             reward_shaping=True,
@@ -526,7 +520,7 @@ if __name__ == "__main__":
         curr_obs, curr_act = [], []
         while not d:
             # a = expert_pol(o)
-            a = np.zeros(7) + 5
+            a = np.zeros(6)
             o, r, d, _ = env.step(a)
             #print(r)
             t += 1

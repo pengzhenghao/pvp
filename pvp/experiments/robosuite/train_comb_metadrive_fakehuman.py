@@ -84,7 +84,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=False,
+            use_render=True,
             switch_to_expert=args.switch_to_expert,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     render = config["env_config"]["use_render"]
     controller_config = load_controller_config(default_controller='OSC_POSE')
     configr = {
-        "env_name": "NutAssembly",
+        "env_name": "Wipe",
         "robots": "UR5e",
         "controller_configs": controller_config,
     }
@@ -157,8 +157,6 @@ if __name__ == '__main__':
             has_renderer=render,
             has_offscreen_renderer=False,
             render_camera="agentview",
-            single_object_mode=2, # env has 1 nut instead of 2
-            nut_type="round",
             ignore_done=True,
             use_camera_obs=False,
             reward_shaping=True,
@@ -181,7 +179,7 @@ if __name__ == '__main__':
         render = False
         controller_config = load_controller_config(default_controller='OSC_POSE')
         configr = {
-            "env_name": "NutAssembly",
+            "env_name": "Wipe",
             "robots": "UR5e",
             "controller_configs": controller_config,
         }
@@ -190,8 +188,6 @@ if __name__ == '__main__':
                 has_renderer=render,
                 has_offscreen_renderer=False,
                 render_camera="agentview",
-                single_object_mode=2, # env has 1 nut instead of 2
-                nut_type="round",
                 ignore_done=True,
                 use_camera_obs=False,
                 reward_shaping=True,

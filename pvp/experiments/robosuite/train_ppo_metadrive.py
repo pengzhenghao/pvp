@@ -12,7 +12,10 @@ from pvp.sb3.common.wandb_callback import WandbCallback
 from pvp.sb3.ppo import PPO
 from pvp.sb3.ppo.policies import ActorCriticPolicy
 from pvp.utils.utils import get_time_str
-
+import robosuite as suite
+from robosuite import load_controller_config
+from robosuite.wrappers import VisualizationWrapper
+from pvp.experiments.robosuite.egpo.fakehuman_env import CustomWrapper, GymWrapper
 
 def register_env(make_env_fn, env_name):
     from gym.envs.registration import register
@@ -101,10 +104,31 @@ if __name__ == '__main__':
     train_env_config = config["env_config"]
 
     def _make_train_env():
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
-        train_env = HumanInTheLoopEnv(config=train_env_config)
-        train_env = Monitor(env=train_env, filename=str(trial_dir))
+        render = config["env_config"]["use_render"]
+        controller_config = load_controller_config(default_controller='OSC_POSE')
+        configr = {
+            "env_name": "Wipe",
+            "robots": "UR5e",
+            "controller_configs": controller_config,
+        }
+        env = suite.make(
+                **configr,
+                has_renderer=render,
+                has_offscreen_renderer=False,
+                render_camera="agentview",
+                ignore_done=True,
+                use_camera_obs=False,
+                reward_shaping=True,
+                control_freq=20,
+                hard_reset=True,
+                use_object_obs=True
+            )
+        unwrapped_env = env
+        env = GymWrapper(env)
+        env = VisualizationWrapper(env, indicator_configs=None)
+        env = CustomWrapper(env, unwrapped_env, config=config["env_config"])
+        train_env = Monitor(env=env, filename=str(trial_dir))
         return train_env
 
     train_env_name = "metadrive_train-v0"
@@ -115,16 +139,31 @@ if __name__ == '__main__':
 
     # ===== Also build the eval env =====
     def _make_eval_env():
-        eval_env_config = dict(
-            use_render=False,  # Open the interface
-            manual_control=False,  # Allow receiving control signal from external device
-            start_seed=1000,
-            horizon=1500,
-        )
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
-        eval_env = HumanInTheLoopEnv(config=eval_env_config)
-        eval_env = Monitor(env=eval_env, filename=str(trial_dir))
+        render = False
+        controller_config = load_controller_config(default_controller='OSC_POSE')
+        configr = {
+            "env_name": "Wipe",
+            "robots": "UR5e",
+            "controller_configs": controller_config,
+        }
+        env = suite.make(
+                **configr,
+                has_renderer=render,
+                has_offscreen_renderer=False,
+                render_camera="agentview",
+                ignore_done=True,
+                use_camera_obs=False,
+                reward_shaping=True,
+                control_freq=20,
+                hard_reset=True,
+                use_object_obs=True
+            )
+        unwrapped_env = env
+        env = GymWrapper(env)
+        env = VisualizationWrapper(env, indicator_configs=None)
+        env = CustomWrapper(env, unwrapped_env, config=dict(eval=True, use_render=render))
+        eval_env = Monitor(env=env, filename=str(trial_dir))
         return eval_env
 
     eval_env = SubprocVecEnv([_make_eval_env])
@@ -159,13 +198,13 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=10_0000,
+        total_timesteps=1000_0000,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
         eval_env=eval_env,
-        eval_freq=150,
+        eval_freq=2000,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
