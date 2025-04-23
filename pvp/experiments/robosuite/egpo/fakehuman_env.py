@@ -425,11 +425,13 @@ class CustomWrapper(gym.Env):
         future_steps_preference = self.config["future_steps_preference"]
         expert_noise_bound = self.config["expert_noise"]
         
-        expert_action = self.expert_act(self.last_obs)
-        expert_action = np.clip(expert_action, -1, 1)
-        enoise = np.random.randn(6) * expert_noise_bound
-        expert_action = np.clip(enoise + expert_action, -1, 1)
-        
+        if not self.config["eval"]:
+            expert_action = self.expert_act(self.last_obs)
+            expert_action = np.clip(expert_action, -1, 1)
+            enoise = np.random.randn(6) * expert_noise_bound
+            expert_action = np.clip(enoise + expert_action, -1, 1)
+        else:
+            expert_action = action_.copy()
         if self.takeover == None or (self.total_steps % update_future_freq == 0):
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
             # if len(self.rec) > 0:
