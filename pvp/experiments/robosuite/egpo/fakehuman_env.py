@@ -268,6 +268,11 @@ class CustomWrapper(gym.Env):
     def obs_to_tensor(self, obs):
         obs_tensor = torch.as_tensor(obs).to("cuda")
         return obs_tensor
+    def obs_to_tensor_expand(self, obs):
+        obs_tensor = torch.as_tensor(obs).to("cuda")
+        if obs_tensor.dim() == 1:
+            obs_tensor = obs_tensor.unsqueeze(0)
+        return obs_tensor
     
     def expert_act(self, o):
         # last_obs, _ = self.expert.obs_to_tensor(o)
@@ -278,6 +283,10 @@ class CustomWrapper(gym.Env):
         expert_action, _  = self.expert.predict(o, deterministic=True)
         return expert_action
     
+    def expert_value(self, o, a):
+        o, a = self.obs_to_tensor_expand(o), self.obs_to_tensor_expand(a)
+        values, log_prob, entropy = self.expert.evaluate_actions(o, a)
+        return values[0].item(), log_prob[0].item()
     def reset(self):
         r = self.env.reset()
         self.render()
@@ -335,6 +344,9 @@ class CustomWrapper(gym.Env):
         total_reward = 0
         success = False
         total_action_diff = 0
+        total_q_diff = 0
+        total_log_prob = 0
+        
         for step in range(n_steps):
             action = action_behavior
             if action_behavior is None:
@@ -345,7 +357,13 @@ class CustomWrapper(gym.Env):
             action_expert = np.clip(action_expert, -1, 1)
             if expert_mode:
                 action = action_expert
-            action_diff = np.linalg.norm(action - action_expert)
+            # action_diff = np.linalg.norm(action - action_expert)
+            action_diff = np.mean((action - action_expert) ** 2)
+            
+            q_diff, log_prob = self.expert_value(obs, action)
+            
+            total_q_diff += q_diff
+            total_log_prob += log_prob
             total_action_diff += action_diff
             step_reward = 0
             o, r, d, i = self.env.step(action)
@@ -371,8 +389,10 @@ class CustomWrapper(gym.Env):
             obs = o.copy()
             if d:
                 success = True
-
+        info["clean"] = self._env._observables["proportion_wiped"].obs - C["proportion_wiped"].obs
+        
         mean_action_diff = total_action_diff / n_steps
+        mean_q_diff = total_q_diff / n_steps
         # self.last_turn = last_turn
         self._env.sim.set_state(saved_state)
         self.set_state(controller_state)
@@ -384,6 +404,8 @@ class CustomWrapper(gym.Env):
         info["success"] = success
         info["total_reward"] = total_reward
         info["mean_action_diff"] = mean_action_diff
+        info["mean_q_diff"] = mean_q_diff
+        info["mean_log_prob"] = total_log_prob / n_steps
         return traj, info
         
     def decide_takeover(self, obs, future_steps_predict):
@@ -394,10 +416,19 @@ class CustomWrapper(gym.Env):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         #TODO: return other objectives. current: mean action difference
         
-        if info_real["mean_action_diff"] > self.config["switch_to_expert"]:
-            self.rec.append(info_real2["total_reward"] - info_real["total_reward"])
+        # if info_real["mean_action_diff"] > self.config["switch_to_expert"]:
+        #     self.rec.append(info_real2["total_reward"] - info_real["total_reward"])
         # return info_real["mean_action_diff"] > self.config["switch_to_expert"] 
-        return (info_real2["total_reward"] - info_real["total_reward"] > self.config["switch_to_expert"]) or (info_real["total_reward"] < 2)
+        # return (info_real2["total_reward"] - info_real["total_reward"] > self.config["switch_to_expert"]) or (info_real["total_reward"] < 2)
+        # return info_real["mean_action_diff"] > 0.5
+        # print("two clean:", info_real2["clean"], info_real["clean"])
+        # print("two reward:", info_real2["total_reward"], info_real["total_reward"])
+        self.rec.append(info_real2["clean"])
+        # return (info_real2["clean"] - info_real["clean"] > 0.5) or (info_real["total_reward"] < -0.5)
+        # return info_real["total_reward"] < 1
+        # return info_real["mean_action_diff"] > 0.5
+        #examine the proportion of elimination mark!!
+        return info_real["total_reward"] < 1
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
         for step in range(min(len(predicted_traj) - 1, future_steps_preference)):

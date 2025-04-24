@@ -37,13 +37,13 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
-    parser.add_argument("--future_steps_preference", default=3, type=int)
+    parser.add_argument("--future_steps_preference", default=1, type=int)
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
     parser.add_argument("--alpha", default=0.1, type=float)
     parser.add_argument("--bias", default=0.5, type=float)
-    parser.add_argument("--switch_to_expert", default=0.2, type=float)
+    parser.add_argument("--switch_to_expert", default=10, type=float)
     
     args = parser.parse_args()
 
@@ -206,7 +206,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 100
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 500
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -246,7 +246,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=10,
         eval_log_path=str(trial_dir),
 
         # logging

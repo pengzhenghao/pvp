@@ -24,12 +24,12 @@ def register_env(make_env_fn, env_name):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp_name", default="ppo_metadrive", type=str, help="The name for this batch of experiments.")
+    parser.add_argument("--exp_name", default="PPO_Door", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--ckpt", default=None, type=str, help="Path to previous checkpoint.")
     parser.add_argument("--debug", action="store_true", help="Set to True when debugging.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="Wipe", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="Door", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     args = parser.parse_args()
 
@@ -68,7 +68,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
             eval=True, ## no take over
         ),
-        num_train_envs=10,
+        num_train_envs=4,
 
         # ===== Training =====
         algo=dict(
@@ -109,7 +109,7 @@ if __name__ == '__main__':
         render = config["env_config"]["use_render"]
         controller_config = load_controller_config(default_controller='OSC_POSE')
         configr = {
-            "env_name": "NutAssembly",
+            "env_name": "Door",
             "robots": "UR5e",
             "controller_configs": controller_config,
         }
@@ -118,8 +118,6 @@ if __name__ == '__main__':
                 has_renderer=render,
                 has_offscreen_renderer=False,
                 render_camera="agentview",
-                single_object_mode=2, # env has 1 nut instead of 2
-                nut_type="round",
                 ignore_done=True,
                 use_camera_obs=False,
                 reward_shaping=True,
@@ -146,7 +144,7 @@ if __name__ == '__main__':
         render = False
         controller_config = load_controller_config(default_controller='OSC_POSE')
         configr = {
-            "env_name": "NutAssembly",
+            "env_name": "Door",
             "robots": "UR5e",
             "controller_configs": controller_config,
         }
@@ -157,8 +155,6 @@ if __name__ == '__main__':
                 render_camera="agentview",
                 ignore_done=True,
                 use_camera_obs=False,
-                single_object_mode=2, # env has 1 nut instead of 2
-                nut_type="round",
                 reward_shaping=True,
                 control_freq=20,
                 hard_reset=True,
@@ -171,10 +167,10 @@ if __name__ == '__main__':
         eval_env = Monitor(env=env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = SubprocVecEnv([_make_eval_env] * 5)
+    eval_env = SubprocVecEnv([_make_eval_env] * 2)
 
     # ===== Setup the callbacks =====
-    save_freq = 2500  # Number of steps per model checkpoint
+    save_freq = 10000  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
@@ -203,14 +199,14 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=1000_0000,
+        total_timesteps=100_0000_0000,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
         eval_env=eval_env,
-        eval_freq=2500,
-        n_eval_episodes=50,
+        eval_freq=10000,
+        n_eval_episodes=20,
         eval_log_path=str(trial_dir),
 
         # logging
