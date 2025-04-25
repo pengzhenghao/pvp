@@ -424,7 +424,7 @@ class CustomWrapper(gym.Env):
         # print("two clean:", info_real2["clean"], info_real["clean"])
         # print("two reward:", info_real2["total_reward"], info_real["total_reward"])
         self.rec.append(info_real2["clean"])
-        # return (info_real2["clean"] - info_real["clean"] > 0.5) or (info_real["total_reward"] < -0.5)
+        # return (info_real2["clean"] - info_real["clean"] > 0.2) or (info_real["mean_log_prob"] < -10)
         # return info_real["total_reward"] < 1
         # return info_real["mean_action_diff"] > 0.5
         #examine the proportion of elimination mark!!

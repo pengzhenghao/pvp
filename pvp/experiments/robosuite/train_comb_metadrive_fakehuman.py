@@ -84,7 +84,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=False,
+            use_render=True,
             switch_to_expert=args.switch_to_expert,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
@@ -246,7 +246,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=10,
+        n_eval_episodes=1,
         eval_log_path=str(trial_dir),
 
         # logging
