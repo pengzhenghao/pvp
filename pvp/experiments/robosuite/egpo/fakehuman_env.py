@@ -411,7 +411,7 @@ class CustomWrapper(gym.Env):
     def decide_takeover(self, obs, future_steps_predict):
         if self.config["eval"]:
             return False
-        predicted_traj_real2, info_real2 = self.predict_agent_future_trajectory(obs, future_steps_predict, expert_mode=True)
+        # predicted_traj_real2, info_real2 = self.predict_agent_future_trajectory(obs, future_steps_predict, expert_mode=True)
         
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         #TODO: return other objectives. current: mean action difference
@@ -423,12 +423,12 @@ class CustomWrapper(gym.Env):
         # return info_real["mean_action_diff"] > 0.5
         # print("two clean:", info_real2["clean"], info_real["clean"])
         # print("two reward:", info_real2["total_reward"], info_real["total_reward"])
-        self.rec.append(info_real2["clean"])
+        # self.rec.append(info_real2["clean"])
         # return (info_real2["clean"] - info_real["clean"] > 0.2) or (info_real["mean_log_prob"] < -10)
         # return info_real["total_reward"] < 1
         # return info_real["mean_action_diff"] > 0.5
         #examine the proportion of elimination mark!!
-        return info_real["total_reward"] < 1
+        return info_real["total_reward"] < 1 or info_real["clean"] == 0 and info_real["total_reward"] < 5
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
         for step in range(min(len(predicted_traj) - 1, future_steps_preference)):
@@ -476,7 +476,7 @@ class CustomWrapper(gym.Env):
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             action_ = expert_action
-            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer") and self.total_steps <= 1000:
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
         else:
             self.takeover = False
