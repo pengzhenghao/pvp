@@ -34,7 +34,9 @@ def biased_bce_with_logits(adv1, adv2, y, bias=1.0, cbias = 0):
     max12 = torch.clamp(-logit12, min=0, max=None)
     nlp21 = torch.log(torch.exp(-max21) + torch.exp(-logit21 - max21)) + max21
     nlp12 = torch.log(torch.exp(-max12) + torch.exp(-logit12 - max12)) + max12
-    loss = y * nlp21 + (1 - y) * nlp12
+    # loss = y * nlp21 + (1 - y) * nlp12
+    
+    loss = (logit21 - 0.258) ** 2
     loss = loss.mean()
 
     # Now compute the accuracy
@@ -402,6 +404,9 @@ class COMB(PVPTD3):
             alpha, bias = self.extra_config["alpha"], self.extra_config["bias"]
             log_prob_pos = get_log_prob(pos_obs, pos_action)
             log_prob_neg = get_log_prob(neg_obs, neg_action)
+            
+            mean_log_prob_pos, mean_log_prob_neg = -log_prob_pos.mean().item(), -log_prob_neg.mean().item()
+            
             adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
             label = torch.ones_like(adv_pos)
             dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
@@ -415,6 +420,10 @@ class COMB(PVPTD3):
             self.actor.optimizer.zero_grad()
             loss.backward()
             self.actor.optimizer.step()
+            
+            stat_recorder["mean_log_prob_pos"].append(mean_log_prob_pos)
+            stat_recorder["mean_log_prob_neg"].append(mean_log_prob_neg)    
+            stat_recorder["mean_log_prob_neg-pos"].append(mean_log_prob_neg - mean_log_prob_pos)
             
             stat_recorder["bc_loss"].append(bc_loss.item() if bc_loss is not None else float('nan'))
             stat_recorder["cpl_loss"].append(dpo_loss.item() if dpo_loss is not None else float('nan'))
