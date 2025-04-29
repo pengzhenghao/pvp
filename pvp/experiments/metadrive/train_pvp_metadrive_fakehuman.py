@@ -25,10 +25,10 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="fakepos", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="HinLoopPref", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
-    parser.add_argument("--bc_loss_weight", type=float, default=0.0)
+    parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
     parser.add_argument("--with_agent_proxy_value_loss", default="True", type=str)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
@@ -38,17 +38,23 @@ if __name__ == '__main__':
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
-    parser.add_argument("--expert_noise", default=0.4, type=float)
-    parser.add_argument("--simple_batch", default="False", type=str)
+    parser.add_argument("--expert_noise", default=0, type=float)
+    parser.add_argument("--simple_batch", default="True", type=str)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
+    parser.add_argument("--iwr", action="store_true", help="Whether to use iwr.")
+    parser.add_argument("--always_takeover", action="store_true", help="Whether to use bc.")
     
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}".format("PVP", args.bc_loss_weight)
+    experiment_batch_name = "{}".format("PVP0429")
+    if args.always_takeover:
+        experiment_batch_name = "Pure_BC0429"
     if args.only_bc_loss=="True":
-        experiment_batch_name = "BCLossOnlyS"
+        experiment_batch_name = "HG0429"
+    if args.iwr:
+        experiment_batch_name = "IWR0429"
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -82,6 +88,7 @@ if __name__ == '__main__':
 
             # FakeHumanEnv config:
             use_render=False,
+            always_takeover=args.always_takeover,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -98,6 +105,8 @@ if __name__ == '__main__':
             with_agent_proxy_value_loss=args.with_agent_proxy_value_loss,
             policy_delay=args.policy_delay,
             simple_batch=args.simple_batch,
+            iwr = args.iwr,
+            always_takeover = args.always_takeover,
             add_bc_loss="True" if args.bc_loss_weight > 0.0 else "False",
             use_balance_sample=True,
             agent_data_ratio=1.0,
@@ -166,7 +175,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 2000
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint

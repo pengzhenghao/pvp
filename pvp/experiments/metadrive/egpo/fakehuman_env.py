@@ -123,6 +123,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "update_future_freq": 10,
                 "stop_img_samples": 3, 
                 "expert_noise": 0,
+                "always_takeover": False,
             }
         )
         return config
@@ -182,12 +183,15 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         enoise = np.random.randn(2) * expert_noise_bound
         expert_action = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
         
-        if (self.total_steps % update_future_freq == 0):
+        if self.config["always_takeover"]:
+            self.takeover = True
+        elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
 
         if self.takeover:
-            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             if self.config["use_discrete"]:
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)

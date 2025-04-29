@@ -64,7 +64,7 @@ class PVPTD3(TD3):
                 assert v in ["True", "False"]
                 v = v == "True"
                 self.extra_config[k] = v
-        for k in ["agent_data_ratio", "bc_loss_weight", "dpo_loss_weight", "alpha", "bias"]:
+        for k in ["always_takeover", "agent_data_ratio", "bc_loss_weight", "dpo_loss_weight", "alpha", "bias", "iwr"]:
             if k in kwargs:
                 self.extra_config[k] = kwargs.pop(k)
 
@@ -201,7 +201,9 @@ class PVPTD3(TD3):
                 masked_bc_loss = (replay_data.interventions.flatten() *
                                   bc_loss).sum() / (replay_data.interventions.flatten().sum() + 1e-5)
 
-                if self.extra_config["only_bc_loss"]:
+                if self.extra_config["iwr"]:
+                    actor_loss = bc_loss.mean()
+                elif self.extra_config["only_bc_loss"] or self.extra_config["always_takeover"]:
                     actor_loss = masked_bc_loss
                     # Critics will be completely useless.
 
