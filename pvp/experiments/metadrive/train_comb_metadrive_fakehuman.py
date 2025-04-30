@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0410".format("Ours", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_L={}_0429".format("Ours", args.bc_loss_weight, args.future_steps_preference)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
         experiment_batch_name = "BCLossOnly_"
     seed = args.seed
