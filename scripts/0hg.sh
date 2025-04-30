@@ -10,10 +10,10 @@ EXP_NAME="${filename%.*}"
 
 
 # Loop over each GPU
-for i in {0..4}
+for i in {3..7}
 do
     CUDA_VISIBLE_DEVICES=$i \
-    nohup python pvp/experiments/metadrive/train_pvp_metadrive_fakehuman.py \
+    nohup python pvp/experiments/robosuite/train_comb_metadrive_fakehuman.py \
     --exp_name=${EXP_NAME} \
     --wandb \
     --only_bc_loss=True \
