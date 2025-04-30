@@ -452,7 +452,7 @@ class CustomWrapper(gym.Env):
         self.render()
         settle_action = np.zeros(7)
         settle_action[-1] = action_[-1]
-        for _ in range(2):
+        for _ in range(0):
             o, r, d, i = self.env.step(settle_action)
             self.render()
             self.total_reward += r
