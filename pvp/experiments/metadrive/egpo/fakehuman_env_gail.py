@@ -357,9 +357,9 @@ if __name__ == "__main__":
     )
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=1024,
-        gen_replay_buffer_capacity=51200,
-        n_disc_updates_per_round=8,
+        demo_batch_size=32,
+        gen_replay_buffer_capacity=512,
+        n_disc_updates_per_round=2,
         venv=env,
         gen_algo=learner,
         reward_net=reward_net,
@@ -367,7 +367,7 @@ if __name__ == "__main__":
     )
     
     # train the learner and evaluate again
-    gail_trainer.train(320000)  # Train for 800_000 steps to match expert.
+    gail_trainer.train(20000)  # Train for 800_000 steps to match expert.
 
     learner_rewards_after_training, _ = evaluate_policy(
         learner, env, 10, return_episode_rewards=True,
