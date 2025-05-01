@@ -331,6 +331,23 @@ if __name__ == "__main__":
         n_epochs=5,
         seed=0,
     )
+    
+    bc_trainer = bc.BC(
+        observation_space=env.observation_space,
+        action_space=env.action_space,
+        demonstrations=transitions,
+        rng=rng,
+        batch_size=32,
+        policy=learner.policy,
+    )
+    bc_trainer.train(n_epochs=10)
+    
+    learner_rewards_before_training, _ = evaluate_policy(
+        learner, env, 10, return_episode_rewards=True,
+    )
+    print(np.mean(learner_rewards_before_training))
+    
+    
     from imitation.rewards.reward_nets import BasicRewardNet
     from imitation.util.networks import RunningNorm
     reward_net = BasicRewardNet(
@@ -340,7 +357,7 @@ if __name__ == "__main__":
     )
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=32,
+        demo_batch_size=1024,
         gen_replay_buffer_capacity=51200,
         n_disc_updates_per_round=8,
         venv=env,
@@ -348,17 +365,14 @@ if __name__ == "__main__":
         reward_net=reward_net,
         allow_variable_horizon=True
     )
-    learner_rewards_before_training, _ = evaluate_policy(
-        learner, env, 10, return_episode_rewards=True,
-    )
-    print(learner_rewards_before_training)
+    
     # train the learner and evaluate again
     gail_trainer.train(320000)  # Train for 800_000 steps to match expert.
 
     learner_rewards_after_training, _ = evaluate_policy(
         learner, env, 10, return_episode_rewards=True,
     )
-    print(learner_rewards_after_training)
+    print(np.mean(learner_rewards_after_training))
     
     
     def _make_eval_env():
@@ -377,4 +391,4 @@ if __name__ == "__main__":
     learner_rewards_after_training, _ = evaluate_policy(
         learner, eval_env, 10, return_episode_rewards=True,
     )
-    print(learner_rewards_after_training)
+    print(np.mean(learner_rewards_after_training))
