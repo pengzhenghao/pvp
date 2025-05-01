@@ -60,7 +60,6 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     def reset(self, *args, **kwargs):
         self.takeover = False
         self.agent_action = None
-        kwargs["seed"] = 100
         obs, info = super(HumanInTheLoopEnv, self).reset(*args, **kwargs)
         # The training code is for older version of gym, so we discard the additional info from the reset.
         return obs, info
@@ -123,7 +122,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         self.total_takeover_count += 1 if self.takeover else 0
         ret[-1]["total_takeover_count"] = self.total_takeover_count
 
-        return ret
+        return ret[0], ret[1], ret[2], False, ret[-1]
 
     def stop(self):
         """Toggle pause."""

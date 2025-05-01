@@ -297,15 +297,70 @@ if __name__ == "__main__":
     )
     
     transitions = rollout.flatten_trajectories(rollouts)
-
-    bc_trainer = bc.BC(
+    env.close()
+    
+    
+    def _make_gail_env():
+        eval_env_config = dict(
+            use_render=False,  # Open the interface
+            manual_control=False,  # Allow receiving control signal from external device
+            start_seed=0,
+            horizon=1500,
+        )
+        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+        env = HumanInTheLoopEnv(config=eval_env_config)
+        return env
+    from pvp.sb3.common.vec_env import SubprocVecEnv
+    register_env(_make_gail_env, "MetaDrive-GAIL")
+    env = make_vec_env(
+        "MetaDrive-GAIL",
+        rng=rng,
+        n_envs=1,
+        post_wrappers=[lambda env, _: RolloutInfoWrapper(env)],  # for computing rollouts
+    )
+    
+    from stable_baselines3 import PPO
+    from stable_baselines3.ppo import MlpPolicy
+    learner = PPO(
+        env=env,
+        policy=MlpPolicy,
+        batch_size=64,
+        ent_coef=0.0,
+        learning_rate=0.0004,
+        gamma=0.95,
+        n_epochs=5,
+        seed=0,
+    )
+    from imitation.rewards.reward_nets import BasicRewardNet
+    from imitation.util.networks import RunningNorm
+    reward_net = BasicRewardNet(
         observation_space=env.observation_space,
         action_space=env.action_space,
-        demonstrations=transitions,
-        rng=rng,
-        batch_size=32,
+        normalize_input_layer=RunningNorm,
     )
-    bc_trainer.train(n_epochs=32)
+    gail_trainer = GAIL(
+        demonstrations=rollouts,
+        demo_batch_size=32,
+        gen_replay_buffer_capacity=51200,
+        n_disc_updates_per_round=8,
+        venv=env,
+        gen_algo=learner,
+        reward_net=reward_net,
+        allow_variable_horizon=True
+    )
+    learner_rewards_before_training, _ = evaluate_policy(
+        learner, env, 10, return_episode_rewards=True,
+    )
+    print(learner_rewards_before_training)
+    # train the learner and evaluate again
+    gail_trainer.train(320000)  # Train for 800_000 steps to match expert.
+
+    learner_rewards_after_training, _ = evaluate_policy(
+        learner, env, 10, return_episode_rewards=True,
+    )
+    print(learner_rewards_after_training)
+    
+    
     def _make_eval_env():
         eval_env_config = dict(
             use_render=False,  # Open the interface
@@ -317,7 +372,9 @@ if __name__ == "__main__":
         eval_env = HumanInTheLoopEnv(config=eval_env_config)
         return eval_env
     from pvp.sb3.common.vec_env import SubprocVecEnv
-    # eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
     env.close()
-    reward, _ = evaluate_policy(bc_trainer.policy, _make_eval_env(), 10)
-    print("Reward:", reward)
+    eval_env, eval_freq = _make_eval_env(), 150
+    learner_rewards_after_training, _ = evaluate_policy(
+        learner, eval_env, 10, return_episode_rewards=True,
+    )
+    print(learner_rewards_after_training)

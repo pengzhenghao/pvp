@@ -44,7 +44,7 @@ class Monitor(gym.Wrapper):
 
         # PZH: Step the environment for once to understand the info keys.
         self.env.reset()
-        o, r, d, i = self.env.step(self.env.action_space.sample())
+        o, r, d, _, i = self.env.step(self.env.action_space.sample())
         info_keywords = tuple(i.keys())
         reset_keywords = tuple(reset_keywords)
         ep_info_keywords = tuple("ep_" + k for k in info_keywords)
