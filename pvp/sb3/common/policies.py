@@ -616,7 +616,9 @@ class ActorCriticPolicy(BasePolicy):
         distribution = self._get_action_dist_from_latent(latent_pi)
         actions = distribution.get_actions(deterministic=deterministic)
         log_prob = distribution.log_prob(actions)
-        return actions, values, log_prob
+        actions = actions.cpu().detach().numpy()
+        return actions
+        # return actions, values, log_prob
 
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor) -> Distribution:
         """

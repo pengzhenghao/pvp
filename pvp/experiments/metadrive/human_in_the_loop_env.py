@@ -60,9 +60,10 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     def reset(self, *args, **kwargs):
         self.takeover = False
         self.agent_action = None
+        kwargs["seed"] = 100
         obs, info = super(HumanInTheLoopEnv, self).reset(*args, **kwargs)
         # The training code is for older version of gym, so we discard the additional info from the reset.
-        return obs
+        return obs, info
 
     def _get_step_return(self, actions, engine_info):
         """Compute takeover cost here."""

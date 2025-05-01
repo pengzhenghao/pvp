@@ -105,6 +105,8 @@ def preprocess_obs(
         (True by default)
     :return:
     """
+    if isinstance(obs, np.ndarray):
+        obs = th.tensor(obs).to("cuda")
     if isinstance(observation_space, (spaces.Box, new_spaces.Box)):
         if is_image_space(observation_space) and normalize_images:
             return obs.float() / 255.0

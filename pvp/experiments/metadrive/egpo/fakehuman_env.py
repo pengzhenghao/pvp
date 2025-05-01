@@ -157,6 +157,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
     
     def step(self, actions):
         """Compared to the original one, we call expert_action_prob here and implement a takeover function."""
+        if isinstance(actions, torch.Tensor):
+            actions = actions.cpu().detach().numpy()
         actions = np.asarray(actions).astype(np.float32)
 
         if self.config["use_discrete"]:
@@ -224,7 +226,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
         if self.config["use_discrete"]:
             i["raw_action"] = self.continuous_to_discrete(i["raw_action"])
-        return o, r, d, i
+        return o, r, d, False, i
 
     def _get_step_return(self, actions, engine_info):
         """Compared to original one, here we don't call expert_policy, but directly get self.last_takeover."""
@@ -259,9 +261,48 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return o, info
 
 if __name__ == "__main__":
-    env = FakeHumanEnv(dict(use_render=True, num_scenarios=1, traffic_density=0))
-    env.reset()
+    def _make_train_env():
+        env = FakeHumanEnv(dict(use_render=False, num_scenarios=1, traffic_density=0, always_takeover=True))
+        return env
     ss = 0
+    from stable_baselines3.common.evaluation import evaluate_policy
+
+    from imitation.algorithms import bc
+    from imitation.data import rollout
+    from imitation.data.wrappers import RolloutInfoWrapper
+    from imitation.policies.serialize import load_policy
+    from imitation.util.util import make_vec_env
+    # from pvp.sb3.common.vec_env import SubprocVecEnv
+    rng = np.random.default_rng(0)
+    def register_env(make_env_fn, env_name):
+        from gymnasium.envs.registration import register
+        register(entry_point=make_env_fn, id=env_name)
+    register_env(_make_train_env, "MetaDrive-FakeHuman")
+    env = make_vec_env(
+        "MetaDrive-FakeHuman",
+        rng=rng,
+        n_envs=1,
+        post_wrappers=[lambda env, _: RolloutInfoWrapper(env)],  # for computing rollouts
+    )
+    
+    _expert = _expert.cuda()
+    rollouts = rollout.rollout(
+        _expert,
+        env,
+        rollout.make_sample_until(min_timesteps=10000, min_episodes=None),
+        rng=rng,
+    )
+    
+    transitions = rollout.flatten_trajectories(rollouts)
+
+    bc_trainer = bc.BC(
+        observation_space=env.observation_space,
+        action_space=env.action_space,
+        demonstrations=transitions,
+        rng=rng,
+    )
+    bc_trainer.train(n_epochs=10)
+    env.reset()
     while True:
         if ss < 10:
             _, _, done, info = env.step([0, 1])
