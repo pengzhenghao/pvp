@@ -262,7 +262,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
 if __name__ == "__main__":
     def _make_train_env():
-        env = FakeHumanEnv(dict(use_render=False, num_scenarios=50, always_takeover=True))
+        env = FakeHumanEnv(dict(use_render=False, always_takeover=True))
         return env
     ss = 0
     from stable_baselines3.common.evaluation import evaluate_policy
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     env = make_vec_env(
         "MetaDrive-GAIL",
         rng=rng,
-        n_envs=4,
+        n_envs=1,
         parallel=True,
         post_wrappers=[lambda env, _: RolloutInfoWrapper(env)],  # for computing rollouts
     )
@@ -331,25 +331,9 @@ if __name__ == "__main__":
         ent_coef=0.0,
         learning_rate=0.0001,
         gamma=0.99,
-        n_epochs=1,
+        n_epochs=10,
         seed=0,
     )
-    
-    # learner = TD3(
-    #         env=env,
-    #         policy=MlpPolicy,
-    #         policy_kwargs=dict(net_arch=[400, 300]),
-    #         learning_rate=3e-4,
-    #         batch_size=256,
-    #         tau=0.005,
-    #         gamma=0.99,
-    #         train_freq=1,
-    #         gradient_steps=1,
-    #         action_noise=None,
-    #         verbose=2,
-    #         seed=0,
-    #         device="auto",
-    #     )
     
     bc_trainer = bc.BC(
         observation_space=env.observation_space,
@@ -362,7 +346,7 @@ if __name__ == "__main__":
     bc_trainer.train(n_epochs=10)
     
     learner_rewards_before_training, _ = evaluate_policy(
-        learner, env, 10, return_episode_rewards=True,
+        learner, env, 50, return_episode_rewards=True,
     )
     print(np.mean(learner_rewards_before_training))
     
@@ -386,10 +370,10 @@ if __name__ == "__main__":
     )
     
     # train the learner and evaluate again
-    gail_trainer.train(320000)  # Train for 800_000 steps to match expert.
-
+    gail_trainer.train(2000000)  # Train for 800_000 steps to match expert.
+    print("BC", np.mean(learner_rewards_before_training))
     learner_rewards_after_training, _ = evaluate_policy(
-        learner, env, 10, return_episode_rewards=True,
+        learner, env, 50, return_episode_rewards=True,
     )
     print(np.mean(learner_rewards_after_training))
     
@@ -408,6 +392,6 @@ if __name__ == "__main__":
     env.close()
     eval_env, eval_freq = _make_eval_env(), 150
     learner_rewards_after_training, _ = evaluate_policy(
-        learner, eval_env, 10, return_episode_rewards=True,
+        learner, eval_env, 50, return_episode_rewards=True,
     )
     print(np.mean(learner_rewards_after_training))
