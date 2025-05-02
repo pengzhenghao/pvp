@@ -282,7 +282,8 @@ if __name__ == "__main__":
     env = make_vec_env(
         "MetaDrive-FakeHuman",
         rng=rng,
-        n_envs=1,
+        n_envs=4,
+        parallel=True,
         post_wrappers=[lambda env, _: RolloutInfoWrapper(env)],  # for computing rollouts
     )
     reward, _ = evaluate_policy(_expert, env, 10)
@@ -315,22 +316,40 @@ if __name__ == "__main__":
     env = make_vec_env(
         "MetaDrive-GAIL",
         rng=rng,
-        n_envs=1,
+        n_envs=4,
+        parallel=True,
         post_wrappers=[lambda env, _: RolloutInfoWrapper(env)],  # for computing rollouts
     )
     
-    from stable_baselines3 import PPO
+    from stable_baselines3 import PPO, TD3
     from stable_baselines3.ppo import MlpPolicy
     learner = PPO(
         env=env,
         policy=MlpPolicy,
-        batch_size=64,
+        batch_size=512,
+        n_steps=2048,
         ent_coef=0.0,
-        learning_rate=0.0004,
-        gamma=0.95,
-        n_epochs=5,
+        learning_rate=0.0001,
+        gamma=0.99,
+        n_epochs=1,
         seed=0,
     )
+    
+    # learner = TD3(
+    #         env=env,
+    #         policy=MlpPolicy,
+    #         policy_kwargs=dict(net_arch=[400, 300]),
+    #         learning_rate=3e-4,
+    #         batch_size=256,
+    #         tau=0.005,
+    #         gamma=0.99,
+    #         train_freq=1,
+    #         gradient_steps=1,
+    #         action_noise=None,
+    #         verbose=2,
+    #         seed=0,
+    #         device="auto",
+    #     )
     
     bc_trainer = bc.BC(
         observation_space=env.observation_space,
@@ -358,8 +377,8 @@ if __name__ == "__main__":
     gail_trainer = GAIL(
         demonstrations=rollouts,
         demo_batch_size=32,
-        gen_replay_buffer_capacity=512,
-        n_disc_updates_per_round=2,
+        gen_replay_buffer_capacity=4096,
+        n_disc_updates_per_round=8,
         venv=env,
         gen_algo=learner,
         reward_net=reward_net,
@@ -367,7 +386,7 @@ if __name__ == "__main__":
     )
     
     # train the learner and evaluate again
-    gail_trainer.train(20000)  # Train for 800_000 steps to match expert.
+    gail_trainer.train(320000)  # Train for 800_000 steps to match expert.
 
     learner_rewards_after_training, _ = evaluate_policy(
         learner, env, 10, return_episode_rewards=True,
