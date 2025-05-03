@@ -10,7 +10,7 @@ EXP_NAME="${filename%.*}"
 
 
 # Loop over each GPU
-for i in {0..1}
+for i in {0..4}
 do
     CUDA_VISIBLE_DEVICES=$i \
     nohup python pvp/experiments/robosuite/train_comb_metadrive_fakehuman.py \
