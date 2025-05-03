@@ -402,6 +402,10 @@ class COMB(PVPTD3):
             alpha, bias = self.extra_config["alpha"], self.extra_config["bias"]
             log_prob_pos = get_log_prob(pos_obs, pos_action)
             log_prob_neg = get_log_prob(neg_obs, neg_action)
+            mean_log_prob_pos, mean_log_prob_neg = -log_prob_pos.mean().item(), -log_prob_neg.mean().item()
+            stat_recorder["mean_log_prob_pos"].append(mean_log_prob_pos)
+            stat_recorder["mean_log_prob_neg"].append(mean_log_prob_neg)    
+            stat_recorder["mean_log_prob_neg-pos"].append(mean_log_prob_neg - mean_log_prob_pos)
             adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
             label = torch.ones_like(adv_pos)
             dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)

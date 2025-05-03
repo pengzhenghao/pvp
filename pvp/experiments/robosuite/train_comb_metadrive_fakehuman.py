@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="Wipe", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="NutAssembly0429", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
@@ -49,9 +49,9 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_".format("Ours", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
+    experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_bcw={}_0502".format("Ours", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "", args.bc_loss_weight)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_".format("HG", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
+        experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_0502".format("HG", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     render = config["env_config"]["use_render"]
     controller_config = load_controller_config(default_controller='OSC_POSE')
     configr = {
-        "env_name": "Wipe",
+        "env_name": "NutAssembly",
         "robots": "UR5e",
         "controller_configs": controller_config,
     }
@@ -157,6 +157,8 @@ if __name__ == '__main__':
             has_renderer=render,
             has_offscreen_renderer=False,
             render_camera="agentview",
+            single_object_mode=2, # env has 1 nut instead of 2
+            nut_type="round",
             ignore_done=True,
             use_camera_obs=False,
             reward_shaping=True,
@@ -179,7 +181,7 @@ if __name__ == '__main__':
         render = False
         controller_config = load_controller_config(default_controller='OSC_POSE')
         configr = {
-            "env_name": "Wipe",
+            "env_name": "NutAssembly",
             "robots": "UR5e",
             "controller_configs": controller_config,
         }
@@ -188,6 +190,8 @@ if __name__ == '__main__':
                 has_renderer=render,
                 has_offscreen_renderer=False,
                 render_camera="agentview",
+                single_object_mode=2, # env has 1 nut instead of 2
+                nut_type="round",
                 ignore_done=True,
                 use_camera_obs=False,
                 reward_shaping=True,
@@ -205,8 +209,8 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 100
+        from pvp.sb3.common.vec_env import DummyVecEnv
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 2000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
