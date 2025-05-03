@@ -49,9 +49,9 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_".format("Ours", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
+    experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_0502".format("Ours", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_".format("HG", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
+        experiment_batch_name = "{}_Thr={}_FutPred={}_UpdFutFreq={}_PrefSteps={}_Ckpt={}_0502".format("HG", args.switch_to_expert, args.future_steps_predict, args.update_future_freq, args.future_steps_preference, args.ckpt != "")
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
