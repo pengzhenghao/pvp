@@ -210,7 +210,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import DummyVecEnv
-        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 500
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 2000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
