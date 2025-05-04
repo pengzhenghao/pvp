@@ -370,7 +370,7 @@ class EvalCallback(EventCallback):
 
     def _on_step(self) -> bool:
 
-        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0 and self.n_calls > 200000:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0 and self.n_calls > 2000:
             # Sync training and eval env if there is VecNormalize
             if self.model.get_vec_normalize_env() is not None:
                 try:

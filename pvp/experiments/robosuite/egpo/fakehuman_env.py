@@ -357,7 +357,7 @@ class CustomWrapper(gym.Env):
     def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, expert_mode = False):
         info = dict()
         saved_state = copy.deepcopy(self._env.sim.get_state())
-        
+        tmp = self.turns
         controller_state = self.get_state()
         grip = self._env.robots[0].gripper.current_action[0]
         
@@ -408,6 +408,7 @@ class CustomWrapper(gym.Env):
         self._env.sim.set_state(saved_state)
         self.set_state(controller_state)
         self._env.robots[0].gripper.current_action[0] = grip
+        self.turns = tmp
         
         info["success"] = success
         info["total_reward"] = total_reward
@@ -472,11 +473,11 @@ class CustomWrapper(gym.Env):
         
         if self.takeover:
             #TODO: add to preference buffer
-            # if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
-            #     predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             action_ = expert_action
-            # if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
-            #     self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
+            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
         else:
             self.takeover = False
 
