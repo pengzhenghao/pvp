@@ -172,6 +172,7 @@ class CustomWrapper(gym.Env):
     total_reward = 0
     rec = []
     t = 0
+    turns = 0
     def __init__(self, env, unwrapped_env, config):
         self.env = env
         self._env = unwrapped_env
@@ -219,15 +220,16 @@ class CustomWrapper(gym.Env):
             a[2] = 1.0
             return a
 
-        if not self.gripper_closed and np.linalg.norm(grasp_point[:2] - eef_pos[:2]) > 0.005:
+        if not self.gripper_closed and np.linalg.norm(grasp_point[:2] - eef_pos[:2]) > 0.5:
             # move gripper to be aligned with washer handle.
             a[-1] = -1.
             a[0:2] = 10 * (grasp_point[:2] - eef_pos[:2])
             self.last_turn = None
             return a
-
-        if not self.gripper_closed and abs(rel_quat[0] + 1) > 0.01 and abs(rel_quat[1] + 1) > 0.01:
+        
+        if not self.gripper_closed and abs(rel_quat[0] + 1) > 0.01 and abs(rel_quat[1] + 1) > 0.01 and self.turns < 30:
             # rotate gripper to be perpendicular to the washer.
+            self.turns += 1
             a[-1] = -1.
             if abs(obj_pos[2] - eef_pos[2]) < 0.02:
                 a[2] = -30 * (obj_pos[2] - eef_pos[2])
@@ -239,6 +241,44 @@ class CustomWrapper(gym.Env):
             else: # rotate CCW
                 a[5] = 0.3
                 self.last_turn = 0.3
+            return a
+        
+        if not self.gripper_closed and abs(obj_pos[2] - eef_pos[2]) > 0.2:
+            # move gripper to the height of the washer.
+            a[-1] = -1.
+            a[2] = 30 * (obj_pos[2] - eef_pos[2])
+            return a
+        
+        if not self.gripper_closed and np.linalg.norm(grasp_point[:2] - eef_pos[:2]) > 0.1 and self.turns < 60:
+            # move gripper to be aligned with washer handle.
+            a[-1] = -1.
+            a[0:2] = 10 * (grasp_point[:2] - eef_pos[:2])
+            self.last_turn = None
+            self.turns += self.turns > 30
+            return a
+        
+        if not self.gripper_closed and abs(rel_quat[0] + 1) > 0.01 and abs(rel_quat[1] + 1) > 0.01  and self.turns < 120:
+            # rotate gripper to be perpendicular to the washer.
+            self.turns += self.turns > 60
+            a[-1] = -1.
+            if abs(obj_pos[2] - eef_pos[2]) < 0.02:
+                a[2] = -30 * (obj_pos[2] - eef_pos[2])
+            if self.last_turn:
+                a[5] = self.last_turn
+            elif abs(rel_quat[0] + 1) < abs(rel_quat[1] + 1): # rotate CW
+                a[5] = -0.3
+                self.last_turn = -0.3
+            else: # rotate CCW
+                a[5] = 0.3
+                self.last_turn = 0.3
+            return a
+        
+        if not self.gripper_closed and np.linalg.norm(grasp_point[:2] - eef_pos[:2]) > 0.01  and self.turns < 180:
+            # move gripper to be aligned with washer handle.
+            a[-1] = -1.
+            a[0:2] = 10 * (grasp_point[:2] - eef_pos[:2])
+            self.last_turn = None
+            self.turns += self.turns > 120
             return a
 
         if not self.gripper_closed and abs(obj_pos[2] - eef_pos[2]) > 0.0075:
@@ -276,7 +316,7 @@ class CustomWrapper(gym.Env):
         self.render()
         settle_action = np.zeros(7)
         settle_action[-1] = -1
-        for _ in range(10):
+        for _ in range(0):
             r, r2, r3, r4 = self.env.step(settle_action)
             self.render()
         self.gripper_closed = False
@@ -284,6 +324,7 @@ class CustomWrapper(gym.Env):
         self.last_takeover = None
         self.takeover = None
         self.t = 0
+        self.turns = 0
         return r
 
     def get_state(self):
@@ -344,7 +385,7 @@ class CustomWrapper(gym.Env):
             step_reward += r
             settle_action = np.zeros(7)
             settle_action[-1] = action[-1]
-            for _ in range(2):
+            for _ in range(0):
                 o, r, d, i = self.env.step(settle_action)
                 # self.render()
                 step_reward += r
@@ -428,6 +469,7 @@ class CustomWrapper(gym.Env):
         # self.takeover4 = self.takeover4 > 0 and not self.config["eval"]
         
         self.takeover3 = np.any((self.agent_action * expert_action) < 0) and not self.config["eval"]
+        
         if self.takeover:
             #TODO: add to preference buffer
             # if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
@@ -449,7 +491,7 @@ class CustomWrapper(gym.Env):
         self.render()
         settle_action = np.zeros(7)
         settle_action[-1] = action_[-1]
-        for _ in range(2):
+        for _ in range(0):
             o, r, d, i = self.env.step(settle_action)
             self.render()
             self.total_reward += r

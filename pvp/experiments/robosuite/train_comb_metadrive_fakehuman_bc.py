@@ -24,8 +24,8 @@ if __name__ == '__main__':
         "--exp_name", default="pvp_metadrive_fakehuman", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--batch_size", default=1024, type=int)
-    parser.add_argument("--learning_starts", default=2000, type=int)
-    parser.add_argument("--save_freq", default=500, type=int)
+    parser.add_argument("--learning_starts", default=5000, type=int)
+    parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="NutAssembly0429", help="The project name for wandb.")
@@ -135,14 +135,14 @@ if __name__ == '__main__':
         trial_name=trial_name,
         log_dir=str(trial_dir)
     )
-    # if args.toy_env:
-    #     config["env_config"].update(
-    #         # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
-    #         num_scenarios=1,
-    #         traffic_density=0.0,
-    #         map="COT",
-    #         use_render=True
-    #     )
+    if args.toy_env:
+        config["env_config"].update(
+            # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT",
+            use_render=True
+        )
         
     # ===== Setup the training environment =====
     render = config["env_config"]["use_render"]
@@ -210,7 +210,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import DummyVecEnv
-        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 500
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 20000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -232,7 +232,7 @@ if __name__ == '__main__':
     # ===== Setup the training algorithm =====
     model = COMB(**config["algo"])
     if True:
-        ckpt = "/home/caihy/pvp/runs/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502_09b29b3c/models/rl_model_60000_steps.zip"
+        ckpt = "/home/caihy/pvp/best_model_nut.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
 
@@ -252,7 +252,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=20,
+        n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
         # logging
