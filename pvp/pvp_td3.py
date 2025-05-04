@@ -399,9 +399,15 @@ class COMB(PVPTD3):
                 log_prob = -((mean - target_action) ** 2).sum(dim = -1)
                 return log_prob
             
+            def get_log_prob_ref(obs, target_action):
+                with th.no_grad():
+                    mean = self.ref_policy(obs)
+                    log_prob = -((mean - target_action) ** 2).sum(dim = -1)
+                return log_prob
+            
             alpha, bias = self.extra_config["alpha"], self.extra_config["bias"]
-            log_prob_pos = get_log_prob(pos_obs, pos_action)
-            log_prob_neg = get_log_prob(neg_obs, neg_action)
+            log_prob_pos = get_log_prob(pos_obs, pos_action) - get_log_prob_ref(pos_obs, pos_action)
+            log_prob_neg = get_log_prob(neg_obs, neg_action) - get_log_prob_ref(neg_obs, neg_action)
             mean_log_prob_pos, mean_log_prob_neg = -log_prob_pos.mean().item(), -log_prob_neg.mean().item()
             stat_recorder["mean_log_prob_pos"].append(mean_log_prob_pos)
             stat_recorder["mean_log_prob_neg"].append(mean_log_prob_neg)    
@@ -415,14 +421,15 @@ class COMB(PVPTD3):
                 bc_loss_weight, dpo_loss_weight = 1.0, 0.0
             
             loss = bc_loss_weight * bc_loss + dpo_loss_weight * dpo_loss
+            # loss = ((log_prob_pos - log_prob_neg - 0.5) ** 2).mean() + bc_loss_weight * bc_loss
             
             self.actor.optimizer.zero_grad()
             loss.backward()
             self.actor.optimizer.step()
             
             stat_recorder["bc_loss"].append(bc_loss.item() if bc_loss is not None else float('nan'))
-            # stat_recorder["cpl_loss"].append(dpo_loss.item() if dpo_loss is not None else float('nan'))
-            # stat_recorder["cpl_accuracy"].append(accuracy.item() if accuracy is not None else float('nan'))
+            stat_recorder["cpl_loss"].append(dpo_loss.item() if dpo_loss is not None else float('nan'))
+            stat_recorder["cpl_accuracy"].append(accuracy.item() if accuracy is not None else float('nan'))
             stat_recorder["loss"].append(loss.item() if loss is not None else float('nan'))
 
         self._n_updates += gradient_steps

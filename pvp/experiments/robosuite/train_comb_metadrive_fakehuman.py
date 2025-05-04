@@ -25,7 +25,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=2000, type=int)
-    parser.add_argument("--save_freq", default=500, type=int)
+    parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="NutAssembly0429", help="The project name for wandb.")
@@ -37,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
-    parser.add_argument("--future_steps_preference", default=3, type=int)
+    parser.add_argument("--future_steps_preference", default=6, type=int)
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
@@ -232,7 +232,8 @@ if __name__ == '__main__':
     # ===== Setup the training algorithm =====
     model = COMB(**config["algo"])
     if True:
-        ckpt = "/home/caihy/pvp/runs/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502_bdb8ba7f/models/rl_model_390000_steps.zip"
+        # ckpt = "/home/caihy/pvp/runs/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502_bdb8ba7f/models/rl_model_390000_steps.zip"
+        ckpt = "/home/caihy/pvp/bc_pretrain.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
 
