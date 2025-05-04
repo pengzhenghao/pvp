@@ -135,14 +135,14 @@ if __name__ == '__main__':
         trial_name=trial_name,
         log_dir=str(trial_dir)
     )
-    if args.toy_env:
-        config["env_config"].update(
-            # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
-            num_scenarios=1,
-            traffic_density=0.0,
-            map="COT",
-            use_render=True
-        )
+    # if args.toy_env:
+    #     config["env_config"].update(
+    #         # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
+    #         num_scenarios=1,
+    #         traffic_density=0.0,
+    #         map="COT",
+    #         use_render=True
+    #     )
         
     # ===== Setup the training environment =====
     render = config["env_config"]["use_render"]
@@ -210,7 +210,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import DummyVecEnv
-        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 2000
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 10000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -231,13 +231,15 @@ if __name__ == '__main__':
 
     # ===== Setup the training algorithm =====
     model = COMB(**config["algo"])
-    if args.ckpt:
-        ckpt = Path(args.ckpt)
+    if True:
+        ckpt = "/home/caihy/pvp/best_model_nut.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
 
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
+        import copy
+        model.ref_policy = copy.deepcopy(model.policy)
 
     train_env.env.env.model = model
     # ===== Launch training =====
@@ -250,7 +252,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=20,
         eval_log_path=str(trial_dir),
 
         # logging

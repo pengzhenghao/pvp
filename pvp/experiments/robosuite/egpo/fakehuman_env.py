@@ -416,20 +416,25 @@ class CustomWrapper(gym.Env):
         enoise = np.random.randn(7) * expert_noise_bound
         expert_action = np.clip(enoise + expert_action, -1, 1)
         
-        if self.takeover == None or (self.total_steps % update_future_freq == 0):
-            self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
-            # if len(self.rec) > 0:
-            #     print("MEAN:", np.mean(self.rec))
+        # if self.takeover == None or (self.total_steps % update_future_freq == 0):
+        #     self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
+        #     # if len(self.rec) > 0:
+        #     #     print("MEAN:", np.mean(self.rec))
+        
+        self.takeover = (np.mean((self.agent_action - expert_action) ** 2) > 0.001) and not self.config["eval"]
         
         self.takeover2 = (expert_action[-1] * action_[-1] < 0) and not self.config["eval"]
         
-        if self.takeover or self.takeover2:
+        # self.takeover4 = self.takeover4 > 0 and not self.config["eval"]
+        
+        self.takeover3 = np.any((self.agent_action * expert_action) < 0) and not self.config["eval"]
+        if self.takeover:
             #TODO: add to preference buffer
-            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
-                predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            # if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+            #     predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
             action_ = expert_action
-            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
-                self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
+            # if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+            #     self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
         else:
             self.takeover = False
 
@@ -459,6 +464,8 @@ class CustomWrapper(gym.Env):
         i["grip_wrong"] = self.takeover2
         i["gripper_closed"] = self.gripper_closed
         i["takeover_start"] = True if not self.last_takeover and self.takeover else False
+        i["takeover3"] = self.takeover3
+        # i["takeover4"] = self.takeover4
         # condition = i["takeover_start"] if self.config["only_takeover_start_cost"] else self.takeover
         self.total_takeover_cost += i["takeover"]
         self.total_takeover_count += 1 if self.takeover else 0
