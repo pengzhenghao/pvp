@@ -361,7 +361,7 @@ class EvalCallback(EventCallback):
             assert (maybe_is_success is None) or (maybe_is_success2 is None), "We cannot have two success flags!"
 
             for k in ["episode_energy", "route_completion", "total_cost", "arrive_dest", "max_step", "out_of_road",
-                      "crash"]:
+                      "crash", "episode_cost"]:
                 if k in info:
                     self.evaluations_info_buffer[k].append(info[k])
 

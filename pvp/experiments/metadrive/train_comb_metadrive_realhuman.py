@@ -143,7 +143,7 @@ if __name__ == '__main__':
     # ===== Also build the eval env =====
     def _make_eval_env():
         eval_env_config = dict(
-            use_render=True,  # Open the interface
+            use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
             # start_seed=100,
             # horizon=1500,
@@ -211,7 +211,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=5,
+        n_eval_episodes=20,
         eval_log_path=str(trial_dir),
 
         # logging

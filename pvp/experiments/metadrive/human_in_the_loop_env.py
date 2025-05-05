@@ -121,6 +121,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
 
         self.total_takeover_count += 1 if self.takeover else 0
         ret[-1]["total_takeover_count"] = self.total_takeover_count
+        ret[-1]["episode_cost"] = self.episode_cost
 
         return ret
 

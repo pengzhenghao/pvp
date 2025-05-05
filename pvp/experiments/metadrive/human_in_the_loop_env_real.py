@@ -14,7 +14,7 @@ ScreenMessage.SCALE = 0.1
 HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     # Environment setting:
     "out_of_route_done": True,  # Raise done if out of route.
-    "num_scenarios": 50,  # There are totally 50 possible maps.
+    "num_scenarios": 5,  # There are totally 50 possible maps.
     "start_seed": 100,  # We will use the map 100~150 as the default training environment.
     "traffic_density": 0,
 
@@ -24,6 +24,7 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     # Set up the control device. Default to use keyboard with the pop-up interface.
     "manual_control": True,
     "agent_policy": TakeoverPolicyWithoutBrake,
+    "map": "COT",  # The map to use. COT is a simple map.
     "controller": "xbox",  # Selected from [keyboard, xbox, steering_wheel].
     "only_takeover_start_cost": False,  # If True, only return a cost when takeover starts. Useless in PVP.
 
@@ -182,6 +183,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
 
         self.total_takeover_count += 1 if self.takeover else 0
         ret[-1]["total_takeover_count"] = self.total_takeover_count
+        ret[-1]["episode_cost"] = self.episode_cost
 
         return ret
 
