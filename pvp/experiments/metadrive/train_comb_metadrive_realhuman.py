@@ -147,7 +147,6 @@ if __name__ == '__main__':
             manual_control=False,  # Allow receiving control signal from external device
             # start_seed=100,
             # horizon=1500,
-            traffic_density=0.0,
         )
         if args.toy_env:
             eval_env_config.update(

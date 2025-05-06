@@ -16,7 +16,8 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     "out_of_route_done": True,  # Raise done if out of route.
     "num_scenarios": 5,  # There are totally 50 possible maps.
     "start_seed": 100,  # We will use the map 100~150 as the default training environment.
-    "traffic_density": 0.06,
+    "traffic_density": 0.03,
+    "map": "COT",  # The map to use. COT is a simple map.
 
     # Reward and cost setting:    "cost_to_reward": True,  # Cost will be negated and added to the reward. Useless in PVP.
     "cos_similarity": False,  # If True, the takeover cost will be the cos sim between a_h and a_n. Useless in PVP.
@@ -24,7 +25,6 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     # Set up the control device. Default to use keyboard with the pop-up interface.
     "manual_control": True,
     "agent_policy": TakeoverPolicyWithoutBrake,
-    "map": "COT",  # The map to use. COT is a simple map.
     "controller": "xbox",  # Selected from [keyboard, xbox, steering_wheel].
     "only_takeover_start_cost": False,  # If True, only return a cost when takeover starts. Useless in PVP.
 
