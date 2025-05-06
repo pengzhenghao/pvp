@@ -23,7 +23,7 @@ from pvp.sb3.td3.td3 import TD3
 from pvp.sb3.haco.haco_buffer import PrefReplayBuffer
 
 
-def biased_bce_with_logits(adv1, adv2, y, bias=1.0, cbias = 0):
+def biased_bce_with_logits(adv1, adv2, y, bias=1.0, cbias = 0, ipo=False):
     # Apply the log-sum-exp trick.
     # y = 1 if we prefer x2 to x1
     # We need to implement the numerical stability trick.
@@ -64,7 +64,7 @@ class PVPTD3(TD3):
                 assert v in ["True", "False"]
                 v = v == "True"
                 self.extra_config[k] = v
-        for k in ["always_takeover", "agent_data_ratio", "bc_loss_weight", "dpo_loss_weight", "alpha", "bias", "iwr"]:
+        for k in ["always_takeover", "ipo", "agent_data_ratio", "bc_loss_weight", "dpo_loss_weight", "alpha", "bias", "iwr"]:
             if k in kwargs:
                 self.extra_config[k] = kwargs.pop(k)
 
@@ -412,6 +412,10 @@ class COMB(PVPTD3):
             adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
             label = torch.ones_like(adv_pos)
             dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
+            
+            ipo = self.extra_config["ipo"]
+            if ipo:
+                dpo_loss = ((log_prob_pos - log_prob_neg - 1.5)**2).mean()
             
             bc_loss_weight, dpo_loss_weight = self.extra_config["bc_loss_weight"], self.extra_config["dpo_loss_weight"]
             if self.extra_config["only_bc_loss"]:

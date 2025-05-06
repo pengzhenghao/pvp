@@ -40,14 +40,16 @@ if __name__ == '__main__':
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
     parser.add_argument("--alpha", default=0.1, type=float)
     parser.add_argument("--bias", default=0.5, type=float)
-    
+    parser.add_argument("--ipo", action="store_true", help="Whether to use a toy environment.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
     experiment_batch_name = "{}_bcw={}_L={}_0429".format("Ours", args.bc_loss_weight, args.future_steps_preference)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_"
+        experiment_batch_name = "HGV2_0429"
+    if args.ipo:
+        experiment_batch_name += "_IPO"
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -121,6 +123,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
+            ipo = args.ipo,
         ),
 
         # Experiment log
