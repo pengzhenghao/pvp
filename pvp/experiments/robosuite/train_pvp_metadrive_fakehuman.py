@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pvp.experiments.robosuite.egpo.fakehuman_env import CustomWrapper
+from pvp.experiments.robosuite.egpo.fakehuman_env import CustomWrapper, GymWrapper
 from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -12,15 +12,14 @@ from pvp.sb3.common.wandb_callback import WandbCallback
 from pvp.sb3.haco import HACOReplayBuffer
 from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
-from pvp.utils.utils import get_time_str
+# from pvp.utils.utils import get_time_str
 import pathlib
 import robosuite as suite
 from robosuite import load_controller_config
-from robosuite.utils.input_utils import input2action
-from robosuite.utils.transform_utils import pose2mat
+# from robosuite.utils.input_utils import input2action
+# from robosuite.utils.transform_utils import pose2mat
 from robosuite.wrappers import VisualizationWrapper
-from robosuite.wrappers import GymWrapper
-from robosuite.devices import Keyboard
+# from robosuite.devices import Keyboard
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -48,13 +47,13 @@ if __name__ == '__main__':
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--simple_batch", default="True", type=str)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
-    parser.add_argument("--switch_to_expert", default=0.2, type=float)
+    parser.add_argument("--switch_to_expert", default=10, type=float)
     
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}".format("PVP", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_0507".format("PVP", args.bc_loss_weight)
     if args.only_bc_loss=="True":
         experiment_batch_name = "BCLossOnlyS"
     seed = args.seed
@@ -139,44 +138,14 @@ if __name__ == '__main__':
         log_dir=str(trial_dir)
     )
         
-    # ===== Setup the training environment =====
-    render = config["env_config"]["use_render"]
-    controller_config = load_controller_config(default_controller='OSC_POSE')
-    configr = {
-        "env_name": "NutAssembly",
-        "robots": "UR5e",
-        "controller_configs": controller_config,
-    }
-    env = suite.make(
-            **configr,
-            has_renderer=render,
-            has_offscreen_renderer=False,
-            render_camera="agentview",
-            single_object_mode=2, # env has 1 nut instead of 2
-            nut_type="round",
-            ignore_done=True,
-            use_camera_obs=False,
-            reward_shaping=True,
-            control_freq=20,
-            hard_reset=True,
-            use_object_obs=True
-        )
-    unwrapped_env = env
-    env = GymWrapper(env)
-    env = VisualizationWrapper(env, indicator_configs=None)
-    env = CustomWrapper(env, unwrapped_env, config=config["env_config"])
-    train_env = Monitor(env=env, filename=str(trial_dir))
-    # Store all shared control data to the files.
-    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
-    config["algo"]["env"] = train_env
-    assert config["algo"]["env"] is not None
+
 
     # ===== Also build the eval env =====
     def _make_eval_env():
         render = False
         controller_config = load_controller_config(default_controller='OSC_POSE')
         configr = {
-            "env_name": "NutAssembly",
+            "env_name": "Wipe",
             "robots": "UR5e",
             "controller_configs": controller_config,
         }
@@ -185,8 +154,6 @@ if __name__ == '__main__':
                 has_renderer=render,
                 has_offscreen_renderer=False,
                 render_camera="agentview",
-                single_object_mode=2, # env has 1 nut instead of 2
-                nut_type="round",
                 ignore_done=True,
                 use_camera_obs=False,
                 reward_shaping=True,
@@ -204,9 +171,38 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        from pvp.sb3.common.vec_env import DummyVecEnv
-        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 2000
-
+        from pvp.sb3.common.vec_env import SubprocVecEnv
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 100
+    
+    # ===== Setup the training environment =====
+    render = config["env_config"]["use_render"]
+    controller_config = load_controller_config(default_controller='OSC_POSE')
+    configr = {
+        "env_name": "Wipe",
+        "robots": "UR5e",
+        "controller_configs": controller_config,
+    }
+    env = suite.make(
+            **configr,
+            has_renderer=render,
+            has_offscreen_renderer=False,
+            render_camera="agentview",
+            ignore_done=True,
+            use_camera_obs=False,
+            reward_shaping=True,
+            control_freq=20,
+            hard_reset=True,
+            use_object_obs=True
+        )
+    unwrapped_env = env
+    env = GymWrapper(env)
+    env = VisualizationWrapper(env, indicator_configs=None)
+    env = CustomWrapper(env, unwrapped_env, config=config["env_config"])
+    train_env = Monitor(env=env, filename=str(trial_dir))
+    # Store all shared control data to the files.
+    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+    config["algo"]["env"] = train_env
+    assert config["algo"]["env"] is not None
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
     callbacks = [
