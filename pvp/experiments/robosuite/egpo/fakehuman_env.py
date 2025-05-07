@@ -257,6 +257,7 @@ class CustomWrapper(gym.Env):
                 "switch_to_expert": 10,
                 "eval": False,
                 "MAX_EP_LEN": 600,
+                "cos_similarity": False,
                 })
         self.config.update(config)
         # if self.config["eval"]:
@@ -273,6 +274,19 @@ class CustomWrapper(gym.Env):
         if obs_tensor.dim() == 1:
             obs_tensor = obs_tensor.unsqueeze(0)
         return obs_tensor
+    def get_takeover_cost(self, info):
+        """Return the takeover cost when intervened."""
+        if not self.config["cos_similarity"]:
+            return 1
+        takeover_action = np.clip(np.array(info["raw_action"]), -1, 1)
+        agent_action = np.clip(np.array(self.agent_action), -1, 1)
+        multiplier = (agent_action[0] * takeover_action[0] + agent_action[1] * takeover_action[1])
+        divident = np.linalg.norm(takeover_action) * np.linalg.norm(agent_action)
+        if divident < 1e-6:
+            cos_dist = 1.0
+        else:
+            cos_dist = multiplier / divident
+        return 1 - cos_dist
     
     def expert_act(self, o):
         # last_obs, _ = self.expert.obs_to_tensor(o)
@@ -503,12 +517,13 @@ class CustomWrapper(gym.Env):
         i["raw_action"] = copy.copy(action_)
         i["step_reward"] = step_reward
         i["action_diff_new"] = np.mean((self.agent_action - expert_action) ** 2)
-        i["takeover"] = i["takeover_cost"] = (self.takeover == True) or (self.takeover2 == True)
+        i["takeover"]  = (self.takeover == True) or (self.takeover2 == True)
+        i["takeover_cost"] = self.get_takeover_cost(i)
         i["grip_wrong"] = self.takeover2
         i["gripper_closed"] = self.gripper_closed
         i["takeover_start"] = True if not self.last_takeover and self.takeover else False
         # condition = i["takeover_start"] if self.config["only_takeover_start_cost"] else self.takeover
-        self.total_takeover_cost += i["takeover"]
+        self.total_takeover_cost += i["takeover_cost"]
         self.total_takeover_count += 1 if self.takeover else 0
         i["total_takeover_count"] = self.total_takeover_count
         i["total_takeover_cost"] = self.total_takeover_cost
