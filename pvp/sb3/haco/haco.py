@@ -107,7 +107,7 @@ class HACO(SAC):
         for gradient_step in range(gradient_steps):
             # Sample replay buffer
             replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
-
+            
             # We need to sample because `log_std` may have changed between two gradient steps
             if self.use_sde:
                 self.actor.reset_noise()
@@ -115,7 +115,9 @@ class HACO(SAC):
             # Action by the current actor for the sampled state
             actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
             log_prob = log_prob.reshape(-1, 1)
-
+            bc_loss = F.mse_loss(replay_data.actions_behavior, actions_pi, reduction="none").mean(axis=-1)
+            masked_bc_loss = (replay_data.interventions.flatten() *
+                                  bc_loss).sum() / (replay_data.interventions.flatten().sum() + 1e-5)
             # ===== Optimizing the entropy coefficient =====
             ent_coef_loss = None
             if self.ent_coef_optimizer is not None:
@@ -213,10 +215,11 @@ class HACO(SAC):
             # PZH: Apply the Lagrangian multiplier to the actor loss
             native_actor_loss = ent_coef * log_prob - min_qf_pi
             cost_actor_loss = min_cost_qf_pi
-            actor_loss = (native_actor_loss + cost_actor_loss).mean()
+            actor_loss = (native_actor_loss + cost_actor_loss + masked_bc_loss).mean()
 
             stat_recorder["actor_loss"].append(native_actor_loss.mean().item())
             stat_recorder["cost_actor_loss"].append(cost_actor_loss.mean().item())
+            stat_recorder["cost_bc_loss"].append(masked_bc_loss.item())
 
             if self.policy_kwargs["share_features_extractor"] == "critic":
                 self._optimize_actor(actor_loss=actor_loss)

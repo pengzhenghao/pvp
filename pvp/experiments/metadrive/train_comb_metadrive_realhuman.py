@@ -53,7 +53,7 @@ if __name__ == '__main__':
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
     print("Trial name is set to: ", trial_name)
 
-    use_wandb = args.wandb
+    use_wandb = True
     project_name = args.wandb_project
     team_name = args.wandb_team
     if not use_wandb:
@@ -210,7 +210,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=20,
+        n_eval_episodes=25,
         eval_log_path=str(trial_dir),
 
         # logging

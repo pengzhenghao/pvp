@@ -5,7 +5,7 @@ import argparse
 import os
 from pathlib import Path
 
-from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+from pvp.experiments.metadrive.human_in_the_loop_env_real import HumanInTheLoopEnv
 from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
@@ -20,9 +20,10 @@ if __name__ == '__main__':
     parser.add_argument("--exp_name", default="pvp_metadrive", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
-
+    parser.add_argument("--wandb_project", type=str, default="HinLoopPref", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
+    parser.add_argument("--save_freq", default=100, type=int)
+    parser.add_argument("--batch_size", default=128, type=int) # Reduce the batch size for real-time copilot
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
@@ -30,22 +31,33 @@ if __name__ == '__main__':
     parser.add_argument("--adaptive_batch_size", default="True", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
-    parser.add_argument(
-        "--device",
-        required=True,
-        choices=['wheel', 'gamepad', 'keyboard'],
-        type=str,
-        help="The control device, selected from [wheel, gamepad, keyboard]."
-    )
+    parser.add_argument("--policy_delay", default=1, type=int)
+    parser.add_argument("--future_steps_predict", default=20, type=int)
+    parser.add_argument("--update_future_freq", default=10, type=int)
+    parser.add_argument("--future_steps_preference", default=3, type=int)
+    parser.add_argument("--expert_noise", default=0, type=float)
+    parser.add_argument("--simple_batch", default="True", type=str)
+    parser.add_argument("--iwr", action="store_true", help="Whether to use iwr.")
+    parser.add_argument("--always_takeover", action="store_true", help="Whether to use bc.")
+    # parser.add_argument(
+    #     "--device",
+    #     required=True,
+    #     choices=['wheel', 'gamepad', 'keyboard'],
+    #     type=str,
+    #     help="The control device, selected from [wheel, gamepad, keyboard]."
+    # )
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
-    control_device = args.device
-    experiment_batch_name = "{}_{}".format(args.exp_name, control_device)
+    # control_device = args.device
+    experiment_batch_name = "{}_0506RealPVP".format(args.exp_name)
     seed = args.seed
     trial_name = "{}_{}".format(experiment_batch_name, get_time_str())
-
-    use_wandb = args.wandb
+    if (args.only_bc_loss=="True"):
+        experiment_batch_name = "BCLossOnly_0506Real"
+    if args.iwr:
+        experiment_batch_name = "IWR_0506Real"
+    use_wandb = True
     project_name = args.wandb_project
     team_name = args.wandb_team
     if not use_wandb:
@@ -64,7 +76,7 @@ if __name__ == '__main__':
         env_config=dict(
             use_render=True,  # Open the interface
             manual_control=True,  # Allow receiving control signal from external device
-            controller=control_device,
+            # controller=control_device,
             window_size=(1600, 1100),
         ),
 
@@ -78,6 +90,8 @@ if __name__ == '__main__':
             add_bc_loss="True" if args.bc_loss_weight > 0.0 else "False",
             use_balance_sample=True,
             agent_data_ratio=1.0,
+            simple_batch=args.simple_batch,
+            iwr = args.iwr,
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
             replay_buffer_kwargs=dict(
@@ -90,7 +104,7 @@ if __name__ == '__main__':
             optimize_memory_usage=True,
             buffer_size=50_000,  # We only conduct experiment less than 50K steps
             learning_starts=100,  # The number of steps before
-            batch_size=128,  # Reduce the batch size for real-time copilot
+            batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
             gamma=0.99,
             train_freq=(1, "step"),
@@ -100,6 +114,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
+            always_takeover=False,
         ),
 
         # Experiment log
@@ -117,6 +132,31 @@ if __name__ == '__main__':
             map="COT"
         )
 
+    from pvp.sb3.common.vec_env import SubprocVecEnv
+    # ===== Also build the eval env =====
+    def _make_eval_env():
+        eval_env_config = dict(
+            use_render=False,  # Open the interface
+            manual_control=False,  # Allow receiving control signal from external device
+            # start_seed=100,
+            # horizon=1500,
+        )
+        if args.toy_env:
+            eval_env_config.update(
+            # Here we set num_scenarios to 1, remove all traffic, and fix the map to be a very simple one.
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT",
+            use_render=True
+        )
+        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+        from pvp.sb3.common.monitor import Monitor
+        eval_env = HumanInTheLoopEnv(config=eval_env_config)
+        eval_env = Monitor(env=eval_env, filename=str(trial_dir))
+        return eval_env
+
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 500
+    
     # ===== Setup the training environment =====
     train_env = HumanInTheLoopEnv(config=config["env_config"], )
     train_env = Monitor(env=train_env, filename=str(trial_dir))
@@ -124,9 +164,9 @@ if __name__ == '__main__':
     train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
-
+    
     # ===== Setup the callbacks =====
-    save_freq = 500  # Number of steps per model checkpoint
+    save_freq = args.save_freq  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
@@ -153,14 +193,14 @@ if __name__ == '__main__':
         reset_num_timesteps=True,
 
         # eval
-        eval_env=None,
-        eval_freq=-1,
-        n_eval_episodes=2,
+        eval_env=eval_env,
+        eval_freq=eval_freq,
+        n_eval_episodes=25,
         eval_log_path=None,
 
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=False,
+        save_buffer=True,
         load_buffer=False,
     )

@@ -81,7 +81,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         assert info_real["failure"] == (info_real["total_reward"] < 0)
-        self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
+        self.render_traj(predicted_traj_real[:10], (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
 
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
@@ -152,7 +152,8 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         ret = super(HumanInTheLoopEnv, self).step(actions)
         
         if self.takeover:
-            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_preference + 1, action_behavior=self.agent_action.copy())
+            if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+                predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_preference + 1, action_behavior=self.agent_action.copy())
             # self.render_traj(predicted_traj, (0.5, 0.5, 0))
             expert_action = np.array(ret[-1]["raw_action"])
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
