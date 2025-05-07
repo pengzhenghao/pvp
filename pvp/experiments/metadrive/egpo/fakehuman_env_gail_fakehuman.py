@@ -265,7 +265,6 @@ if __name__ == "__main__":
         env = FakeHumanEnv(dict(use_render=False, always_takeover=True))
         return env
     ss = 0
-    # from stable_baselines3.common.evaluation import evaluate_policy
 
     from imitation.algorithms import bc
     from imitation.algorithms.adversarial.gail import GAIL
@@ -384,68 +383,42 @@ if __name__ == "__main__":
             }
             for key, values in metrics.items()
         }
-        if return_episode_rewards:
-            return episode_rewards, episode_lengths, metrics_summary
+        # if return_episode_rewards:
+        #     return episode_rewards, episode_lengths, metrics_summary
         return mean_reward, std_reward, metrics_summary
     rng = np.random.default_rng(0)
     def register_env(make_env_fn, env_name):
         from gymnasium.envs.registration import register
         register(entry_point=make_env_fn, id=env_name)
     register_env(_make_train_env, "MetaDrive-FakeHuman")
-    # env = make_vec_env(
-    #     "MetaDrive-FakeHuman",
-    #     rng=rng,
-    #     n_envs=4,
-    #     parallel=True,
-    #     post_wrappers=[lambda env, _: RolloutInfoWrapper(env)],  # for computing rollouts
-    # )
+    env = make_vec_env(
+        "MetaDrive-FakeHuman",
+        rng=rng,
+        n_envs=1,
+        parallel=True,
+        post_wrappers=[lambda env, _: RolloutInfoWrapper(env)],  # for computing rollouts
+    )
     # reward, _, m = evaluate_policy(_expert, env, 10)
     # print("Reward:", reward, m)
     
-    from pvp.sb3.common.save_util import load_from_pkl
-    human_data_buffer = load_from_pkl("/home/caihy/pvp/human_buffer_18000.pkl", 0)
-    rollouts = human_data_buffer.sample(
-                18000, return_all=True
-            )
-    from imitation.data import types
-
-    def flatten_haco_replay_buffer_samples(
-        samples,
-    ) -> types.Transitions:
-        """Flatten HACODictReplayBufferSamples into a single batch of Transitions.
-
-        Args:
-            samples: HACODictReplayBufferSamples containing observations, next_observations,
-                    dones, rewards, and actions_behavior.
-
-        Returns:
-            A types.Transitions object containing the flattened data.
-        """
-        # Convert PyTorch tensors to NumPy arrays if necessary
-        def to_numpy(tensor):
-            if isinstance(tensor, torch.Tensor):
-                return tensor.cpu().numpy()  # Move to CPU and convert to NumPy
-            return tensor
-
-        transitions = types.Transitions(
-            obs=to_numpy(samples.observations),  # Assuming TensorDict is compatible
-            next_obs=to_numpy(samples.next_observations),
-            acts=to_numpy(samples.actions_behavior),
-            dones=np.squeeze(to_numpy(samples.dones).astype(bool)),
-            infos=to_numpy(samples.dones),  # If no additional info is available
-        )
-        return transitions
+    _expert = _expert.cuda()
+    rollouts = rollout.rollout(
+        _expert,
+        env,
+        rollout.make_sample_until(min_timesteps=10000, min_episodes=None),
+        rng=rng,
+    )
     
-    transitions = flatten_haco_replay_buffer_samples(rollouts)
-    # env.close()
+    transitions = rollout.flatten_trajectories(rollouts)
+    env.close()
     
     
     def _make_gail_env():
         eval_env_config = dict(
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
-            # start_seed=0,
-            # horizon=1500,
+            start_seed=0,
+            horizon=1500,
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         env = HumanInTheLoopEnv(config=eval_env_config)
@@ -482,10 +455,10 @@ if __name__ == "__main__":
         batch_size=32,
         policy=learner.policy,
     )
-    bc_trainer.train(n_epochs=32)
+    bc_trainer.train(n_epochs=5)
     
     learner_rewards_before_training, _, m = evaluate_policy(
-        learner, env, 50, return_episode_rewards=True,
+        learner, env, 50, 
     )
     print(learner_rewards_before_training, _, m)
     
@@ -498,7 +471,7 @@ if __name__ == "__main__":
         normalize_input_layer=RunningNorm,
     )
     gail_trainer = GAIL(
-        demonstrations=transitions,
+        demonstrations=rollouts,
         demo_batch_size=32,
         gen_replay_buffer_capacity=4096,
         n_disc_updates_per_round=8,
@@ -509,10 +482,13 @@ if __name__ == "__main__":
     )
     
     # train the learner and evaluate again
-    gail_trainer.train(1000000)  # Train for 800_000 steps to match expert.
+    gail_trainer.train(50000)  # Train for 800_000 steps to match expert.
     print("BC", np.mean(learner_rewards_before_training))
+    
+    print(learner_rewards_before_training, _, m)
+    
     learner_rewards_after_training, _, m = evaluate_policy(
-        learner, env, 50, return_episode_rewards=True,
+        learner, env, 50, 
     )
     print(learner_rewards_after_training, _, m)
     
@@ -521,8 +497,8 @@ if __name__ == "__main__":
         eval_env_config = dict(
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
-            # start_seed=1000,
-            # horizon=1500,
+            start_seed=1000,
+            horizon=1500,
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         eval_env = HumanInTheLoopEnv(config=eval_env_config)
@@ -530,7 +506,7 @@ if __name__ == "__main__":
     from pvp.sb3.common.vec_env import SubprocVecEnv
     env.close()
     eval_env, eval_freq = _make_eval_env(), 150
-    learner_rewards_after_training, _ = evaluate_policy(
-        learner, eval_env, 50, return_episode_rewards=True,
+    learner_rewards_after_training, _, m = evaluate_policy(
+        learner, eval_env, 50, 
     )
     print(learner_rewards_after_training, _, m)
