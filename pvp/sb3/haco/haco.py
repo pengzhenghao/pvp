@@ -218,7 +218,7 @@ class HACO(SAC):
             # PZH: Apply the Lagrangian multiplier to the actor loss
             native_actor_loss = ent_coef * log_prob - min_qf_pi
             cost_actor_loss = min_cost_qf_pi
-            actor_loss = (native_actor_loss + cost_actor_loss + 5 * masked_bc_loss).mean()
+            actor_loss = (native_actor_loss + cost_actor_loss + 20 * masked_bc_loss).mean()
 
             stat_recorder["actor_loss"].append(native_actor_loss.mean().item())
             stat_recorder["cost_actor_loss"].append(cost_actor_loss.mean().item())

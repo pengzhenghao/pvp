@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb_project", type=str, default="Wipe", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
-    parser.add_argument("--bc_loss_weight", type=float, default=1.0)
+    parser.add_argument("--bc_loss_weight", type=float, default=0.1)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
     parser.add_argument("--with_agent_proxy_value_loss", default="True", type=str)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
@@ -53,7 +53,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0507".format("EIL", args.bc_loss_weight)
+    experiment_batch_name = "NEW{}_bcw={}_0507".format("EIL", args.bc_loss_weight)
     if args.only_bc_loss=="True":
         experiment_batch_name = "BCLossOnlyS"
     seed = args.seed
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 2000
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 100
     
     # ===== Setup the training environment =====
     render = config["env_config"]["use_render"]
@@ -239,7 +239,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=20,
+        n_eval_episodes=25,
         eval_log_path=str(trial_dir),
 
         # logging
