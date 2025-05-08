@@ -54,7 +54,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0507_IWR={}".format("PVP", args.bc_loss_weight, args.iwr)
+    experiment_batch_name = "NEWFINAL{}_bcw={}_0507_IWR={}".format("PVP", args.bc_loss_weight, args.iwr)
     if args.only_bc_loss=="True":
         experiment_batch_name = "BCLossOnlyS"
     seed = args.seed
