@@ -35,7 +35,7 @@ if __name__ == '__main__':
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
     parser.add_argument("--with_agent_proxy_value_loss", default="True", type=str)
-    parser.add_argument("--adaptive_batch_size", default="False", type=str)
+    parser.add_argument("--adaptive_batch_size", default="True", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--policy_delay", default=1, type=int)
