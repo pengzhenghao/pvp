@@ -17,6 +17,6 @@ do
     --exp_name=${EXP_NAME} \
     --wandb \
     --seed=${seeds[$i]} \
-    --iwr
+    --iwr \
     > ${EXP_NAME}_seed${seeds[$i]}.log 2>&1 &
 done
