@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb_project", type=str, default="NutAssembly0429", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
-    parser.add_argument("--bc_loss_weight", type=float, default=0.1)
+    parser.add_argument("--bc_loss_weight", type=float, default=10.0)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
     parser.add_argument("--with_agent_proxy_value_loss", default="True", type=str)
     parser.add_argument("--adaptive_batch_size", default="True", type=str)
@@ -114,7 +114,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=50_000,  # We only conduct experiment less than 50K steps
+            buffer_size=500_000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
