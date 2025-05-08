@@ -48,12 +48,13 @@ if __name__ == '__main__':
     parser.add_argument("--simple_batch", default="True", type=str)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--switch_to_expert", default=10, type=float)
+    parser.add_argument("--iwr",  action="store_true", help="Whether to use a toy environment.")
     
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0507".format("PVP", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_0507_IWR={}".format("PVP", args.bc_loss_weight, args.iwr)
     if args.only_bc_loss=="True":
         experiment_batch_name = "BCLossOnlyS"
     seed = args.seed
@@ -128,6 +129,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
+            iwr = args.iwr,
         ),
 
         # Experiment log
@@ -241,7 +243,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=25,
         eval_log_path=str(trial_dir),
 
         # logging
