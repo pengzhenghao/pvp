@@ -225,8 +225,8 @@ if __name__ == '__main__':
 
     # ===== Setup the training algorithm =====
     model = EIL(**config["algo"])
-    if args.ckpt:
-        ckpt = Path(args.ckpt)
+    if True:
+        ckpt = "/home/caihy/pvp/bc_pretrain.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
 

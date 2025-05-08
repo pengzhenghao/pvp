@@ -205,8 +205,8 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 2000
+        from pvp.sb3.common.vec_env import DummyVecEnv
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env] * 2), 2000
         
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -227,8 +227,8 @@ if __name__ == '__main__':
 
     # ===== Setup the training algorithm =====
     model = PVPTD3(**config["algo"])
-    if args.ckpt:
-        ckpt = Path(args.ckpt)
+    if True:
+        ckpt = "/home/caihy/pvp/bc_pretrain.zip"
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
 
