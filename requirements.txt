@@ -17,7 +17,7 @@ tensorboard
 wandb==0.16.2
 screeninfo
 keyboard
-gym==0.19.0
+gym
 # gym[atari]==0.19.0
 dm-tree
 tabulate
@@ -25,7 +25,7 @@ pickle5
 # opencv-python==4.2.0.34
 # evdev
 pickle5==0.0.11
-stable-baselines3==1.4.0
+stable-baselines3
 pyglet
 minigrid==2.3.1
 easydict

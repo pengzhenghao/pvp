@@ -28,10 +28,10 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=100, type=int)
+    parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="Wipe", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="NutAssembly0429", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
@@ -140,14 +140,44 @@ if __name__ == '__main__':
         log_dir=str(trial_dir)
     )
         
-
+    # ===== Setup the training environment =====
+    render = config["env_config"]["use_render"]
+    controller_config = load_controller_config(default_controller='OSC_POSE')
+    configr = {
+        "env_name": "NutAssembly",
+        "robots": "UR5e",
+        "controller_configs": controller_config,
+    }
+    env = suite.make(
+            **configr,
+            has_renderer=render,
+            has_offscreen_renderer=False,
+            render_camera="agentview",
+            single_object_mode=2, # env has 1 nut instead of 2
+            nut_type="round",
+            ignore_done=True,
+            use_camera_obs=False,
+            reward_shaping=True,
+            control_freq=20,
+            hard_reset=True,
+            use_object_obs=True
+        )
+    unwrapped_env = env
+    env = GymWrapper(env)
+    env = VisualizationWrapper(env, indicator_configs=None)
+    env = CustomWrapper(env, unwrapped_env, config=config["env_config"])
+    train_env = Monitor(env=env, filename=str(trial_dir))
+    # Store all shared control data to the files.
+    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+    config["algo"]["env"] = train_env
+    assert config["algo"]["env"] is not None
 
     # ===== Also build the eval env =====
     def _make_eval_env():
         render = False
         controller_config = load_controller_config(default_controller='OSC_POSE')
         configr = {
-            "env_name": "Wipe",
+            "env_name": "NutAssembly",
             "robots": "UR5e",
             "controller_configs": controller_config,
         }
@@ -156,6 +186,8 @@ if __name__ == '__main__':
                 has_renderer=render,
                 has_offscreen_renderer=False,
                 render_camera="agentview",
+                single_object_mode=2, # env has 1 nut instead of 2
+                nut_type="round",
                 ignore_done=True,
                 use_camera_obs=False,
                 reward_shaping=True,
@@ -174,37 +206,8 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 1000
-    
-    # ===== Setup the training environment =====
-    render = config["env_config"]["use_render"]
-    controller_config = load_controller_config(default_controller='OSC_POSE')
-    configr = {
-        "env_name": "Wipe",
-        "robots": "UR5e",
-        "controller_configs": controller_config,
-    }
-    env = suite.make(
-            **configr,
-            has_renderer=render,
-            has_offscreen_renderer=False,
-            render_camera="agentview",
-            ignore_done=True,
-            use_camera_obs=False,
-            reward_shaping=True,
-            control_freq=20,
-            hard_reset=True,
-            use_object_obs=True
-        )
-    unwrapped_env = env
-    env = GymWrapper(env)
-    env = VisualizationWrapper(env, indicator_configs=None)
-    env = CustomWrapper(env, unwrapped_env, config=config["env_config"])
-    train_env = Monitor(env=env, filename=str(trial_dir))
-    # Store all shared control data to the files.
-    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
-    config["algo"]["env"] = train_env
-    assert config["algo"]["env"] is not None
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 2000
+        
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
     callbacks = [
@@ -243,7 +246,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=25,
+        n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
         # logging
