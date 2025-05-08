@@ -130,7 +130,7 @@ class EIL(PVPTD3):
 
                 else:
                     if self.extra_config["add_bc_loss"]:
-                        raise ValueError()
+                        # raise ValueError()
                         actor_loss += masked_bc_loss * self.extra_config["bc_loss_weight"]
 
                 # Optimize the actor

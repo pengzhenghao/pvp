@@ -114,6 +114,11 @@ class HACO(SAC):
 
             # Action by the current actor for the sampled state
             actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
+            
+            new_action = self.actor(replay_data.observations)
+            bc_loss = F.mse_loss(replay_data.actions_behavior, new_action, reduction="none").mean(axis=-1)
+            masked_bc_loss = (replay_data.interventions.flatten() *
+                                bc_loss).sum() / (replay_data.interventions.flatten().sum() + 1e-5)
             log_prob = log_prob.reshape(-1, 1)
 
             # ===== Optimizing the entropy coefficient =====
@@ -213,10 +218,11 @@ class HACO(SAC):
             # PZH: Apply the Lagrangian multiplier to the actor loss
             native_actor_loss = ent_coef * log_prob - min_qf_pi
             cost_actor_loss = min_cost_qf_pi
-            actor_loss = (native_actor_loss + cost_actor_loss).mean()
+            actor_loss = (native_actor_loss + cost_actor_loss + 5 * masked_bc_loss).mean()
 
             stat_recorder["actor_loss"].append(native_actor_loss.mean().item())
             stat_recorder["cost_actor_loss"].append(cost_actor_loss.mean().item())
+            stat_recorder["cost_bc_loss"].append(masked_bc_loss.item())
 
             if self.policy_kwargs["share_features_extractor"] == "critic":
                 self._optimize_actor(actor_loss=actor_loss)
