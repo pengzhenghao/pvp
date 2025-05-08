@@ -170,7 +170,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import SubprocVecEnv
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 100
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 1000
     
     # ===== Setup the training environment =====
     render = config["env_config"]["use_render"]
