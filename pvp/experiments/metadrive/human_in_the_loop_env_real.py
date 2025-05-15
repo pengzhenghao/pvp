@@ -16,7 +16,7 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     "out_of_route_done": True,  # Raise done if out of route.
     "num_scenarios": 25,  # There are totally 50 possible maps.
     "start_seed": 100,  # We will use the map 100~150 as the default training environment.
-    "traffic_density": 0.03,
+    "traffic_density": 0.06,
     "map": "COT",  # The map to use. COT is a simple map.
 
     # Reward and cost setting:    "cost_to_reward": True,  # Cost will be negated and added to the reward. Useless in PVP.
@@ -81,7 +81,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         assert info_real["failure"] == (info_real["total_reward"] < 0)
-        self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
+        self.render_traj(predicted_traj_real[:10], (1, 0, 0))
         return info_real["failure"]
 
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
@@ -153,14 +153,15 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         
         if self.takeover:
             predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_preference + 1, action_behavior=self.agent_action.copy())
-            # self.render_traj(predicted_traj, (0.5, 0.5, 0))
+            # self.render_traj(predicted_traj, (1, 0, 0))
             expert_action = np.array(ret[-1]["raw_action"])
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             
             if not self.last_takeover or (self.total_steps % update_future_freq == 0):
                 predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
-                self.render_traj(predicted_traj_exp, (0, 0, 1))
+                self.render_reset()
+                self.render_traj(predicted_traj_exp, (1, 0, 0))
         
         while self.in_pause:
             self.engine.taskMgr.step()
