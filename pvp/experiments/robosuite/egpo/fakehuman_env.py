@@ -465,7 +465,6 @@ class CustomWrapper(gym.Env):
         #     # if len(self.rec) > 0:
         #     #     print("MEAN:", np.mean(self.rec))
         
-        time.sleep(1)
         self.takeover = (np.mean((self.agent_action - expert_action) ** 2) > 0.01) and not self.config["eval"]
         
         self.takeover2 = (expert_action[-1] * action_[-1] < 0) and not self.config["eval"]
