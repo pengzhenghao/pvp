@@ -140,7 +140,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         assert info_real["failure"] == (info_real["total_reward"] < 0)
-        self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
+        # self.render_traj(predicted_traj_real[:10], (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
@@ -188,6 +188,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
+            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
 
         if self.takeover:
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
@@ -210,14 +212,14 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             self.render(
                 # mode="top_down",
-                text={
-                    "Total Cost": round(self.total_cost, 2),
-                    "Takeover Cost": round(self.total_takeover_cost, 2),
-                    "Takeover": "TAKEOVER" if self.takeover else "NO",
-                    "Total Step": self.total_steps,
-                    "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
-                    "Pause": "Press E",
-                }
+                # text={
+                #     "Total Cost": round(self.total_cost, 2),
+                #     "Takeover Cost": round(self.total_takeover_cost, 2),
+                #     "Takeover": "TAKEOVER" if self.takeover else "NO",
+                #     "Total Step": self.total_steps,
+                #     "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
+                #     "Pause": "Press E",
+                # }
             )
 
         assert i["takeover"] == self.takeover

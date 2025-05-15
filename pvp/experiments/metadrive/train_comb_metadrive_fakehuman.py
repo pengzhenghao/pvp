@@ -31,7 +31,7 @@ if __name__ == '__main__':
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="", type=str)
+    parser.add_argument("--ckpt", default="best_model_drive", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
@@ -80,7 +80,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=False,
+            use_render=True,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -106,7 +106,7 @@ if __name__ == '__main__':
             ),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
-            learning_rate=1e-4,
+            learning_rate=0,
             q_value_bound=1,
             optimize_memory_usage=True,
             buffer_size=50_000,  # We only conduct experiment less than 50K steps
