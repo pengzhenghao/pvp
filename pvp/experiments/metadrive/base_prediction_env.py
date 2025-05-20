@@ -25,172 +25,172 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         )
         return config
 
-    def get_state(self):
-        """
-        Fetch more information
-        """
-        from metadrive.component.vehicle.base_vehicle import BaseVehicle
-        vehicle = self.vehicle
-        state = super(BaseVehicle, vehicle).get_state()
-        state.update(
-            {
-                "steering": vehicle.steering,
-                "throttle_brake": vehicle.throttle_brake,
-                "crash_vehicle": vehicle.crash_vehicle,
-                "crash_object": vehicle.crash_object,
-                "crash_building": vehicle.crash_building,
-                "crash_sidewalk": vehicle.crash_sidewalk,
-                "crash_human": vehicle.crash_human,
-                "size": (vehicle.LENGTH, vehicle.WIDTH, vehicle.HEIGHT),
-                "length": vehicle.LENGTH,
-                "width": vehicle.WIDTH,
-                "height": vehicle.HEIGHT,
-                "red_light": vehicle.red_light,
-                "yellow_light": vehicle.yellow_light,
-                "green_light": vehicle.green_light,
-                "on_yellow_continuous_line": vehicle.on_yellow_continuous_line,
-                "on_white_continuous_line": vehicle.on_white_continuous_line,
-                "on_broken_line": vehicle.on_broken_line,
-                "on_crosswalk": vehicle.on_crosswalk,
-                "contact_results": list(vehicle.contact_results) if vehicle.contact_results is not None else [],
-            }
-        )
-        state.update({
-            "last_current_action": list(vehicle.last_current_action),
-            "last_position": vehicle.last_position,
-            "last_heading_dir": vehicle.last_heading_dir,
-            "dist_to_left_side": vehicle.dist_to_left_side,
-            "dist_to_right_side": vehicle.dist_to_right_side,
-            "last_velocity": vehicle.last_velocity,
-            "last_speed": vehicle.last_speed,
-            "out_of_route": vehicle.out_of_route,
-            "on_lane": vehicle.on_lane,
-            "spawn_place": vehicle.spawn_place,
-            "takeover": vehicle.takeover,
-            "expert_takeover": vehicle.expert_takeover,
-            "energy_consumption": vehicle.energy_consumption,
-            "break_down": vehicle.break_down,
-        })
+    # def get_state(self):
+    #     """
+    #     Fetch more information
+    #     """
+    #     from metadrive.component.vehicle.base_vehicle import BaseVehicle
+    #     vehicle = self.vehicle
+    #     state = super(BaseVehicle, vehicle).get_state()
+    #     state.update(
+    #         {
+    #             "steering": vehicle.steering,
+    #             "throttle_brake": vehicle.throttle_brake,
+    #             "crash_vehicle": vehicle.crash_vehicle,
+    #             "crash_object": vehicle.crash_object,
+    #             "crash_building": vehicle.crash_building,
+    #             "crash_sidewalk": vehicle.crash_sidewalk,
+    #             "crash_human": vehicle.crash_human,
+    #             "size": (vehicle.LENGTH, vehicle.WIDTH, vehicle.HEIGHT),
+    #             "length": vehicle.LENGTH,
+    #             "width": vehicle.WIDTH,
+    #             "height": vehicle.HEIGHT,
+    #             "red_light": vehicle.red_light,
+    #             "yellow_light": vehicle.yellow_light,
+    #             "green_light": vehicle.green_light,
+    #             "on_yellow_continuous_line": vehicle.on_yellow_continuous_line,
+    #             "on_white_continuous_line": vehicle.on_white_continuous_line,
+    #             "on_broken_line": vehicle.on_broken_line,
+    #             "on_crosswalk": vehicle.on_crosswalk,
+    #             "contact_results": list(vehicle.contact_results) if vehicle.contact_results is not None else [],
+    #         }
+    #     )
+    #     state.update({
+    #         "last_current_action": list(vehicle.last_current_action),
+    #         "last_position": vehicle.last_position,
+    #         "last_heading_dir": vehicle.last_heading_dir,
+    #         "dist_to_left_side": vehicle.dist_to_left_side,
+    #         "dist_to_right_side": vehicle.dist_to_right_side,
+    #         "last_velocity": vehicle.last_velocity,
+    #         "last_speed": vehicle.last_speed,
+    #         "out_of_route": vehicle.out_of_route,
+    #         "on_lane": vehicle.on_lane,
+    #         "spawn_place": vehicle.spawn_place,
+    #         "takeover": vehicle.takeover,
+    #         "expert_takeover": vehicle.expert_takeover,
+    #         "energy_consumption": vehicle.energy_consumption,
+    #         "break_down": vehicle.break_down,
+    #     })
         
-        if vehicle.navigation is not None:
-            state["spawn_road"] = vehicle.navigation.spawn_road
-            state["destination"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
-            state["checkpoints"] = vehicle.navigation.checkpoints 
-            state["_target_checkpoints_index"] = vehicle.navigation._target_checkpoints_index
+    #     if vehicle.navigation is not None:
+    #         state["spawn_road"] = vehicle.navigation.spawn_road
+    #         state["destination"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
+    #         state["checkpoints"] = vehicle.navigation.checkpoints 
+    #         state["_target_checkpoints_index"] = vehicle.navigation._target_checkpoints_index
 
-            state["current_road"] = (vehicle.navigation.current_road.start_node, vehicle.navigation.current_road.end_node) if vehicle.navigation.current_road is not None else None
-            state["next_road"] = (vehicle.navigation.next_road.start_node, vehicle.navigation.next_road.end_node) if vehicle.navigation.next_road is not None else None
-            state["final_road"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
+    #         state["current_road"] = (vehicle.navigation.current_road.start_node, vehicle.navigation.current_road.end_node) if vehicle.navigation.current_road is not None else None
+    #         state["next_road"] = (vehicle.navigation.next_road.start_node, vehicle.navigation.next_road.end_node) if vehicle.navigation.next_road is not None else None
+    #         state["final_road"] = (vehicle.navigation.final_road.start_node, vehicle.navigation.final_road.end_node) if vehicle.navigation.final_road is not None else None
 
-            state["current_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.current_ref_lanes] if vehicle.navigation.current_ref_lanes is not None else None
-            state["next_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.next_ref_lanes] if vehicle.navigation.next_ref_lanes is not None else None
-            state["total_length"] = vehicle.navigation.total_length
-            state["travelled_length"] = vehicle.navigation.travelled_length
-            state["_last_long_in_ref_lane"] = vehicle.navigation._last_long_in_ref_lane
+    #         state["current_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.current_ref_lanes] if vehicle.navigation.current_ref_lanes is not None else None
+    #         state["next_ref_lane_indices"] = [lane.index for lane in vehicle.navigation.next_ref_lanes] if vehicle.navigation.next_ref_lanes is not None else None
+    #         state["total_length"] = vehicle.navigation.total_length
+    #         state["travelled_length"] = vehicle.navigation.travelled_length
+    #         state["_last_long_in_ref_lane"] = vehicle.navigation._last_long_in_ref_lane
 
-            state["_navi_info"] = vehicle.navigation._navi_info.tolist() if hasattr(vehicle.navigation, "_navi_info") and vehicle.navigation._navi_info is not None else None
-            state["navi_arrow_dir"] = vehicle.navigation.navi_arrow_dir if hasattr(vehicle.navigation, "navi_arrow_dir") else None
+    #         state["_navi_info"] = vehicle.navigation._navi_info.tolist() if hasattr(vehicle.navigation, "_navi_info") and vehicle.navigation._navi_info is not None else None
+    #         state["navi_arrow_dir"] = vehicle.navigation.navi_arrow_dir if hasattr(vehicle.navigation, "navi_arrow_dir") else None
             
-        return copy.deepcopy(state)
+    #     return copy.deepcopy(state)
         
-    def set_state(self, state):
-        from metadrive.component.vehicle.base_vehicle import BaseVehicle
-        vehicle = self.vehicle
-        super(BaseVehicle, vehicle).set_state(state)
-        vehicle.set_throttle_brake(float(state["throttle_brake"]))
-        vehicle.set_steering(float(state["steering"]))
-        vehicle.last_current_action = deque(state["last_current_action"], maxlen=2)
-        vehicle.last_position = state["last_position"]
-        vehicle.last_heading_dir = state["last_heading_dir"]
-        vehicle.dist_to_left_side = state["dist_to_left_side"]
-        vehicle.dist_to_right_side = state["dist_to_right_side"]
-        vehicle.last_velocity = state["last_velocity"]
-        vehicle.last_speed = state["last_speed"]
-        vehicle.out_of_route = state["out_of_route"]
-        vehicle.on_lane = state["on_lane"]
-        vehicle.spawn_place = state["spawn_place"]
-        vehicle.takeover = state["takeover"]
-        vehicle.expert_takeover = state["expert_takeover"]
-        vehicle.energy_consumption = state["energy_consumption"]
-        vehicle.break_down = state["break_down"]
-        vehicle.crash_vehicle = state["crash_vehicle"]
-        vehicle.crash_human = state["crash_human"]
-        vehicle.crash_object = state["crash_object"]
-        vehicle.crash_sidewalk = state["crash_sidewalk"]
-        vehicle.crash_building = state["crash_building"]
-        vehicle.red_light = state["red_light"]
-        vehicle.yellow_light = state["yellow_light"]
-        vehicle.green_light = state["green_light"]
-        vehicle.on_yellow_continuous_line = state["on_yellow_continuous_line"]
-        vehicle.on_white_continuous_line = state["on_white_continuous_line"]
-        vehicle.on_broken_line = state["on_broken_line"]
-        vehicle.on_crosswalk = state["on_crosswalk"]
-        vehicle.contact_results = set(state["contact_results"]) if "contact_results" in state else set()
-        if vehicle.navigation is not None:
-            from metadrive.component.road_network import Road
-            vehicle.navigation.spawn_road = state.get("spawn_road", None)
-            dest = state.get("destination", None)
-            if dest is not None:
-                # 通过目的地信息重构 final_road 对象
-                vehicle.navigation.final_road = Road(dest[0], dest[1])
-            else:
-                vehicle.navigation.final_road = None
+    # def set_state(self, state):
+    #     from metadrive.component.vehicle.base_vehicle import BaseVehicle
+    #     vehicle = self.vehicle
+    #     super(BaseVehicle, vehicle).set_state(state)
+    #     vehicle.set_throttle_brake(float(state["throttle_brake"]))
+    #     vehicle.set_steering(float(state["steering"]))
+    #     vehicle.last_current_action = deque(state["last_current_action"], maxlen=2)
+    #     vehicle.last_position = state["last_position"]
+    #     vehicle.last_heading_dir = state["last_heading_dir"]
+    #     vehicle.dist_to_left_side = state["dist_to_left_side"]
+    #     vehicle.dist_to_right_side = state["dist_to_right_side"]
+    #     vehicle.last_velocity = state["last_velocity"]
+    #     vehicle.last_speed = state["last_speed"]
+    #     vehicle.out_of_route = state["out_of_route"]
+    #     vehicle.on_lane = state["on_lane"]
+    #     vehicle.spawn_place = state["spawn_place"]
+    #     vehicle.takeover = state["takeover"]
+    #     vehicle.expert_takeover = state["expert_takeover"]
+    #     vehicle.energy_consumption = state["energy_consumption"]
+    #     vehicle.break_down = state["break_down"]
+    #     vehicle.crash_vehicle = state["crash_vehicle"]
+    #     vehicle.crash_human = state["crash_human"]
+    #     vehicle.crash_object = state["crash_object"]
+    #     vehicle.crash_sidewalk = state["crash_sidewalk"]
+    #     vehicle.crash_building = state["crash_building"]
+    #     vehicle.red_light = state["red_light"]
+    #     vehicle.yellow_light = state["yellow_light"]
+    #     vehicle.green_light = state["green_light"]
+    #     vehicle.on_yellow_continuous_line = state["on_yellow_continuous_line"]
+    #     vehicle.on_white_continuous_line = state["on_white_continuous_line"]
+    #     vehicle.on_broken_line = state["on_broken_line"]
+    #     vehicle.on_crosswalk = state["on_crosswalk"]
+    #     vehicle.contact_results = set(state["contact_results"]) if "contact_results" in state else set()
+    #     if vehicle.navigation is not None:
+    #         from metadrive.component.road_network import Road
+    #         vehicle.navigation.spawn_road = state.get("spawn_road", None)
+    #         dest = state.get("destination", None)
+    #         if dest is not None:
+    #             # 通过目的地信息重构 final_road 对象
+    #             vehicle.navigation.final_road = Road(dest[0], dest[1])
+    #         else:
+    #             vehicle.navigation.final_road = None
 
-            # 恢复路线规划相关信息
-            vehicle.navigation.checkpoints = state.get("checkpoints", None)
-            vehicle.navigation._target_checkpoints_index = state.get("_target_checkpoints_index", None)
+    #         # 恢复路线规划相关信息
+    #         vehicle.navigation.checkpoints = state.get("checkpoints", None)
+    #         vehicle.navigation._target_checkpoints_index = state.get("_target_checkpoints_index", None)
 
-            # 恢复当前、下一、最终道路（重构 Road 对象）
-            current_road = state.get("current_road", None)
-            if current_road is not None:
-                vehicle.navigation.current_road = Road(current_road[0], current_road[1])
-            else:
-                vehicle.navigation.current_road = None
+    #         # 恢复当前、下一、最终道路（重构 Road 对象）
+    #         current_road = state.get("current_road", None)
+    #         if current_road is not None:
+    #             vehicle.navigation.current_road = Road(current_road[0], current_road[1])
+    #         else:
+    #             vehicle.navigation.current_road = None
 
-            next_road = state.get("next_road", None)
-            if next_road is not None:
-                vehicle.navigation.next_road = Road(next_road[0], next_road[1])
-            else:
-                vehicle.navigation.next_road = None
+    #         next_road = state.get("next_road", None)
+    #         if next_road is not None:
+    #             vehicle.navigation.next_road = Road(next_road[0], next_road[1])
+    #         else:
+    #             vehicle.navigation.next_road = None
 
-            final_road = state.get("final_road", None)
-            if final_road is not None:
-                vehicle.navigation.final_road = Road(final_road[0], final_road[1])
-            else:
-                vehicle.navigation.final_road = None
+    #         final_road = state.get("final_road", None)
+    #         if final_road is not None:
+    #             vehicle.navigation.final_road = Road(final_road[0], final_road[1])
+    #         else:
+    #             vehicle.navigation.final_road = None
 
-            # 恢复参考车道信息：这里假定你能通过 vehicle.navigation.map.road_network.get_lane(lane_index)
-            current_ref_lane_indices = state.get("current_ref_lane_indices", None)
-            if current_ref_lane_indices is not None:
-                vehicle.navigation.current_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in current_ref_lane_indices]
-            else:
-                vehicle.navigation.current_ref_lanes = None
+    #         # 恢复参考车道信息：这里假定你能通过 vehicle.navigation.map.road_network.get_lane(lane_index)
+    #         current_ref_lane_indices = state.get("current_ref_lane_indices", None)
+    #         if current_ref_lane_indices is not None:
+    #             vehicle.navigation.current_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in current_ref_lane_indices]
+    #         else:
+    #             vehicle.navigation.current_ref_lanes = None
 
-            next_ref_lane_indices = state.get("next_ref_lane_indices", None)
-            if next_ref_lane_indices is not None:
-                vehicle.navigation.next_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in next_ref_lane_indices]
-            else:
-                vehicle.navigation.next_ref_lanes = None
+    #         next_ref_lane_indices = state.get("next_ref_lane_indices", None)
+    #         if next_ref_lane_indices is not None:
+    #             vehicle.navigation.next_ref_lanes = [vehicle.navigation.map.road_network.get_lane(idx) for idx in next_ref_lane_indices]
+    #         else:
+    #             vehicle.navigation.next_ref_lanes = None
 
-            # 恢复路线长度信息
-            vehicle.navigation.total_length = state.get("total_length", 0.0)
-            vehicle.navigation.travelled_length = state.get("travelled_length", 0.0)
-            vehicle.navigation._last_long_in_ref_lane = state.get("_last_long_in_ref_lane", 0.0)
+    #         # 恢复路线长度信息
+    #         vehicle.navigation.total_length = state.get("total_length", 0.0)
+    #         vehicle.navigation.travelled_length = state.get("travelled_length", 0.0)
+    #         vehicle.navigation._last_long_in_ref_lane = state.get("_last_long_in_ref_lane", 0.0)
 
-            # 恢复导航信息向量
-            navi_info_list = state.get("_navi_info", None)
-            if navi_info_list is not None:
-                vehicle.navigation._navi_info = np.array(navi_info_list)
-            else:
-                vehicle.navigation._navi_info = None
+    #         # 恢复导航信息向量
+    #         navi_info_list = state.get("_navi_info", None)
+    #         if navi_info_list is not None:
+    #             vehicle.navigation._navi_info = np.array(navi_info_list)
+    #         else:
+    #             vehicle.navigation._navi_info = None
 
-            # 恢复箭头方向等信息
-            vehicle.navigation.navi_arrow_dir = state.get("navi_arrow_dir", None)
+    #         # 恢复箭头方向等信息
+    #         vehicle.navigation.navi_arrow_dir = state.get("navi_arrow_dir", None)
 
     
     def predict_agent_future_trajectory(self, current_obs, n_steps, action_behavior = None, return_all_states = False):
         info = dict()
-        saved_state = self.get_state()
+        # saved_state = self.get_state()
         
         all_states = []
         traj = []
@@ -198,8 +198,14 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         total_reward = 0
         failure = False
         
+        current_p = self.vehicle.position
+        current_v = self.vehicle.velocity
+        current_heading = self.vehicle.heading_theta
+        current_steering = self.vehicle.steering
+        current_speed = self.vehicle.speed
+        
         for step in range(n_steps):
-            old_pos = copy.deepcopy(self.vehicle.position)
+            old_pos = copy.deepcopy(current_p)
             action = action_behavior
             if action_behavior is None:
                 action = self.agent_action
@@ -211,7 +217,7 @@ class BasePredictionEnv(SafeMetaDriveEnv):
             actions = self._preprocess_actions(action) 
             #actions = self._preprocess_actions(action) 
             dt = self.config["physics_world_step_size"] * self.config["decision_repeat"]
-            self.vehicle.before_step(action)
+            # self.vehicle.before_step(action)
                 
             params = self.vehicle.get_dynamics_parameters()
             mass = params["mass"]
@@ -229,25 +235,29 @@ class BasePredictionEnv(SafeMetaDriveEnv):
                 brake_force = max_brake_force * abs(throttle)
                 a = -brake_force / mass * 4
 
-            new_speed = self.vehicle.speed + a * dt
+            new_speed = current_speed + a * dt
             new_speed = max(new_speed, 0.0)
 
-            step_info = self.vehicle.after_step()
+            # step_info = self.vehicle.after_step()
             current_steering = self.vehicle.steering
             max_steering_rad = math.radians(self.vehicle.config["max_steering"])
 
             L = self.vehicle.FRONT_WHEELBASE + self.vehicle.REAR_WHEELBASE
-            new_heading = self.vehicle.heading_theta + (new_speed / L) * math.tan(current_steering * max_steering_rad) * dt
+            new_heading = current_heading + (new_speed / L) * math.tan(current_steering * max_steering_rad) * dt
 
-            new_x = self.vehicle.position[0] + new_speed * dt * math.cos(new_heading)
-            new_y = self.vehicle.position[1] + new_speed * dt * math.sin(new_heading)
+            new_x = current_p[0] + new_speed * dt * math.cos(new_heading)
+            new_y = current_p[1] + new_speed * dt * math.sin(new_heading)
             new_position = [new_x, new_y]
             new_velocity = [new_speed * math.cos(new_heading), new_speed * math.sin(new_heading)]
 
-            self.set_position(new_position)
-            self.vehicle.set_heading_theta(new_heading)
-            self.vehicle.set_velocity(new_velocity)
-            self.vehicle.navigation.update_localization(self.vehicle)
+            # self.set_position(new_position)
+            current_p = copy.deepcopy(new_position)
+            # self.vehicle.set_heading_theta(new_heading)
+            current_heading = new_heading
+            current_v = copy.deepcopy(new_velocity)
+            current_speed = new_speed
+            # self.vehicle.set_velocity(new_velocity)
+            # self.vehicle.navigation.update_localization(self.vehicle)
             r = self.reward_function('default_agent')[0]
             total_reward += r
             
@@ -255,8 +265,8 @@ class BasePredictionEnv(SafeMetaDriveEnv):
                 all_states.append(self.get_state())
             d = self.done_function('default_agent')[0]
 
-            new_obs = self.get_single_observation().observe(self.vehicle)
-            
+            # new_obs = self.get_single_observation().observe(self.vehicle)
+            new_obs = obs.copy()
             traj.append({
                 "obs": obs.copy(),
                 "action": action.copy(),
@@ -264,7 +274,7 @@ class BasePredictionEnv(SafeMetaDriveEnv):
                 "next_obs": new_obs.copy(),
                 "done": d,
                 "pos": old_pos,
-                "next_pos": copy.deepcopy(self.vehicle.position),
+                "next_pos": copy.deepcopy(current_p),
             })
             obs = new_obs.copy()
             
@@ -274,7 +284,7 @@ class BasePredictionEnv(SafeMetaDriveEnv):
                     total_reward = -100
                 break
         
-        self.set_state(saved_state)
+        # self.set_state(saved_state)
         
         failure = failure or (total_reward <= 10) #CHY: Failure if too slow.
         
