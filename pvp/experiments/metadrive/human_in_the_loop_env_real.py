@@ -83,7 +83,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         assert info_real["failure"] == (info_real["total_reward"] < 0)
         if not self.takeover:
             self.render_reset()
-            self.render_traj(predicted_traj_real[:20], (0, 1, 0))
+            self.render_traj(predicted_traj_real[:14], (0, 1, 0))
         return info_real["failure"]
 
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
