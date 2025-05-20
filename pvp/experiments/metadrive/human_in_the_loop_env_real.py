@@ -83,7 +83,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         assert info_real["failure"] == (info_real["total_reward"] < 0)
         if not self.takeover:
             self.render_reset()
-            self.render_traj(predicted_traj_real[:10], (0, 1, 0))
+            self.render_traj(predicted_traj_real[:20], (0, 1, 0))
         return info_real["failure"]
 
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
@@ -148,8 +148,9 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         future_steps_preference = self.config["future_steps_preference"]
         expert_noise_bound = self.config["expert_noise"]
         if (self.total_steps % update_future_freq == 0):
-            if self.total_steps % 10 == 0:
-                self.render_reset()
+            if self.total_steps % 4 == 0:
+                if not self.takeover:
+                    self.render_reset()
                 should_takeover = self.decide_takeover(self.last_obs, future_steps_predict)
         
         ret = super(HumanInTheLoopEnv, self).step(actions)
@@ -157,14 +158,14 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         if self.takeover:
             
             predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=self.agent_action.copy())
-            if not self.last_takeover or (self.total_steps % 1 == 0):
+            if not self.last_takeover or (self.total_steps % 4 == 0):
                 self.render_reset()
-                self.render_traj(predicted_traj, (1, 0, 0))
+                self.render_traj(predicted_traj[:10], (1, 0, 0))
             expert_action = np.array(ret[-1]["raw_action"])
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             
-            if not self.last_takeover or (self.total_steps % 1 == 0):
+            if not self.last_takeover or (self.total_steps % 4 == 0):
                 predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
                 self.render_traj(predicted_traj_exp[:10], (0, 0, 1))
         
