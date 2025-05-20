@@ -16,7 +16,7 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     "out_of_route_done": True,  # Raise done if out of route.
     "num_scenarios": 50,  # There are totally 50 possible maps.
     # "start_seed": 110,  # We will use the map 100~150 as the default training environment.
-    # "traffic_density": 0.10,
+    "traffic_density": 0.06,
     # "map": "COT",  
 
     # Reward and cost setting:    "cost_to_reward": True,  # Cost will be negated and added to the reward. Useless in PVP.
@@ -30,9 +30,9 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
 
     # Visualization
     "vehicle_config": {
-        "show_dest_mark": True,  # Show the destination in a cube.
-        "show_line_to_dest": True,  # Show the line to the destination.
-        "show_line_to_navi_mark": True,  # Show the line to next navigation checkpoint.
+        "show_dest_mark": False,  # Show the destination in a cube.
+        "show_line_to_dest": False,  # Show the line to the destination.
+        "show_line_to_navi_mark": False,  # Show the line to next navigation checkpoint.
     },
     "horizon": 1500,
 }
@@ -172,18 +172,18 @@ class HumanInTheLoopEnv(BasePredictionEnv):
             self.engine.taskMgr.step()
 
         self.takeover_recorder.append(self.takeover)
-        if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
-            super(HumanInTheLoopEnv, self).render(
-                text={
-                    "Total Cost": round(self.total_cost, 2),
-                    "Takeover Cost": round(self.total_takeover_cost, 2),
-                    "Takeover": "TAKEOVER" if self.takeover else "NO",
-                    "Total Step": self.total_steps,
-                    "Total Time": time.strftime("%M:%S", time.gmtime(time.time() - self.start_time)),
-                    "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
-                    "Pause": "Press E",
-                }
-            )
+        # if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
+        #     super(HumanInTheLoopEnv, self).render(
+        #         text={
+        #             "Total Cost": round(self.total_cost, 2),
+        #             "Takeover Cost": round(self.total_takeover_cost, 2),
+        #             "Takeover": "TAKEOVER" if self.takeover else "NO",
+        #             "Total Step": self.total_steps,
+        #             "Total Time": time.strftime("%M:%S", time.gmtime(time.time() - self.start_time)),
+        #             "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
+        #             "Pause": "Press E",
+        #         }
+        #     )
 
         self.total_steps += 1
 
