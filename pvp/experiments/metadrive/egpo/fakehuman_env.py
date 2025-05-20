@@ -138,10 +138,11 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return continuous_action
 
     def decide_takeover(self, obs, future_steps_predict):
-        predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
-        assert info_real["failure"] == (info_real["total_reward"] < 0)
-        # self.render_traj(predicted_traj_real[:10], (info_real["failure"], 1 - info_real["failure"], 0))
-        return info_real["failure"]
+        # predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
+        # assert info_real["failure"] == (info_real["total_reward"] < 0)
+        # # self.render_traj(predicted_traj_real[:10], (info_real["failure"], 1 - info_real["failure"], 0))
+        # return info_real["failure"]
+        return True
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
         for step in range(min(len(predicted_traj) - 1, future_steps_preference)):
@@ -198,6 +199,10 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)
             actions = expert_action
+            
+            if (self.total_steps % update_future_freq == 0):
+                predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
+                self.render_traj(predicted_traj_exp, (0, 0, 1))
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             

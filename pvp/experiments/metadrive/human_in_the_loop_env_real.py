@@ -14,10 +14,10 @@ ScreenMessage.SCALE = 0.1
 HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     # Environment setting:
     "out_of_route_done": True,  # Raise done if out of route.
-    "num_scenarios": 25,  # There are totally 50 possible maps.
-    "start_seed": 100,  # We will use the map 100~150 as the default training environment.
-    "traffic_density": 0.06,
-    "map": "COT",  # The map to use. COT is a simple map.
+    "num_scenarios": 50,  # There are totally 50 possible maps.
+    # "start_seed": 110,  # We will use the map 100~150 as the default training environment.
+    # "traffic_density": 0.10,
+    # "map": "COT",  
 
     # Reward and cost setting:    "cost_to_reward": True,  # Cost will be negated and added to the reward. Useless in PVP.
     "cos_similarity": False,  # If True, the takeover cost will be the cos sim between a_h and a_n. Useless in PVP.
@@ -81,7 +81,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         assert info_real["failure"] == (info_real["total_reward"] < 0)
-        self.render_traj(predicted_traj_real[:10], (1, 0, 0))
+        # self.render_traj(predicted_traj_real[:10], (1, 0, 0))
         return info_real["failure"]
 
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
