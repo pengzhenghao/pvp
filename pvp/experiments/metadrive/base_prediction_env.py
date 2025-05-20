@@ -218,15 +218,18 @@ class BasePredictionEnv(SafeMetaDriveEnv):
             #actions = self._preprocess_actions(action) 
             dt = self.config["physics_world_step_size"] * self.config["decision_repeat"]
             # self.vehicle.before_step(action)
+            
+            c_throttle_brake = action[1]
+            c_steering = action[0]
                 
             params = self.vehicle.get_dynamics_parameters()
             mass = params["mass"]
             max_engine_force = params["max_engine_force"]
             max_brake_force = params["max_brake_force"]
 
-            throttle = self.vehicle.throttle_brake
+            throttle = c_throttle_brake
             if throttle >= 0:
-                if self.vehicle.speed >= self.vehicle.max_speed_m_s:
+                if current_speed >= self.vehicle.max_speed_m_s:
                     a = 0.0
                 else:
                     engine_force = max_engine_force * throttle
@@ -239,7 +242,7 @@ class BasePredictionEnv(SafeMetaDriveEnv):
             new_speed = max(new_speed, 0.0)
 
             # step_info = self.vehicle.after_step()
-            current_steering = self.vehicle.steering
+            current_steering = c_steering
             max_steering_rad = math.radians(self.vehicle.config["max_steering"])
 
             L = self.vehicle.FRONT_WHEELBASE + self.vehicle.REAR_WHEELBASE

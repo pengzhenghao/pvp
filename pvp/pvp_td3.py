@@ -384,7 +384,7 @@ class COMB(PVPTD3):
             if self.human_data_buffer.pos == 0:
                 break
             replay_data = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env)
-            preference_data = self.imagreplay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+            # preference_data = self.imagreplay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
             
             new_action = self.actor(replay_data.observations)
             bc_loss = F.mse_loss(replay_data.actions_behavior, new_action, reduction="none").mean()
@@ -393,8 +393,8 @@ class COMB(PVPTD3):
             stat_recorder["new_action_abs_steering"] = th.abs(new_action[:, 0]).mean().item()
             stat_recorder["new_action_accerler"] = new_action[:, 1].mean().item()
 
-            pos_obs, pos_action = preference_data.pos_observations.squeeze(), preference_data.pos_actions.squeeze()
-            neg_obs, neg_action = preference_data.neg_observations.squeeze(), preference_data.neg_actions.squeeze()
+            # pos_obs, pos_action = preference_data.pos_observations.squeeze(), preference_data.pos_actions.squeeze()
+            # neg_obs, neg_action = preference_data.neg_observations.squeeze(), preference_data.neg_actions.squeeze()
             
             def get_log_prob(obs, target_action):
                 mean = self.actor(obs)
@@ -402,30 +402,30 @@ class COMB(PVPTD3):
                 return log_prob
             
             alpha, bias = self.extra_config["alpha"], self.extra_config["bias"]
-            log_prob_pos = get_log_prob(pos_obs, pos_action)
-            log_prob_neg = get_log_prob(neg_obs, neg_action)
+            # log_prob_pos = get_log_prob(pos_obs, pos_action)
+            # log_prob_neg = get_log_prob(neg_obs, neg_action)
             
-            mean_log_prob_pos, mean_log_prob_neg = -log_prob_pos.mean().item(), -log_prob_neg.mean().item()
-            stat_recorder["mean_log_prob_pos"].append(mean_log_prob_pos)
-            stat_recorder["mean_log_prob_neg"].append(mean_log_prob_neg)    
-            stat_recorder["mean_log_prob_neg-pos"].append(mean_log_prob_neg - mean_log_prob_pos)
-            adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
-            label = torch.ones_like(adv_pos)
-            dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
+            # mean_log_prob_pos, mean_log_prob_neg = -log_prob_pos.mean().item(), -log_prob_neg.mean().item()
+            # stat_recorder["mean_log_prob_pos"].append(mean_log_prob_pos)
+            # stat_recorder["mean_log_prob_neg"].append(mean_log_prob_neg)    
+            # stat_recorder["mean_log_prob_neg-pos"].append(mean_log_prob_neg - mean_log_prob_pos)
+            # adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
+            # label = torch.ones_like(adv_pos)
+            # dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
             
-            bc_loss_weight, dpo_loss_weight = self.extra_config["bc_loss_weight"], self.extra_config["dpo_loss_weight"]
-            if self.extra_config["only_bc_loss"]:
-                bc_loss_weight, dpo_loss_weight = 1.0, 0.0
+            # bc_loss_weight, dpo_loss_weight = self.extra_config["bc_loss_weight"], self.extra_config["dpo_loss_weight"]
+            # if self.extra_config["only_bc_loss"]:
+            #     bc_loss_weight, dpo_loss_weight = 1.0, 0.0
             
-            loss = bc_loss_weight * bc_loss + dpo_loss_weight * dpo_loss
-            
+            # loss = bc_loss_weight * bc_loss + dpo_loss_weight * dpo_loss
+            loss = bc_loss
             self.actor.optimizer.zero_grad()
             loss.backward()
             self.actor.optimizer.step()
             
             stat_recorder["bc_loss"].append(bc_loss.item() if bc_loss is not None else float('nan'))
-            stat_recorder["cpl_loss"].append(dpo_loss.item() if dpo_loss is not None else float('nan'))
-            stat_recorder["cpl_accuracy"].append(accuracy.item() if accuracy is not None else float('nan'))
+            # stat_recorder["cpl_loss"].append(dpo_loss.item() if dpo_loss is not None else float('nan'))
+            # stat_recorder["cpl_accuracy"].append(accuracy.item() if accuracy is not None else float('nan'))
             stat_recorder["loss"].append(loss.item() if loss is not None else float('nan'))
 
         self._n_updates += gradient_steps
