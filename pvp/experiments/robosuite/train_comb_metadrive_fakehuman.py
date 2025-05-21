@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="", type=str)
+    parser.add_argument("--ckpt", default="best_model_nut", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=6, type=int)
@@ -84,7 +84,8 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=True,
+            use_render=False,
+            eval=True,
             switch_to_expert=args.switch_to_expert,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
@@ -111,7 +112,7 @@ if __name__ == '__main__':
             ),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
-            learning_rate=1e-4,
+            learning_rate=0,
             q_value_bound=1,
             optimize_memory_usage=True,
             buffer_size=500_000,  # We only conduct experiment less than 50K steps
@@ -178,7 +179,7 @@ if __name__ == '__main__':
 
     # ===== Also build the eval env =====
     def _make_eval_env():
-        render = False
+        render = True
         controller_config = load_controller_config(default_controller='OSC_POSE')
         configr = {
             "env_name": "NutAssembly",
@@ -192,7 +193,7 @@ if __name__ == '__main__':
                 render_camera="agentview",
                 single_object_mode=2, # env has 1 nut instead of 2
                 nut_type="round",
-                ignore_done=True,
+                ignore_done=False,
                 use_camera_obs=False,
                 reward_shaping=True,
                 control_freq=20,
@@ -210,7 +211,7 @@ if __name__ == '__main__':
         eval_env, eval_freq = None, -1
     else:
         from pvp.sb3.common.vec_env import DummyVecEnv
-        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 2000
+        eval_env, eval_freq = DummyVecEnv([_make_eval_env]), 1
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -233,7 +234,8 @@ if __name__ == '__main__':
     model = COMB(**config["algo"])
     if True:
         # ckpt = "/home/caihy/pvp/runs/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502_bdb8ba7f/models/rl_model_390000_steps.zip"
-        ckpt = "/home/caihy/pvp/bc_pretrain.zip"
+        ckpt = "rl_model_364000_steps.zip"
+        # ckpt = args.ckpt
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
 

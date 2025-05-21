@@ -194,7 +194,7 @@ class CustomWrapper(gym.Env):
                 "expert_noise": 0,
                 "switch_to_expert": 0.2,
                 "eval": False,
-                "MAX_EP_LEN": 300,
+                "MAX_EP_LEN": 1000,
                 })
         self.config.update(config)
         # if self.config["eval"]:
