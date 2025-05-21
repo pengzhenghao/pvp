@@ -15,8 +15,8 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     # Environment setting:
     "out_of_route_done": True,  # Raise done if out of route.
     "num_scenarios": 50,  # There are totally 50 possible maps.
-    # "start_seed": 110,  # We will use the map 100~150 as the default training environment.
-    "traffic_density": 0.06,
+    "start_seed": 110,  # We will use the map 100~150 as the default training environment.
+    "traffic_density": 0.10,
     # "map": "COT",  
 
     # Reward and cost setting:    "cost_to_reward": True,  # Cost will be negated and added to the reward. Useless in PVP.
