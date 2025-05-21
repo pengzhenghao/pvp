@@ -234,7 +234,7 @@ if __name__ == '__main__':
     model = COMB(**config["algo"])
     if True:
         # ckpt = "/home/caihy/pvp/runs/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502/HG_Thr=0.2_FutPred=20_UpdFutFreq=10_PrefSteps=3_Ckpt=False_0502_bdb8ba7f/models/rl_model_390000_steps.zip"
-        ckpt = "rl_model_364000_steps.zip"
+        ckpt = "rl_model_336000_steps.zip"
         # ckpt = args.ckpt
         print(f"Loading checkpoint from {ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
