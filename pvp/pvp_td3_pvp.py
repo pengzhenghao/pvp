@@ -299,7 +299,7 @@ class PVPTD3ENS(PVPTD3):
         stat_recorder = defaultdict(float)
         stat_recorders = []
         lm = batch_size // self.env.num_envs
-        dd = ["takeover_current", "total_switch", "total_miss", "miss", "ep_miss_mean", "total_colorchange", "takeover"]
+        dd = ["takeover_current", "total_switch", "total_miss", "miss", "ep_miss_mean", "total_colorchange", "takeover", "miss2", "miss3", "miss4", "miss5", "miss6", "miss7", "miss8", "miss9", "miss10", "miss11", "miss12", "total_miss2", "total_miss3", "total_miss4", "total_miss5", "total_miss6", "total_miss7", "total_miss8", "total_miss9", "total_miss10", "total_miss11", "total_miss12", "ep_miss2_mean", "ep_miss3_mean", "ep_miss4_mean", "ep_miss5_mean", "ep_miss6_mean", "ep_miss7_mean", "ep_miss8_mean", "ep_miss9_mean", "ep_miss10_mean", "ep_miss11_mean", "ep_miss12_mean", "total_switch2human", "total_switch2robot"]
         for key in dd:
             if hasattr(self, key):
                 stat_recorder[key] = getattr(self, key)

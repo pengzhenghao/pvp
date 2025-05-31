@@ -28,7 +28,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=100, type=int)
+    parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", type=bool, default=True, help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="ICML2025AIM", help="The project name for wandb.")
@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     # control_device = args.device
-    experiment_batch_name = "{}_freelevel{}_0529".format(args.exp_name, args.free_level)
+    experiment_batch_name = "{}newmiss_freelevel{}_0529".format(args.exp_name, args.free_level)
     seed = args.seed
     trial_name = "{}_{}_{}".format("pvp", seed, get_time_str())
     print("Trial name is set to: ", trial_name)
@@ -211,12 +211,12 @@ if __name__ == '__main__':
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
-    eval_freq, n_eval_episodes = 10 // num_train_envs, 100
+    eval_freq, n_eval_episodes = 2000, 100
 
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=5000,
+        total_timesteps=10000,
         callback=callbacks,
         reset_num_timesteps=True,
 

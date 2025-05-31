@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     # control_device = args.device
-    experiment_batch_name = "ENS-1E-3"
+    experiment_batch_name = "Thrifty-1E-3-new-miss"
     if args.only_bc_loss == "True":
         experiment_batch_name = "HG-DAgger"
     seed = args.seed
@@ -213,12 +213,12 @@ if __name__ == '__main__':
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
-    eval_freq, n_eval_episodes = 10, 100
+    eval_freq, n_eval_episodes = 2000, 100
 
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=5000,
+        total_timesteps=10000,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -239,6 +239,6 @@ if __name__ == '__main__':
         log_interval=1,
         save_buffer=False,
         load_buffer=False,
-        save_path_human = Path(log_dir) / Path("human_buffer_tb1_thrifty") / (str(seed)),
+        save_path_human = Path(log_dir) / Path("human_buffer_0530_ens_" + str(seed)),
         save_path_replay = Path(log_dir) / Path("novice_buffer_tb1_thrifty") / (str(seed)),
     )

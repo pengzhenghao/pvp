@@ -116,7 +116,7 @@ class Monitor(gym.Wrapper):
             ep_info = {"r": round(ep_rew, 6), "l": ep_len, "t": round(time.time() - self.t_start, 6)}
         else:
             ep_info = {}
-        special_words = ["miss"]
+        special_words = ["miss", "miss2", "miss3", "miss4", "miss5", "miss6", "miss7", "miss8", "miss9", "miss10", "miss11", "miss12"]
         for key in special_words:
             ep_info[key] = info[key]
             ep_data = np.asarray(self.episode_infos[key])
@@ -126,13 +126,24 @@ class Monitor(gym.Wrapper):
             ep_info = {} #
         else:
             ep_info = {}
-        special_words = ["miss"]
+        special_words = ["miss", "miss2", "miss3", "miss4", "miss5", "miss6", "miss7", "miss8", "miss9", "miss10", "miss11", "miss12"]
         for key in special_words:
             ep_info[key] = info[key]
             ep_data = np.asarray(self.episode_infos2[key])
             ep_info["ep_{}".format(key)] = np.mean(ep_data)
             try:
                 self.env.model.ep_miss_mean = ep_info["ep_miss"]
+                self.env.model.ep_miss2_mean = ep_info["ep_miss2"]
+                self.env.model.ep_miss3_mean = ep_info["ep_miss3"]
+                self.env.model.ep_miss4_mean = ep_info["ep_miss4"]
+                self.env.model.ep_miss5_mean = ep_info["ep_miss5"]
+                self.env.model.ep_miss6_mean = ep_info["ep_miss6"]
+                self.env.model.ep_miss7_mean = ep_info["ep_miss7"]
+                self.env.model.ep_miss8_mean = ep_info["ep_miss8"]
+                self.env.model.ep_miss9_mean = ep_info["ep_miss9"]
+                self.env.model.ep_miss10_mean = ep_info["ep_miss10"]
+                self.env.model.ep_miss11_mean = ep_info["ep_miss11"]
+                self.env.model.ep_miss12_mean = ep_info["ep_miss12"]
             except:
                 pass
         if done:

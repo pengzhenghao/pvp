@@ -210,11 +210,33 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 self.total_wall_steps += (self.total_steps > self.config['init_bc_steps'])
 
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
-        i["miss"] = (np.mean(expert_action ** 2) > 0.2) * (np.mean((self.agent_action - expert_action) ** 2) > 0.1)
+        i["miss"] = (np.mean(expert_action ** 2) > 0.2) * (np.mean((self.agent_action - expert_action) ** 2) > 0.2)
+        i["miss2"] = (np.mean(expert_action ** 2) > 0.2) * (np.mean((self.agent_action - expert_action) ** 2) > 0.15)
+        i["miss3"] = (np.mean(expert_action ** 2) > 0.2) * (np.mean((self.agent_action - expert_action) ** 2) > 0.3)
+        i["miss4"] = (np.mean(expert_action ** 2) > 0.4) * (np.mean((self.agent_action - expert_action) ** 2) > 0.2)
+        i["miss5"] = (np.mean(expert_action ** 2) > 0.3) * (np.mean((self.agent_action - expert_action) ** 2) > 0.2)
+        i["miss6"] = (np.mean(expert_action ** 2) > 0.4) * (np.mean((self.agent_action - expert_action) ** 2) > 0.25)
+        i["miss7"] = (np.mean(expert_action ** 2) > 0.5) * (np.mean((self.agent_action - expert_action) ** 2) > 0.4)
+        i["miss8"] = (np.mean(expert_action ** 2) > 0.5) * (np.mean((self.agent_action - expert_action) ** 2) > 0.5)
+        i["miss9"] = (np.mean(expert_action ** 2) > 0.6) * (np.mean((self.agent_action - expert_action) ** 2) > 0.6)
+        i["miss10"] = (np.mean(expert_action ** 2) > 0.7) * (np.mean((self.agent_action - expert_action) ** 2) > 0.7)
+        i["miss11"] = (np.mean(expert_action ** 2) > 0.5) * (np.mean((self.agent_action - expert_action) ** 2) > 0.7)
+        i["miss12"] = (np.mean(expert_action ** 2) > 0.4) * (np.mean((self.agent_action - expert_action) ** 2) > 0.6)
         self.total_miss += i["miss"]
         i["total_miss"] = self.total_miss
         try:
             self.model.miss = int(i["miss"])
+            self.model.miss2 = int(i["miss2"])
+            self.model.miss3 = int(i["miss3"])
+            self.model.miss4 = int(i["miss4"]) 
+            self.model.miss5 = int(i["miss5"])  
+            self.model.miss6 = int(i["miss6"])
+            self.model.miss7 = int(i["miss7"])
+            self.model.miss8 = int(i["miss8"])
+            self.model.miss9 = int(i["miss9"])
+            self.model.miss10 = int(i["miss10"])
+            self.model.miss11 = int(i["miss11"])
+            self.model.miss12 = int(i["miss12"])
             self.model.total_miss = int(self.total_miss)
         except:
             pass

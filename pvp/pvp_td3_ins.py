@@ -227,7 +227,7 @@ class PVPTD3(TD3):
         eval_log_path: Optional[str] = None,
         reset_num_timesteps: bool = True,
         save_timesteps: int = 2000,
-        buffer_save_timesteps: int = 200,
+        buffer_save_timesteps: int = 2000,
         save_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "",
         save_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "",
         save_buffer: bool = False,

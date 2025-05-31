@@ -301,7 +301,7 @@ class PVPTD3ENS(PVPTD3):
         stat_recorder = defaultdict(float)
         stat_recorders = []
         lm = batch_size // self.env.num_envs
-        dd = ["takeover_current", "total_switch", "total_miss", "miss", "ep_miss_mean", "total_colorchange", "takeover"]
+        dd = ["takeover_current", "total_switch", "total_miss", "miss", "ep_miss_mean", "total_colorchange", "takeover", "ep_miss2_mean", "ep_miss3_mean", "ep_miss4_mean", "ep_miss5_mean", "ep_miss6_mean", "ep_miss7_mean", "ep_miss8_mean", "ep_miss9_mean", "ep_miss10_mean", "ep_miss11_mean", "ep_miss12_mean", "ep_miss13_mean", "ep_miss14_mean", "ep_miss15_mean"]
         for key in dd:
             if hasattr(self, key):
                 stat_recorder[key] = getattr(self, key)
@@ -461,7 +461,7 @@ class PVPTD3ENS(PVPTD3):
         stat_recorder = defaultdict(float)
         stat_recorders = defaultdict(list)
         lm = batch_size // self.env.num_envs
-        dd = ["takeover_current", "total_switch", "total_miss", "miss", "ep_miss_mean", "total_colorchange", "takeover"]
+        dd = ["takeover_current", "total_switch", "total_miss", "miss", "ep_miss_mean", "total_colorchange", "takeover", "ep_miss2_mean", "ep_miss3_mean", "ep_miss4_mean", "ep_miss5_mean", "ep_miss6_mean", "ep_miss7_mean", "ep_miss8_mean", "ep_miss9_mean", "ep_miss10_mean", "ep_miss11_mean", "ep_miss12_mean", "ep_miss13_mean", "ep_miss14_mean", "ep_miss15_mean"]
         for key in dd:
             if hasattr(self, key):
                 stat_recorder[key].append(getattr(self, key))
