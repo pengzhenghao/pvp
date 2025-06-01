@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb_project", type=str, default="ICML2025AIM", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
-    parser.add_argument("--free_level", type=float, default=0.9)
+    parser.add_argument("--free_level", type=float, default=0.5)
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
 
     # parser.add_argument(
@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     # control_device = args.device
-    experiment_batch_name = "{}_freelevel{}_0529".format(args.exp_name, args.free_level)
+    experiment_batch_name = "{}_freelevel{}_0601".format(args.exp_name, args.free_level)
     seed = args.seed
     trial_name = "{}_{}_{}".format("pvp", seed, get_time_str())
     print("Trial name is set to: ", trial_name)
@@ -211,12 +211,12 @@ if __name__ == '__main__':
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
-    eval_freq, n_eval_episodes = 10 // num_train_envs, 100
+    eval_freq, n_eval_episodes = 20000 // num_train_envs, 1
 
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=5000,
+        total_timesteps=20000,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -235,8 +235,8 @@ if __name__ == '__main__':
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=False,
+        save_buffer=True,
         load_buffer=False,
-        save_path_human = Path(log_dir) / Path("human_buffer_tb1_pvp") / (str(seed)),
+        save_path_human = Path(log_dir) / Path("human_buffer_pvp_0601_" + str(seed)),
         save_path_replay = Path(log_dir) / Path("novice_buffer_tb1_pvp") / (str(seed)),
     )
