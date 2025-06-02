@@ -21,7 +21,7 @@ def get_expert():
     from pvp.sb3.ppo import PPO
     from pvp.sb3.ppo.policies import ActorCriticPolicy
 
-    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": False})
+    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
 
     # Initialize agent
     algo_config = dict(
@@ -188,8 +188,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                         self.takeover = (np.mean((actions - expert_action) ** 2) >= self.model.switch2robot_thresh)
                     else:
                         unc = self.model.compute_unc(self.last_obs)
-                        self.takeover = (unc > (9e-4) * 0.8)
-                        #self.takeover = (unc > self.model.switch2human_thresh) #self.config['thr_classifier']
+                        self.takeover = (unc > (1e-4))
+                        # self.takeover = (unc > self.model.switch2human_thresh) #self.config['thr_classifier']
             else:
                 self.takeover = True
             
@@ -227,6 +227,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             super(HumanInTheLoopEnv, self).render(
+                mode="topdown",
                 text={
                     "Total Cost": round(self.total_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),
@@ -235,7 +236,9 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                     # "Total Time": time.strftime("%M:%S", time.gmtime(time.time() - self.start_time)),
                     "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
                     "Pause": "Press E",
-                }
+                },
+                action=self.agent_action,
+                takeover=self.takeover,
             )
 
         assert i["takeover"] == self.takeover

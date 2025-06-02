@@ -28,7 +28,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=100, type=int)
+    parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", type=bool, default=True, help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="ICML2025AIM", help="The project name for wandb.")
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     #     type=str,
     #     help="The control device, selected from [wheel, gamepad, keyboard]."
     # )
-    parser.add_argument("--thr_classifier", type=float, default=0.95)
+    parser.add_argument("--thr_classifier", type=float, default=0.99)
     parser.add_argument("--init_bc_steps", type=int, default=200)
     parser.add_argument("--thr_actdiff", type=float, default=0.4)
     
@@ -93,7 +93,7 @@ if __name__ == '__main__':
         env_config=dict(
 
             # Original real human exp env config:
-            # use_render=True,  # Open the interface
+            use_render=True,  # Open the interface
             # manual_control=True,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
+    # eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
     
     # ===== Setup the callbacks =====
     save_freq = args.save_freq // num_train_envs  # Number of steps per model checkpoint
@@ -213,12 +213,12 @@ if __name__ == '__main__':
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
-    eval_freq, n_eval_episodes = 10, 100
+    eval_freq, n_eval_episodes = 20000, 100
 
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=5000,
+        total_timesteps=10000,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -229,8 +229,8 @@ if __name__ == '__main__':
         # eval_log_path=None,
 
         # eval
-        eval_env=eval_env,
-        eval_freq=eval_freq,
+        eval_env=None,
+        eval_freq=-1,
         n_eval_episodes=n_eval_episodes,
         eval_log_path=str(trial_dir),
 

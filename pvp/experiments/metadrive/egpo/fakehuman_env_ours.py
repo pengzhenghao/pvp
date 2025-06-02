@@ -21,7 +21,7 @@ def get_expert():
     from pvp.sb3.ppo import PPO
     from pvp.sb3.ppo.policies import ActorCriticPolicy
 
-    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": False})
+    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
 
     # Initialize agent
     algo_config = dict(
@@ -226,15 +226,18 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             super(HumanInTheLoopEnv, self).render(
+                mode="topdown",
                 text={
-                    "Total Cost": round(self.total_cost, 2),
+                    # "Total Cost": round(self.total_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),
                     "Takeover": "TAKEOVER" if self.takeover else "NO",
-                    "Total Step": self.total_steps,
+                    # "Total Step": self.total_steps,
                     # "Total Time": time.strftime("%M:%S", time.gmtime(time.time() - self.start_time)),
-                    "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
-                    "Pause": "Press E",
-                }
+                    # "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
+                    # "Pause": "Press E",
+                },
+                action = self.agent_action,
+                takeover=self.takeover,
             )
 
         assert i["takeover"] == self.takeover

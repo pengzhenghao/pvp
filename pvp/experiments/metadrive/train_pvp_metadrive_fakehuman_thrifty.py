@@ -28,7 +28,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=100, type=int)
+    parser.add_argument("--save_freq", default=10000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", type=bool, default=True, help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="ICML2025AIM", help="The project name for wandb.")
@@ -93,7 +93,7 @@ if __name__ == '__main__':
         env_config=dict(
 
             # Original real human exp env config:
-            # use_render=True,  # Open the interface
+            use_render=True,  # Open the interface
             # manual_control=True,  # Allow receiving control signal from external device
             # controller=control_device,
             # window_size=(1600, 1100),
@@ -137,7 +137,7 @@ if __name__ == '__main__':
             verbose=2,
             #seed=seed,
             device="auto",
-            num_instances=5,
+            num_instances=2,
             policy_delay=25,
             gradient_steps=1,
         ),
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
+    eval_env = None #make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
     
     # ===== Setup the callbacks =====
     save_freq = args.save_freq // num_train_envs  # Number of steps per model checkpoint
@@ -218,7 +218,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=5000,
+        total_timesteps=10000,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -230,7 +230,7 @@ if __name__ == '__main__':
 
         # eval
         eval_env=eval_env,
-        eval_freq=eval_freq,
+        eval_freq=-1,
         n_eval_episodes=n_eval_episodes,
         eval_log_path=str(trial_dir),
 

@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     # control_device = args.device
-    experiment_batch_name = "{}_offline".format("PVP-B5K-_0601")
+    experiment_batch_name = "{}_offline".format("PVP-B2K-_0601")
     seed = args.seed
     trial_name = "{}_{}_{}".format(experiment_batch_name, seed, get_time_str())
     print("Trial name is set to: ", trial_name)
@@ -181,7 +181,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = make_vec_env(_make_eval_env, n_envs=1, vec_env_cls=SubprocVecEnv)
+    eval_env = make_vec_env(_make_eval_env, n_envs=5, vec_env_cls=SubprocVecEnv)
     
     # ===== Setup the callbacks =====
     save_freq = args.save_freq // num_train_envs  # Number of steps per model checkpoint
@@ -211,7 +211,7 @@ if __name__ == '__main__':
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
         model.set_parameters(params, exact_match=True, device=model.device)
 
-    eval_freq, n_eval_episodes = 5 // num_train_envs, 100
+    eval_freq, n_eval_episodes = 5 // num_train_envs, 50
 
     # ===== Launch training =====
     model.learn_offline(
@@ -237,5 +237,5 @@ if __name__ == '__main__':
         log_interval=1,
         save_buffer=False,
         load_buffer=True,
-        load_path_human="/home/caihy/pvp/human_buffer_pvp_0601_0/human_buffer_2000.pkl",
+        load_path_human="/home/caihy/pvp/human_buffer_pvp_0601_1/human_buffer_2000.pkl",
     )

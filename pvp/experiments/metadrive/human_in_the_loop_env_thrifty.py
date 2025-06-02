@@ -16,9 +16,10 @@ ScreenMessage.SCALE = 0.1
 HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     # Environment setting:
     "out_of_route_done": True,  # Raise done if out of route.
-    "num_scenarios": 50,  # There are totally 50 possible maps.
-    "start_seed": 100,  # We will use the map 100~150 as the default training environment.
-    "traffic_density": 0.06,
+    "num_scenarios": 1,  # There are totally 50 possible maps.
+    "start_seed": 110,  # We will use the map 100~150 as the default training environment.
+    "traffic_density": 0.03,
+    "map": "CSC",
 
     # Reward and cost setting:    "cost_to_reward": True,  # Cost will be negated and added to the reward. Useless in PVP.
     "cos_similarity": False,  # If True, the takeover cost will be the cos sim between a_h and a_n. Useless in PVP.
@@ -31,9 +32,9 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
 
     # Visualization
     "vehicle_config": {
-        "show_dest_mark": True,  # Show the destination in a cube.
-        "show_line_to_dest": True,  # Show the line to the destination.
-        "show_line_to_navi_mark": True,  # Show the line to next navigation checkpoint.
+        "show_dest_mark": False,  # Show the destination in a cube.
+        "show_line_to_dest": False,  # Show the line to the destination.
+        "show_line_to_navi_mark": False,  # Show the line to next navigation checkpoint.
     },
     "horizon": 1500,
 }
