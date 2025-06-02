@@ -53,8 +53,8 @@ if __name__ == '__main__':
     #     type=str,
     #     help="The control device, selected from [wheel, gamepad, keyboard]."
     # )
-    parser.add_argument("--thr_classifier", type=float, default=0.99)
-    parser.add_argument("--init_bc_steps", type=int, default=200)
+    parser.add_argument("--thr_classifier", type=float, default=0.95)
+    parser.add_argument("--init_bc_steps", type=int, default=600)
     parser.add_argument("--thr_actdiff", type=float, default=0.4)
     
     args = parser.parse_args()

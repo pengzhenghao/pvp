@@ -399,7 +399,7 @@ class PVPTD3ENS(PVPTD3):
                     stat_recorders.append(remote.recv())
         
         
-        if hasattr(self, "trained") and (self.human_data_buffer.pos % (8 * self.policy_delay) == 0):
+        if hasattr(self, "trained") and ((self.human_data_buffer.pos % (8 * self.policy_delay) == 0) or self.num_timesteps % 100 == 0):
             ##start train classifier
             num_gd_steps = self.policy_delay * 8
             for _ in range(num_gd_steps):
@@ -411,7 +411,7 @@ class PVPTD3ENS(PVPTD3):
                     current_c_behavior = self.classifier.critic(replay_data_human.observations, replay_data_human.actions_behavior)[0]
                     
                     current_c_novice = self.classifier.critic(replay_data_human.observations, new_action)[0]
-                    
+                    self.switch2human_thresh = th.quantile(current_c_novice, self.extra_config["thr_classifier"]).item()
                     no_overlap = (
                         ((replay_data_human.actions_behavior - new_action) ** 2).mean(dim=-1) > self.switch2robot_thresh * 1.5
                     ).float()

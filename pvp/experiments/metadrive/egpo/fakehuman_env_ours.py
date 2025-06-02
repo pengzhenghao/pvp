@@ -228,12 +228,12 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             super(HumanInTheLoopEnv, self).render(
                 mode="topdown",
                 text={
-                    # "Total Cost": round(self.total_cost, 2),
+                    "Total Cost": round(self.total_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),
                     "Takeover": "TAKEOVER" if self.takeover else "NO",
-                    # "Total Step": self.total_steps,
+                    "Total Step": self.total_steps,
                     # "Total Time": time.strftime("%M:%S", time.gmtime(time.time() - self.start_time)),
-                    # "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
+                    "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
                     # "Pause": "Press E",
                 },
                 action = self.agent_action,
