@@ -16,43 +16,6 @@ FOLDER_PATH = pathlib.Path(__file__).parent
 logger = get_logger()
 
 
-def get_expert():
-    from pvp.sb3.common.save_util import load_from_zip_file
-    from pvp.sb3.ppo import PPO
-    from pvp.sb3.ppo.policies import ActorCriticPolicy
-
-    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
-
-    # Initialize agent
-    algo_config = dict(
-        policy=ActorCriticPolicy,
-        n_steps=1024,  # n_steps * n_envs = total_batch_size
-        n_epochs=20,
-        learning_rate=5e-5,
-        batch_size=256,
-        clip_range=0.1,
-        vf_coef=0.5,
-        ent_coef=0.0,
-        max_grad_norm=10.0,
-        # tensorboard_log=trial_dir,
-        create_eval_env=False,
-        verbose=2,
-        # seed=seed,
-        device="auto",
-        env=train_env
-    )
-    model = PPO(**algo_config)
-
-    ckpt = FOLDER_PATH / "metadrive_pvp_20m_steps"
-
-    print(f"Loading checkpoint from {ckpt}!")
-    data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
-    model.set_parameters(params, exact_match=False, device=model.device)
-    print(f"Model is loaded from {ckpt}!")
-
-    train_env.close()
-
-    return model.policy
 
 
 def obs_correction(obs):
@@ -75,8 +38,6 @@ def load():
         _expert_weights = np.load(ckpt_path)
     return _expert_weights
 
-
-_expert = get_expert()
 
 
 class FakeHumanEnv(HumanInTheLoopEnv):
@@ -188,7 +149,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                         self.takeover = (np.mean((actions - expert_action) ** 2) >= self.model.switch2robot_thresh)
                     else:
                         unc = self.model.compute_unc(self.last_obs)
-                        self.takeover = (unc > (1e-4))
+                        self.takeover = (unc > (5e-4))
                         # self.takeover = (unc > self.model.switch2human_thresh) #self.config['thr_classifier']
             else:
                 self.takeover = True

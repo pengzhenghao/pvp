@@ -54,7 +54,7 @@ if __name__ == '__main__':
     #     help="The control device, selected from [wheel, gamepad, keyboard]."
     # )
     parser.add_argument("--thr_classifier", type=float, default=0.99)
-    parser.add_argument("--init_bc_steps", type=int, default=200)
+    parser.add_argument("--init_bc_steps", type=int, default=600)
     parser.add_argument("--thr_actdiff", type=float, default=0.4)
     
     args = parser.parse_args()
@@ -137,9 +137,9 @@ if __name__ == '__main__':
             verbose=2,
             #seed=seed,
             device="auto",
-            num_instances=2,
+            num_instances=5,
             policy_delay=25,
-            gradient_steps=1,
+            gradient_steps=5,
         ),
 
         # Experiment log
@@ -157,11 +157,54 @@ if __name__ == '__main__':
             map="COT"
         )
 
+    import pathlib
+    FOLDER_PATH = pathlib.Path(__file__).parent
+    def get_expert():
+        from pvp.sb3.common.save_util import load_from_zip_file
+        from pvp.sb3.ppo import PPO
+        from pvp.sb3.ppo.policies import ActorCriticPolicy
+
+        train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": True})
+
+        # Initialize agent
+        algo_config = dict(
+            policy=ActorCriticPolicy,
+            n_steps=1024,  # n_steps * n_envs = total_batch_size
+            n_epochs=20,
+            learning_rate=5e-5,
+            batch_size=256,
+            clip_range=0.1,
+            vf_coef=0.5,
+            ent_coef=0.0,
+            max_grad_norm=10.0,
+            # tensorboard_log=trial_dir,
+            create_eval_env=False,
+            verbose=2,
+            # seed=seed,
+            device="auto",
+            env=train_env
+        )
+        model = PPO(**algo_config)
+
+        ckpt = "/home/caihy/pvp/pvp/experiments/metadrive/egpo/metadrive_pvp_20m_steps.zip"
+
+        print(f"Loading checkpoint from {ckpt}!")
+        data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
+        model.set_parameters(params, exact_match=False, device=model.device)
+        print(f"Model is loaded from {ckpt}!")
+
+        train_env.close()
+
+        return model.policy
+    _expert = get_expert()
+    
     def _make_train_env():
         train_env = FakeHumanEnv(config=config["env_config"], )
+        train_env.expert = _expert
         config["algo"]["classifier"] = train_env.classifier
         train_env = Monitor(env=train_env, filename=str(trial_dir))
         train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+        
         return train_env
     
     num_train_envs = 1
