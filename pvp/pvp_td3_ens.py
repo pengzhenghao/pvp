@@ -300,7 +300,7 @@ class PVPTD3ENS(PVPTD3):
             if hasattr(self, key):
                 stat_recorder[key] = getattr(self, key)
         
-        self.init_bc_steps = 200
+        self.init_bc_steps = 600
         if self.human_data_buffer.pos >= self.init_bc_steps and not hasattr(self, "trained"):
             self.trained = True
             #thompson sample
