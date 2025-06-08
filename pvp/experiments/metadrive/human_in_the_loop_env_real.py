@@ -16,7 +16,7 @@ HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     "out_of_route_done": True,  # Raise done if out of route.
     "num_scenarios": 50,  # There are totally 50 possible maps.
     "start_seed": 110,  # We will use the map 100~150 as the default training environment.
-    "traffic_density": 0.10,
+    "traffic_density": 0.06,
     # "map": "COT",  
 
     # Reward and cost setting:    "cost_to_reward": True,  # Cost will be negated and added to the reward. Useless in PVP.
@@ -85,18 +85,19 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         if not self.takeover:
             self.render_reset()
             # self.render_traj(predicted_traj_real[:14], (info_real["failure"], 1 - info_real["failure"], 0))
-        if info_real["failure"] and not self.takeover and self.total_steps > 10:
+        if info_real["failure"] and self.total_steps > 10:
             super(HumanInTheLoopEnv, self).render(
                 text={
-                    "Warning": "TAKEOVER NOW!",
+                    "State": "TAKEOVER NOW!",
                 }
             )
-            self.sleep = True
+            if not self.takeover:
+                self.sleep = True
             # time.sleep(2)
         else:
             super(HumanInTheLoopEnv, self).render(
                 text={
-                    "Warning": "",
+                    "State": "No Takeover Needed.",
                 }
             )
         return info_real["failure"]
@@ -163,7 +164,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
         future_steps_preference = self.config["future_steps_preference"]
         expert_noise_bound = self.config["expert_noise"]
         if (self.total_steps % update_future_freq == 0):
-            if self.total_steps % 10 == 0:
+            if self.total_steps % 16 == 0:
                 if not self.takeover:
                     self.render_reset()
                 should_takeover = self.decide_takeover(self.last_obs, future_steps_predict)
@@ -188,7 +189,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
             self.engine.taskMgr.step()
         
         if self.sleep:
-            time.sleep(2)
+            time.sleep(2.5)
             self.sleep = False
 
         self.takeover_recorder.append(self.takeover)
