@@ -432,8 +432,19 @@ class CustomWrapper(gym.Env):
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
         for step in range(min(len(predicted_traj) - 1, future_steps_preference)):
+            
+            X = predicted_traj[step]["obs"].copy()
+            alpha = 0.01
+            p = 2   # use None or 'fro' for Frobenius on matrices
+
+            normX = np.linalg.norm(X, ord=p)
+            r = np.random.randn(*X.shape)
+            r /= np.linalg.norm(r, ord=p)          # unit-norm random direction
+            eps = alpha * normX * r
+            X_pert = X + eps
+            
             step_info = {
-                "obs": predicted_traj[step]["obs"].copy(),
+                "obs": X_pert.copy(),
                 "action": expert_action.copy(),
                 "next_obs": predicted_traj[step]["obs"].copy(),
                 "done": False,
