@@ -35,7 +35,7 @@ if __name__ == '__main__':
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
-    parser.add_argument("--expert_noise", default=0, type=float)
+    parser.add_argument("--expert_noise", default=0.5, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
     parser.add_argument("--alpha", default=0.1, type=float)
@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0410".format("Ours", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_0723_expert_noise={}".format("Ours", args.bc_loss_weight, args.expert_noise)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
         experiment_batch_name = "BCLossOnly_"
     seed = args.seed
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 1000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
