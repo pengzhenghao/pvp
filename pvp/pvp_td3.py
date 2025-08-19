@@ -145,52 +145,6 @@ class PVPTD3(TD3):
                 else:
                     break
 
-            with th.no_grad():
-                # Select action according to policy and add clipped noise
-                noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
-                noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
-                next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
-
-                # Compute the next Q-values: min over all critics targets
-                next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
-                next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
-                target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
-
-            # Get current Q-values estimates for each critic network
-            current_q_behavior_values = self.critic(replay_data.observations, replay_data.actions_behavior)
-            current_q_novice_values = self.critic(replay_data.observations, replay_data.actions_novice)
-
-            stat_recorder["q_value_behavior"].append(current_q_behavior_values[0].mean().item())
-            stat_recorder["q_value_novice"].append(current_q_novice_values[0].mean().item())
-
-            # Compute critic loss
-            critic_loss = []
-            for (current_q_behavior, current_q_novice) in zip(current_q_behavior_values, current_q_novice_values):
-                l = F.mse_loss(current_q_behavior, target_q_values)
-
-                if with_human_proxy_value_loss:
-                    l += th.mean(
-                        replay_data.interventions * self.cql_coefficient * F.mse_loss(
-                            current_q_behavior, self.q_value_bound * th.ones_like(current_q_behavior), reduction="none"
-                        )
-                    )
-
-                if with_agent_proxy_value_loss:
-                    l += th.mean(
-                        replay_data.interventions * self.cql_coefficient * F.mse_loss(
-                            current_q_novice, -self.q_value_bound * th.ones_like(current_q_behavior), reduction="none"
-                        )
-                    )
-
-                critic_loss.append(l)
-            critic_loss = sum(critic_loss)
-
-            # Optimize the critics
-            self.critic.optimizer.zero_grad()
-            critic_loss.backward()
-            self.critic.optimizer.step()
-            stat_recorder["critic_loss"] = critic_loss.item()
-
             # Delayed policy updates
             if self._n_updates % self.policy_delay == 0:
                 # Compute actor loss
@@ -219,7 +173,6 @@ class PVPTD3(TD3):
                 stat_recorder["masked_bc_loss"] = masked_bc_loss.item()
                 stat_recorder["bc_loss"] = bc_loss.mean().item()
 
-                polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)
 
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
