@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0410".format("Ours", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_0925".format("Ours", args.bc_loss_weight)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
         experiment_batch_name = "BCLossOnly_"
     seed = args.seed
@@ -80,7 +80,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=False,
+            use_render=True,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -139,13 +139,7 @@ if __name__ == '__main__':
             use_render=True
         )
         
-    # ===== Setup the training environment =====
-    train_env = FakeHumanEnv(config=config["env_config"], )
-    train_env = Monitor(env=train_env, filename=str(trial_dir))
-    # Store all shared control data to the files.
-    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
-    config["algo"]["env"] = train_env
-    assert config["algo"]["env"] is not None
+    
 
     # ===== Also build the eval env =====
     def _make_eval_env():
@@ -161,10 +155,15 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    if config["env_config"]["use_render"]:
-        eval_env, eval_freq = None, -1
-    else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 25
+    
+    # ===== Setup the training environment =====
+    train_env = FakeHumanEnv(config=config["env_config"], )
+    train_env = Monitor(env=train_env, filename=str(trial_dir))
+    # Store all shared control data to the files.
+    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+    config["algo"]["env"] = train_env
+    assert config["algo"]["env"] is not None
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -204,7 +203,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=250,
         eval_log_path=str(trial_dir),
 
         # logging
