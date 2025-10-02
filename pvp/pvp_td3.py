@@ -373,7 +373,32 @@ class COMB(PVPTD3):
         ) -> None:
             save_to_pkl(path_human, self.human_data_buffer, self.verbose)
             save_to_pkl(path_replay, self.imagreplay_buffer, self.verbose)
-    
+    def load_replay_buffer(
+        self,
+        path_human: Union[str, pathlib.Path, io.BufferedIOBase],
+        path_replay: Union[str, pathlib.Path, io.BufferedIOBase],
+        truncate_last_traj: bool = True,
+    ) -> None:
+        """
+        Load a replay buffer from a pickle file.
+
+        :param path: Path to the pickled replay buffer.
+        :param truncate_last_traj: When using ``HerReplayBuffer`` with online sampling:
+            If set to ``True``, we assume that the last trajectory in the replay buffer was finished
+            (and truncate it).
+            If set to ``False``, we assume that we continue the same trajectory (same episode).
+        """
+        self.human_data_buffer = load_from_pkl(path_human, self.verbose)
+        assert isinstance(
+            self.human_data_buffer, ReplayBuffer
+        ), "The replay buffer must inherit from ReplayBuffer class"
+
+        # Backward compatibility with SB3 < 2.1.0 replay buffer
+        # Keep old behavior: do not handle timeout termination separately
+        if not hasattr(self.human_data_buffer, "handle_timeout_termination"):  # pragma: no cover
+            self.human_data_buffer.handle_timeout_termination = False
+            self.human_data_buffer.timeouts = np.zeros_like(self.replay_buffer.dones)
+        self.imagreplay_buffer = load_from_pkl(path_replay, self.verbose)
     def train(self, gradient_steps: int, batch_size: int = 100) -> None:
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)

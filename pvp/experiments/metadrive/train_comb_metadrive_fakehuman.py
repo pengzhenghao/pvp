@@ -155,7 +155,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 2000
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 500
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -203,13 +203,16 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=25,
+        n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=True,
+        save_buffer=False,
         save_path_human="humanbuffer",
-        save_path_replay="prefbuffer"
+        save_path_replay="prefbuffer",
+        load_buffer=True,
+        load_path_human="humanbuffer/human_buffer_6000.pkl",
+        load_path_replay="prefbuffer/replay_buffer_6000.pkl"
     )
