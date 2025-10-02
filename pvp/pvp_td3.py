@@ -367,6 +367,13 @@ class COMB(PVPTD3):
     def _excluded_save_params(self) -> List[str]:
         return super()._excluded_save_params() + ["imagreplay_buffer", "human_data_buffer"]
     
+    def save_replay_buffer(
+            self, path_human: Union[str, pathlib.Path, io.BufferedIOBase], path_replay: Union[str, pathlib.Path,
+                                                                                            io.BufferedIOBase]
+        ) -> None:
+            save_to_pkl(path_human, self.human_data_buffer, self.verbose)
+            save_to_pkl(path_replay, self.imagreplay_buffer, self.verbose)
+    
     def train(self, gradient_steps: int, batch_size: int = 100) -> None:
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)

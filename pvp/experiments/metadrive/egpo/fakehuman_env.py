@@ -186,8 +186,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
-            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
-            self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
+            # predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            # self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
 
         if self.takeover:
             predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
@@ -195,9 +195,9 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)
             actions = expert_action
-            if (self.total_steps % update_future_freq == 0):
-                predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
-                self.render_traj(predicted_traj_exp, (0, 0, 1))
+            # if (self.total_steps % update_future_freq == 0):
+            #     predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
+            #     self.render_traj(predicted_traj_exp, (0, 0, 1))
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             

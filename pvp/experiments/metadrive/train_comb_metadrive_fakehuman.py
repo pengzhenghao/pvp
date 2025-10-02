@@ -80,7 +80,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=True,
+            use_render=False,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -155,7 +155,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 25
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 2000
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -203,11 +203,13 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=0,
+        n_eval_episodes=25,
         eval_log_path=str(trial_dir),
 
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=False,
+        save_buffer=True,
+        save_path_human="humanbuffer",
+        save_path_replay="prefbuffer"
     )
