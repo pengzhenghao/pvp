@@ -86,6 +86,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
     expert = None
     from collections import deque 
     drawn_points = []
+    episodic_cost = 0
     
     def __init__(self, config):
         super(FakeHumanEnv, self).__init__(config)
@@ -139,7 +140,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
         assert info_real["failure"] == (info_real["total_reward"] < 0)
-        self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
+        # self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
@@ -185,6 +186,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
+            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
 
         if self.takeover:
             predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
@@ -192,6 +195,9 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)
             actions = expert_action
+            if (self.total_steps % update_future_freq == 0):
+                predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
+                self.render_traj(predicted_traj_exp, (0, 0, 1))
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             
@@ -203,19 +209,20 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if not self.config["disable_expert"]:
             i["takeover_log_prob"] = log_prob.item()
 
-        if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
-            self.render(
-                # mode="top_down",
-                text={
-                    "Total Cost": round(self.total_cost, 2),
-                    "Takeover Cost": round(self.total_takeover_cost, 2),
-                    "Takeover": "TAKEOVER" if self.takeover else "NO",
-                    "Total Step": self.total_steps,
-                    "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
-                    "Pause": "Press E",
-                }
-            )
-
+        # if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
+        #     self.render(
+        #         # mode="top_down",
+        #         text={
+        #             "Total Cost": round(self.total_cost, 2),
+        #             "Takeover Cost": round(self.total_takeover_cost, 2),
+        #             "Takeover": "TAKEOVER" if self.takeover else "NO",
+        #             "Total Step": self.total_steps,
+        #             "Takeover Rate": "{:.2f}%".format(np.mean(np.array(self.takeover_recorder) * 100)),
+        #             "Pause": "Press E",
+        #         }
+        #     )
+        self.trate = np.mean(np.array(self.takeover_recorder) * 100)
+        self.epcost = np.mean(np.array(self.episodic_cost_recorder)) if len(self.episodic_cost_recorder) > 0 else 0
         assert i["takeover"] == self.takeover
 
         if self.config["use_discrete"]:
@@ -241,6 +248,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         engine_info["native_cost"] = engine_info["cost"]
         engine_info["episode_native_cost"] = self.episode_cost
         self.total_cost += engine_info["cost"]
+        self.episodic_cost += engine_info["cost"]
+        
         self.total_takeover_count += 1 if self.takeover else 0
         engine_info["total_takeover_count"] = self.total_takeover_count
         engine_info["total_cost"] = self.total_cost
@@ -248,6 +257,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         return o, r, d, engine_info
 
     def _get_reset_return(self, reset_info):
+        self.episodic_cost_recorder.append(self.episodic_cost)
+        self.episodic_cost = 0
         o, info = super(HumanInTheLoopEnv, self)._get_reset_return(reset_info)
         self.last_obs = o
         self.last_takeover = False

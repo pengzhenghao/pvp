@@ -48,6 +48,7 @@ class HumanInTheLoopEnv(BasePredictionEnv):
     total_cost = 0
     takeover = False
     takeover_recorder = deque(maxlen=2000)
+    episodic_cost_recorder = deque(maxlen=20)
     agent_action = None
     in_pause = False
     start_time = time.time()

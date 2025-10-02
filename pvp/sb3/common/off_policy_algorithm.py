@@ -615,6 +615,11 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             self.since_last_reset += env.num_envs
             num_collected_steps += 1
 
+            takeover_count = self.human_data_buffer.pos
+            train_cost = env.envs[0].unwrapped.total_cost
+            total_train_time = self.num_timesteps
+            t_rate = env.envs[0].unwrapped.trate
+            ep_cost = env.envs[0].unwrapped.epcost
             # Give access to local variables
             callback.update_locals(locals())
             # Only stop training if return value is False, not when it is None.

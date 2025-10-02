@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0925".format("Ours", args.bc_loss_weight)
+    experiment_batch_name = "{}_bcw={}_0926".format("Ours", args.bc_loss_weight)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
         experiment_batch_name = "BCLossOnly_"
     seed = args.seed
@@ -203,7 +203,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=250,
+        n_eval_episodes=0,
         eval_log_path=str(trial_dir),
 
         # logging

@@ -440,6 +440,14 @@ class EvalCallback(EventCallback):
                     print(f"Success rate: {100 * success_rate:.2f}%")
                 self.logger.record("eval/success_rate", success_rate)
 
+            self.evaluations_info_buffer["takeover_rate"].append(self.locals['takeover_count'] / self.locals['total_train_time'])
+            self.evaluations_info_buffer["takeover_count"].append(self.locals['takeover_count'])
+            
+            self.evaluations_info_buffer["avg_cost"].append(self.locals['train_cost'] / self.locals['total_train_time'])
+            self.evaluations_info_buffer["train_cost"].append(self.locals['train_cost'])
+            self.evaluations_info_buffer["t_rate"].append(self.locals['t_rate'])
+            self.evaluations_info_buffer["ep_cost"].append(self.locals['ep_cost'])
+            
             for k, v in self.evaluations_info_buffer.items():
                 self.logger.record("eval/{}".format(k), np.mean(np.asarray(v)))
 
