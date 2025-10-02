@@ -314,6 +314,11 @@ class PVPTD3(TD3):
             print("Start warmup with steps: " + str(warmup_steps))
             self.train(batch_size=self.batch_size, gradient_steps=warmup_steps)
 
+        policy_path = f"/home/caihy/pvp/runs/Ours_bcw=1.0_0926/Ours_bcw=1.0_0926_4f3847d4/models/rl_model_2000_steps/policy.pth"
+        policy_weights = torch.load(policy_path, map_location=self.device)
+        self.policy.load_state_dict(policy_weights)
+        next_upd = 2000
+        
         while self.num_timesteps < total_timesteps:
             rollout = self.collect_rollouts(
                 self.env,
@@ -327,13 +332,22 @@ class PVPTD3(TD3):
 
             if rollout.continue_training is False:
                 break
+
+            if self.num_timesteps >= next_upd:
+                next_upd += 2000
+                policy_path = f"/home/caihy/pvp/runs/Ours_bcw=1.0_0926/Ours_bcw=1.0_0926_4f3847d4/models/rl_model_{next_upd}_steps/policy.pth"
+                policy_weights = torch.load(policy_path, map_location=self.device)
+
+                # Load the weights into the actor
+                self.policy.load_state_dict(policy_weights)
+
             if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts:
                 # If no `gradient_steps` is specified,
                 # do as many gradients steps as steps performed during the rollout
                 gradient_steps = self.gradient_steps if self.gradient_steps >= 0 else rollout.episode_timesteps
                 # Special case when the user passes `gradient_steps=0`
-                if gradient_steps > 0:
-                    self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
+                # if gradient_steps > 0:
+                #     self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
             if save_buffer and self.num_timesteps > 0 and self.num_timesteps % buffer_save_timesteps == 0:
                 buffer_location_human = os.path.join(
                     save_path_human, "human_buffer_" + str(self.num_timesteps) + ".pkl"
