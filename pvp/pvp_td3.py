@@ -314,10 +314,10 @@ class PVPTD3(TD3):
             print("Start warmup with steps: " + str(warmup_steps))
             self.train(batch_size=self.batch_size, gradient_steps=warmup_steps)
 
-        policy_path = f"/home/caihy/pvp/runs/Ours_bcw=1.0_0926/Ours_bcw=1.0_0926_4f3847d4/models/rl_model_2000_steps/policy.pth"
+        policy_path = f"/home/caihy/pvp/runs/Ours_bcw=1.0_0926/Ours_bcw=1.0_0926_4f3847d4/models/rl_model_8000_steps/policy.pth"
         policy_weights = torch.load(policy_path, map_location=self.device)
         self.policy.load_state_dict(policy_weights)
-        next_upd = 2000
+        next_upd = 10000
         
         while self.num_timesteps < total_timesteps:
             rollout = self.collect_rollouts(
@@ -333,13 +333,13 @@ class PVPTD3(TD3):
             if rollout.continue_training is False:
                 break
 
-            if self.num_timesteps >= next_upd:
-                next_upd += 2000
-                policy_path = f"/home/caihy/pvp/runs/Ours_bcw=1.0_0926/Ours_bcw=1.0_0926_4f3847d4/models/rl_model_{next_upd}_steps/policy.pth"
-                policy_weights = torch.load(policy_path, map_location=self.device)
+            # if self.num_timesteps >= next_upd:
+            #     next_upd += 2000
+            #     policy_path = f"/home/caihy/pvp/runs/Ours_bcw=1.0_0926/Ours_bcw=1.0_0926_4f3847d4/models/rl_model_{next_upd}_steps/policy.pth"
+            #     policy_weights = torch.load(policy_path, map_location=self.device)
 
-                # Load the weights into the actor
-                self.policy.load_state_dict(policy_weights)
+            #     # Load the weights into the actor
+            #     self.policy.load_state_dict(policy_weights)
 
             if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts:
                 # If no `gradient_steps` is specified,

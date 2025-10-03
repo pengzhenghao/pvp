@@ -139,7 +139,6 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
-        assert info_real["failure"] == (info_real["total_reward"] < 0)
         # self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
     
@@ -183,7 +182,10 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         enoise = np.random.randn(2) * expert_noise_bound
         expert_action = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
         
-        if (self.total_steps % update_future_freq == 0):
+        
+        if self.total_steps <= 500:
+            self.takeover = True
+        elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
             # predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())

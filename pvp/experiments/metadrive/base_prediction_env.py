@@ -276,10 +276,8 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         
         self.set_state(saved_state)
         
-        failure = failure or (total_reward <= 10) #CHY: Failure if too slow.
+        failure = failure
         
-        if total_reward <= 10:
-            total_reward = -100
         info["all_states"] = all_states
         info["failure"] = failure
         info["total_reward"] = total_reward

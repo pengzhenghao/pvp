@@ -22,7 +22,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=2000, type=int)
+    parser.add_argument("--save_freq", default=500, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="Drive0723", help="The project name for wandb.")
@@ -210,8 +210,8 @@ if __name__ == '__main__':
         tb_log_name=experiment_batch_name,
         log_interval=1,
         save_buffer=True,
-        save_path_human="humanbufferoffl",
-        save_path_replay="prefbufferoffl",
+        save_path_human="humanbufferoffbc8k",
+        save_path_replay="prefbufferoffbc8k",
         # load_buffer=True,
         # load_path_human="humanbuffer/human_buffer_6000.pkl",
         # load_path_replay="prefbuffer/replay_buffer_6000.pkl"
