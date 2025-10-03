@@ -22,7 +22,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=2000, type=int)
+    parser.add_argument("--save_freq", default=5000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="Drive0723", help="The project name for wandb.")
@@ -155,7 +155,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 500
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 5000
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -213,6 +213,6 @@ if __name__ == '__main__':
         save_path_human="humanbuffer",
         save_path_replay="prefbuffer",
         load_buffer=True,
-        load_path_human="/home/caihy/pvp/humanbufferoff2000/human_buffer_12000.pkl",
-        load_path_replay="/home/caihy/pvp/prefbufferoff2000/replay_buffer_12000.pkl"
+        load_path_human="/home/caihy/pvp/humanbufferoffbc8k/human_buffer_50000.pkl",
+        load_path_replay="/home/caihy/pvp/prefbufferoffbc8k/replay_buffer_50000.pkl"
     )
