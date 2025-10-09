@@ -25,6 +25,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
+    parser.add_argument("--use_render", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="Drive0723", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default=FOLDER_PATH.parent.parent, help="Folder to store the logs.")
@@ -80,7 +81,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=False,
+            use_render=args.use_render,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -164,7 +165,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 150
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 5000
 
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
@@ -204,7 +205,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
         # logging
