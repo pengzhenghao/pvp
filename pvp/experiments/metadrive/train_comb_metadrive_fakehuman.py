@@ -22,7 +22,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=500, type=int)
+    parser.add_argument("--save_freq", default=100000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="Drive0723", help="The project name for wandb.")
@@ -155,7 +155,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 2000
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 20000
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=500_000,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -210,8 +210,9 @@ if __name__ == '__main__':
         tb_log_name=experiment_batch_name,
         log_interval=1,
         save_buffer=True,
-        save_path_human="humanbufferoffbc8k",
-        save_path_replay="prefbufferoffbc8k",
+        save_path_human="pref500expert1ktakeoverSR0.9L=3",
+        save_path_replay="pref500expert1ktakeoverSR0.9L=3",
+        buffer_save_timesteps=10000,
         # load_buffer=True,
         # load_path_human="humanbuffer/human_buffer_6000.pkl",
         # load_path_replay="prefbuffer/replay_buffer_6000.pkl"
