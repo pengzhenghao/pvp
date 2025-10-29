@@ -61,7 +61,7 @@ if __name__ == '__main__':
     free_level = args.free_level
     from metadrive.component.sensors.depth_camera import DepthCamera
     from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
-    sensor_size = (84, 84)
+    sensor_size = (42, 42)
     config = dict(
 
             # Environment config
@@ -99,7 +99,7 @@ if __name__ == '__main__':
                 ),
                 policy_kwargs=dict(
                     features_extractor_class=OurFeaturesExtractor,
-                    features_extractor_kwargs=dict(features_dim=275),
+                    features_extractor_kwargs=dict(features_dim=147),
                     share_features_extractor=False, 
                     net_arch=[
                         256,
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     # ===== Setup the config =====
     def _make_eval_env():
         from metadrive.component.sensors.depth_camera import DepthCamera
-        sensor_size = (84, 84)
+        sensor_size = (42, 42)
         eval_env_config = dict(
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
@@ -162,7 +162,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 2), 1000
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 1), 2000
     def _make_train_env():
         # ===== Setup the training environment =====
         train_env = FakeHumanEnv(config=config["env_config"], )
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         # Store all shared control data to the files.
         train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
         return train_env
-    train_env = SubprocVecEnv([_make_train_env] * 2)
+    train_env = SubprocVecEnv([_make_train_env] * 3)
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
@@ -206,14 +206,14 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=20_000,
+        total_timesteps=210_000,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=20,
+        n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
         # logging
