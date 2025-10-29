@@ -14,6 +14,9 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
 import pathlib
+from metadrive.component.sensors.depth_camera import DepthCamera
+from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
+
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -31,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="", type=str)
+    parser.add_argument("--ckpt", default="studentCNN.zip", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
@@ -66,7 +69,7 @@ if __name__ == '__main__':
     os.makedirs(experiment_dir, exist_ok=True)
     os.makedirs(trial_dir, exist_ok=False)  # Avoid overwritting old experiment
     print(f"We start logging training data into {trial_dir}")
-
+    sensor_size = (42, 42)
     # ===== Setup the config =====
     config = dict(
 
@@ -85,6 +88,10 @@ if __name__ == '__main__':
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
             expert_noise=args.expert_noise,
+            image_observation=True, 
+            vehicle_config=dict(image_source="depth_camera"),
+            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            stack_size=3,
         ),
 
         # Algorithm config
@@ -201,8 +208,8 @@ if __name__ == '__main__':
         reset_num_timesteps=True,
 
         # eval
-        eval_env=eval_env,
-        eval_freq=eval_freq,
+        eval_env=None,
+        eval_freq=-1,
         n_eval_episodes=0,
         eval_log_path=str(trial_dir),
 
@@ -210,9 +217,9 @@ if __name__ == '__main__':
         tb_log_name=experiment_batch_name,
         log_interval=1,
         save_buffer=True,
-        save_path_human="pref500expert1ktakeoverSR0.9L=3",
-        save_path_replay="pref500expert1ktakeoverSR0.9L=3",
-        buffer_save_timesteps=10000,
+        save_path_human="CNN",
+        save_path_replay="CNN",
+        buffer_save_timesteps=5000,
         # load_buffer=True,
         # load_path_human="humanbuffer/human_buffer_6000.pkl",
         # load_path_replay="prefbuffer/replay_buffer_6000.pkl"

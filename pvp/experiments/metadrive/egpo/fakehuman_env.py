@@ -44,7 +44,7 @@ def get_expert():
     )
     model = PPO(**algo_config)
 
-    ckpt = FOLDER_PATH / "metadrive_pvp_20m_steps"
+    ckpt = "RLexpertCNN.zip"
 
     print(f"Loading checkpoint from {ckpt}!")
     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
@@ -94,7 +94,9 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             self._num_bins = 13
             self._grid = np.linspace(-1, 1, self._num_bins)
             self._actions = np.array(np.meshgrid(self._grid, self._grid)).T.reshape(-1, 2)
-
+        from metadrive.obs.state_obs import LidarStateObservation
+        self.lidar = LidarStateObservation(self.config)
+    
     @property
     def action_space(self) -> gym.Space:
         if self.config["use_discrete"]:
@@ -173,17 +175,12 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 global _expert
                 self.expert = _expert
         
-        last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
-        distribution = self.expert.get_distribution(last_obs)
-        log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
-        action_prob = log_prob.exp().detach().cpu().numpy()
-        action_prob = action_prob[0]
-        expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
+        lidar_o = self.lidar.observe(self.agent)
+        expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
         enoise = np.random.randn(2) * expert_noise_bound
-        expert_action = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
+        expert_action = np.clip(expert_action, self.action_space.low, self.action_space.high)
         
-        
-        if self.total_steps <= 500:
+        if self.total_steps <= 2500:
             self.takeover = True
         elif (self.total_steps % update_future_freq == 0):
             self.render_reset()

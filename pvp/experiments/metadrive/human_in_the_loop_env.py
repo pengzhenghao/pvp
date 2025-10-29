@@ -14,7 +14,7 @@ ScreenMessage.SCALE = 0.1
 HUMAN_IN_THE_LOOP_ENV_CONFIG = {
     # Environment setting:
     "out_of_route_done": True,  # Raise done if out of route.
-    "num_scenarios": 50,  # There are totally 50 possible maps.
+    "num_scenarios": 100,  # There are totally 50 possible maps.
     "start_seed": 100,  # We will use the map 100~150 as the default training environment.
     "traffic_density": 0.06,
 

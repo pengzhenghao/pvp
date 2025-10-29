@@ -14,6 +14,8 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
 import pathlib
+from metadrive.component.sensors.depth_camera import DepthCamera
+from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
 FOLDER_PATH = pathlib.Path(__file__).parent.parent
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -67,7 +69,7 @@ if __name__ == '__main__':
     os.makedirs(experiment_dir, exist_ok=True)
     os.makedirs(trial_dir, exist_ok=False)  # Avoid overwritting old experiment
     print(f"We start logging training data into {trial_dir}")
-
+    sensor_size = (42, 42)
     # ===== Setup the config =====
     config = dict(
 
@@ -86,6 +88,10 @@ if __name__ == '__main__':
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
             expert_noise=args.expert_noise,
+            image_observation=True, 
+            vehicle_config=dict(image_source="depth_camera"),
+            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            stack_size=3,
         ),
 
         # Algorithm config
