@@ -153,7 +153,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "done": False,
             }
             positive_traj = [step_info].copy()
-            negative_traj = predicted_traj[step+1:]
+            negative_traj = predicted_traj[step:]
             self.model.imagreplay_buffer.add(positive_traj, negative_traj)
     
     def step(self, actions):
@@ -205,8 +205,6 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
-        if not self.config["disable_expert"]:
-            i["takeover_log_prob"] = log_prob.item()
 
         # if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
         #     self.render(
