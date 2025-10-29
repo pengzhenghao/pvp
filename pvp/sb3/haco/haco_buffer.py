@@ -325,15 +325,15 @@ class HACOReplayBuffer(ReplayBuffer):
             # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
             if isinstance(self.observation_space.spaces[key], (spaces.Discrete, new_spaces.Discrete)):
                 obs[key] = obs[key].reshape((self.n_envs, ) + self.obs_shape[key])
-            self.observations[key][self.pos] = np.array(obs[key])
+            self.observations[key][self.pos] = np.array([obs[i][key] for i in range(len(obs))]).copy()
 
         for key in self.observations.keys():
             if isinstance(self.observation_space.spaces[key], (spaces.Discrete, new_spaces.Discrete)):
                 next_obs[key] = next_obs[key].reshape((self.n_envs, ) + self.obs_shape[key])
             if self.optimize_memory_usage:
-                self.observations[key][(self.pos + 1) % self.buffer_size] = np.array(next_obs[key]).copy()
+                self.observations[key][(self.pos + 1) % self.buffer_size] = np.array([next_obs[i][key] for i in range(len(obs))]).copy()
             else:
-                self.next_observations[key][self.pos] = np.array(next_obs[key]).copy()
+                self.next_observations[key][self.pos] = np.array([next_obs[i][key] for i in range(len(obs))]).copy()
 
         self.dones[self.pos] = np.array(done).copy()
 

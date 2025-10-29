@@ -175,14 +175,14 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 global _expert
                 self.expert = _expert
         lidar_o = self.lidar.observe(self.agent)
-        last_obs, _ = self.expert.obs_to_tensor(lidar_o)
-        distribution = self.expert.get_distribution(last_obs)
-        log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
-        action_prob = log_prob.exp().detach().cpu().numpy()
-        action_prob = action_prob[0]
+        # last_obs, _ = self.expert.obs_to_tensor(lidar_o)
+        # distribution = self.expert.get_distribution(last_obs)
+        # log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
+        # action_prob = log_prob.exp().detach().cpu().numpy()
+        # action_prob = action_prob[0]
         expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
         enoise = np.random.randn(2) * expert_noise_bound
-        expert_action = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
+        expert_action = np.clip(expert_action, self.action_space.low, self.action_space.high)
         
         # if (self.total_steps % update_future_freq == 0):
         #     self.render_reset()
@@ -203,8 +203,6 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
-        if not self.config["disable_expert"]:
-            i["takeover_log_prob"] = log_prob.item()
 
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             self.render(

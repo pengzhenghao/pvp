@@ -24,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=2000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="Drive0801CNN", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="Drive1028DEPTHCNN", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
@@ -39,7 +39,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
-    experiment_batch_name = "{}_RGBCNN".format(args.exp_name)
+    experiment_batch_name = "{}_DepthCNN".format(args.exp_name)
     seed = args.seed
     trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     print("Trial name is set to: ", trial_name)
@@ -59,7 +59,7 @@ if __name__ == '__main__':
     print(f"We start logging training data into {trial_dir}")
 
     free_level = args.free_level
-    from metadrive.component.sensors.rgb_camera import RGBCamera
+    from metadrive.component.sensors.depth_camera import DepthCamera
     from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
     sensor_size = (84, 84)
     config = dict(
@@ -75,8 +75,8 @@ if __name__ == '__main__':
 
                 # FakeHumanEnv config:
                 image_observation=True, 
-                vehicle_config=dict(image_source="rgb_camera"),
-                sensors={"rgb_camera": (RGBCamera, *sensor_size)},
+                vehicle_config=dict(image_source="depth_camera"),
+                sensors={"depth_camera": (DepthCamera, *sensor_size)},
                 stack_size=3,
             ),
 
@@ -141,7 +141,7 @@ if __name__ == '__main__':
         )
     # ===== Setup the config =====
     def _make_eval_env():
-        from metadrive.component.sensors.rgb_camera import RGBCamera
+        from metadrive.component.sensors.depth_camera import DepthCamera
         sensor_size = (84, 84)
         eval_env_config = dict(
             use_render=False,  # Open the interface
@@ -149,8 +149,8 @@ if __name__ == '__main__':
             start_seed=1000,
             horizon=1500,
             image_observation=True, 
-            vehicle_config=dict(image_source="rgb_camera"),
-            sensors={"rgb_camera": (RGBCamera, *sensor_size)},
+            vehicle_config=dict(image_source="depth_camera"),
+            sensors={"depth_camera": (DepthCamera, *sensor_size)},
             stack_size=3,
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         # Store all shared control data to the files.
         train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
         return train_env
-    train_env = _make_train_env()
+    train_env = SubprocVecEnv([_make_train_env] * 2)
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
@@ -206,7 +206,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=20_000,
         callback=callbacks,
         reset_num_timesteps=True,
 
