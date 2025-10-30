@@ -44,7 +44,7 @@ def get_expert():
     )
     model = PPO(**algo_config)
 
-    ckpt = FOLDER_PATH / "metadrive_pvp_20m_steps"
+    ckpt = "RLexpertCNN.zip"
 
     print(f"Loading checkpoint from {ckpt}!")
     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
@@ -94,7 +94,9 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             self._num_bins = 13
             self._grid = np.linspace(-1, 1, self._num_bins)
             self._actions = np.array(np.meshgrid(self._grid, self._grid)).T.reshape(-1, 2)
-
+        from metadrive.obs.state_obs import LidarStateObservation
+        self.lidar = LidarStateObservation(self.config)
+    
     @property
     def action_space(self) -> gym.Space:
         if self.config["use_discrete"]:
@@ -139,7 +141,6 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
-        assert info_real["failure"] == (info_real["total_reward"] < 0)
         # self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
     
@@ -152,7 +153,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "done": False,
             }
             positive_traj = [step_info].copy()
-            negative_traj = predicted_traj[step+1:]
+            negative_traj = predicted_traj[step:]
             self.model.imagreplay_buffer.add(positive_traj, negative_traj)
     
     def step(self, actions):
@@ -174,16 +175,14 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 global _expert
                 self.expert = _expert
         
-        last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
-        distribution = self.expert.get_distribution(last_obs)
-        log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
-        action_prob = log_prob.exp().detach().cpu().numpy()
-        action_prob = action_prob[0]
-        expert_action, _  = self.expert.predict(self.last_obs, deterministic=True)
+        lidar_o = self.lidar.observe(self.agent)
+        expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
         enoise = np.random.randn(2) * expert_noise_bound
-        expert_action = np.clip(enoise + expert_action, self.action_space.low, self.action_space.high)
+        expert_action = np.clip(expert_action, self.action_space.low, self.action_space.high)
         
-        if (self.total_steps % update_future_freq == 0):
+        if self.total_steps <= 2500:
+            self.takeover = True
+        elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
             # predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
@@ -206,8 +205,6 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
-        if not self.config["disable_expert"]:
-            i["takeover_log_prob"] = log_prob.item()
 
         # if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
         #     self.render(

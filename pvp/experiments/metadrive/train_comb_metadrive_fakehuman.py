@@ -51,9 +51,9 @@ if __name__ == '__main__':
 
     # ===== Set up some arguments =====
     #experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
-    experiment_batch_name = "{}_bcw={}_0926".format("Ours", args.bc_loss_weight)
+    experiment_batch_name = "{}bcw{}".format("OursCNN", args.bc_loss_weight)
     if (args.only_bc_loss=="True") or (args.dpo_loss_weight == 0):
-        experiment_batch_name = "BCLossOnly_"
+        experiment_batch_name = "BCLossOnly"
     seed = args.seed
     #trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     trial_name = "{}_{}".format(experiment_batch_name, uuid.uuid4().hex[:8])
@@ -166,6 +166,11 @@ if __name__ == '__main__':
             manual_control=False,  # Allow receiving control signal from external device
             start_seed=1000,
             horizon=1500,
+            # FakeHumanEnv config:
+                image_observation=True, 
+                vehicle_config=dict(image_source="depth_camera"),
+                sensors={"depth_camera": (DepthCamera, *sensor_size)},
+                stack_size=3,
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
@@ -173,7 +178,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 5000
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 3), 5000
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -221,7 +226,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=200,
+        n_eval_episodes=100,
         eval_log_path=str(trial_dir),
 
         # logging
