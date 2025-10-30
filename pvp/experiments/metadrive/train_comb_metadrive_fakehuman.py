@@ -178,7 +178,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 1), 20000
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 20000
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
