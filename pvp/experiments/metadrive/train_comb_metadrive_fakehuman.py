@@ -127,7 +127,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=20_000,  # We only conduct experiment less than 50K steps
+            buffer_size=60_000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -178,7 +178,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 20000
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 10000
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -226,7 +226,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
         # logging
@@ -236,6 +236,6 @@ if __name__ == '__main__':
         save_path_human="humanbuffer",
         save_path_replay="prefbuffer",
         load_buffer=True,
-        load_path_human="/home/caihy/pvp/CNN-ROUND2/human_buffer_20000.pkl",
-        load_path_replay="/home/caihy/pvp/CNN-ROUND2/replay_buffer_20000.pkl"
+        load_path_human="/home/caihy/pvp/CNN-ROUND2L=3/human_buffer_20000.pkl",
+        load_path_replay="/home/caihy/pvp/CNN-ROUND2L=3/replay_buffer_20000.pkl"
     )
