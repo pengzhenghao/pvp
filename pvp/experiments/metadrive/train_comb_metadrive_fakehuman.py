@@ -37,10 +37,10 @@ if __name__ == '__main__':
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="rl_model_10000_steps.zip", type=str)
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/runs/OursCNNbcw1.0/OursCNNbcw1.0_5aba8f94/models/rl_model_40000_steps.zip", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
-    parser.add_argument("--future_steps_preference", default=3, type=int)
+    parser.add_argument("--future_steps_preference", default=1, type=int)
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
@@ -126,7 +126,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=60_000,  # We only conduct experiment less than 50K steps
+            buffer_size=100_100,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -213,7 +213,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=20_100,
+        total_timesteps=100_100,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -227,9 +227,9 @@ if __name__ == '__main__':
         tb_log_name=experiment_batch_name,
         log_interval=1,
         save_buffer=True,
-        save_path_human="CNN-ROUND2L=3",
-        save_path_replay="CNN-ROUND2L=3",
-        buffer_save_timesteps=20000,
+        save_path_human="CNN-ROUND2L=1MOREDATA",
+        save_path_replay="CNN-ROUND2L=1MOREDATA",
+        buffer_save_timesteps=10000,
         # load_buffer=True,
         # load_path_human="humanbuffer/human_buffer_6000.pkl",
         # load_path_replay="prefbuffer/replay_buffer_6000.pkl"
