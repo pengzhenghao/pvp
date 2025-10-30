@@ -2,6 +2,9 @@ import argparse
 import os
 import uuid
 from pathlib import Path
+import sys
+import gymnasium
+sys.modules['gym'] = gymnasium
 
 from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
 from pvp.pvp_td3 import COMB
@@ -111,7 +114,14 @@ if __name__ == '__main__':
             replay_buffer_kwargs=dict(
                 discard_reward=True,  # We run in reward-free manner!
             ),
-            policy_kwargs=dict(net_arch=[256, 256]),
+            policy_kwargs=dict(
+                    features_extractor_class=OurFeaturesExtractor,
+                    features_extractor_kwargs=dict(features_dim=147),
+                    share_features_extractor=False, 
+                    net_arch=[
+                        256,
+                    ]
+            ),
             env=None,
             learning_rate=1e-4,
             q_value_bound=1,
@@ -197,7 +207,7 @@ if __name__ == '__main__':
         from pvp.sb3.common.save_util import load_from_zip_file
 
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
-        model.set_parameters(params, exact_match=True, device=model.device)
+        model.set_parameters(params, exact_match=False, device=model.device)
 
     train_env.env.env.model = model
     # ===== Launch training =====
