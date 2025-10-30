@@ -153,7 +153,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "done": False,
             }
             positive_traj = [step_info].copy()
-            negative_traj = predicted_traj[step+1:]
+            negative_traj = predicted_traj[step:]
             self.model.imagreplay_buffer.add(positive_traj, negative_traj)
     
     def step(self, actions):
@@ -180,7 +180,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         enoise = np.random.randn(2) * expert_noise_bound
         expert_action = np.clip(expert_action, self.action_space.low, self.action_space.high)
         
-        if self.total_steps <= 25000:
+        if self.total_steps <= 1000:
             self.takeover = True
         elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
