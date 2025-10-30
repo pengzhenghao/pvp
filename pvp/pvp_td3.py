@@ -364,7 +364,7 @@ class COMB(PVPTD3):
                 self.device,
                 n_envs=self.n_envs,
                 optimize_memory_usage=self.optimize_memory_usage,
-                future_steps=kwargs.get("future_steps_preference", 1),
+                future_steps=1,
                 **self.replay_buffer_kwargs,
         )
     def _excluded_save_params(self) -> List[str]:

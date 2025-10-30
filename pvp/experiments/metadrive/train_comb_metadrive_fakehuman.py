@@ -114,7 +114,6 @@ if __name__ == '__main__':
             replay_buffer_class=HACOReplayBuffer,
             replay_buffer_kwargs=dict(
                 discard_reward=True,  # We run in reward-free manner!
-                future_steps_preference=args.future_steps_preference,
             ),
                 policy_kwargs=dict(
                     features_extractor_class=OurFeaturesExtractor,
