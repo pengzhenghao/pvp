@@ -2,6 +2,9 @@ import argparse
 import os
 import uuid
 from pathlib import Path
+import sys
+import gymnasium
+sys.modules['gym'] = gymnasium
 
 from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
 from pvp.pvp_td3 import COMB
