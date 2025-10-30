@@ -313,7 +313,7 @@ class PVPTD3(TD3):
             assert load_buffer, "warmup is useful only when load buffer"
             print("Start warmup with steps: " + str(warmup_steps))
             self.train(batch_size=self.batch_size, gradient_steps=warmup_steps)
-        policy_path = f"/home/caihy/pvp/runs/Ours_bcw=1.0_0926/Ours_bcw=1.0_0926_4f3847d4/models/rl_model_8000_steps/policy.pth"
+        policy_path = f"studentpolicy.pth"
         policy_weights = torch.load(policy_path, map_location=self.device)
         self.policy.load_state_dict(policy_weights)
         next_upd = 10000
