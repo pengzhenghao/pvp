@@ -126,7 +126,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=20_000,  # We only conduct experiment less than 50K steps
+            buffer_size=60_000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -227,9 +227,9 @@ if __name__ == '__main__':
         tb_log_name=experiment_batch_name,
         log_interval=1,
         save_buffer=True,
-        save_path_human="CNN-ROUND2",
-        save_path_replay="CNN-ROUND2",
-        buffer_save_timesteps=5000,
+        save_path_human="CNN-ROUND2L=3",
+        save_path_replay="CNN-ROUND2L=3",
+        buffer_save_timesteps=20000,
         # load_buffer=True,
         # load_path_human="humanbuffer/human_buffer_6000.pkl",
         # load_path_replay="prefbuffer/replay_buffer_6000.pkl"

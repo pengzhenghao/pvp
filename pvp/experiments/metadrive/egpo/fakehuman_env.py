@@ -201,7 +201,10 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
-        
+        if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
+            i["pref_dataset_size"] = self.model.imagreplay_buffer.pos
+        else:
+            i["pref_dataset_size"] = 0
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
