@@ -44,7 +44,7 @@ def get_expert():
     )
     model = PPO(**algo_config)
 
-    ckpt = "RLdomainB.zip"
+    ckpt = "metadrive_pvp_20m_steps.zip"
 
     print(f"Loading checkpoint from {ckpt}!")
     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
