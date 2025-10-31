@@ -21,7 +21,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=2000, type=int)
+    parser.add_argument("--save_freq", default=10000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="Drive1028DEPTHCNN", help="The project name for wandb.")
@@ -162,7 +162,7 @@ if __name__ == '__main__':
     if config["env_config"]["use_render"]:
         eval_env, eval_freq = None, -1
     else:
-        eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 1), 2000
+        eval_env, eval_freq = SubprocVecEnv([_make_eval_env]), 10000
     def _make_train_env():
         # ===== Setup the training environment =====
         train_env = FakeHumanEnv(config=config["env_config"], )
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         # Store all shared control data to the files.
         train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
         return train_env
-    train_env = SubprocVecEnv([_make_train_env] * 3)
+    train_env = SubprocVecEnv([_make_train_env] * 2)
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
@@ -213,7 +213,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=200,
+        n_eval_episodes=100,
         eval_log_path=str(trial_dir),
 
         # logging
