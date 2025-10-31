@@ -23,7 +23,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp_name", default="ppo_metadrive", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
-    parser.add_argument("--ckpt", default=None, type=str, help="Path to previous checkpoint.")
+    parser.add_argument("--ckpt", default="RLexpertCNN.zip", type=str, help="Path to previous checkpoint.")
     parser.add_argument("--debug", action="store_true", help="Set to True when debugging.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
@@ -64,13 +64,13 @@ if __name__ == '__main__':
             # controller=control_device,
             # window_size=(1600, 1100),
         ),
-        num_train_envs=4,
+        num_train_envs=24,
 
         # ===== Training =====
         algo=dict(
             policy=ActorCriticPolicy,
             n_steps=512,  # n_steps * n_envs = total_batch_size
-            n_epochs=20,
+            n_epochs=2,
             learning_rate=5e-5,
             batch_size=256,
             clip_range=0.1,
@@ -127,10 +127,10 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env = SubprocVecEnv([_make_eval_env])
+    eval_env = SubprocVecEnv([_make_eval_env] * 4)
 
     # ===== Setup the callbacks =====
-    save_freq = 1_0000  # Number of steps per model checkpoint
+    save_freq = 2048  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
@@ -159,14 +159,14 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=10_0000,
+        total_timesteps=2000_0000,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
         eval_env=eval_env,
-        eval_freq=150,
-        n_eval_episodes=50,
+        eval_freq=save_freq,
+        n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
         # logging
