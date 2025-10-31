@@ -44,7 +44,7 @@ def get_expert():
     )
     model = PPO(**algo_config)
 
-    ckpt = "RLexpertCNN.zip"
+    ckpt = "RLdomainB.zip"
 
     print(f"Loading checkpoint from {ckpt}!")
     data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
@@ -153,7 +153,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "done": False,
             }
             positive_traj = [step_info].copy()
-            negative_traj = predicted_traj[step:]
+            negative_traj = predicted_traj[step+1:]
             self.model.imagreplay_buffer.add(positive_traj, negative_traj)
     
     def step(self, actions):
@@ -180,13 +180,13 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         enoise = np.random.randn(2) * expert_noise_bound
         expert_action = np.clip(expert_action, self.action_space.low, self.action_space.high)
         
-        if self.total_steps <= 1000:
+        if self.total_steps <= 0:
             self.takeover = True
         elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
-            # predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
-            # self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
+            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
 
         if self.takeover:
             predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
@@ -194,9 +194,9 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 expert_action = self.continuous_to_discrete(expert_action)
                 expert_action = self.discrete_to_continuous(expert_action)
             actions = expert_action
-            # if (self.total_steps % update_future_freq == 0):
-            #     predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
-            #     self.render_traj(predicted_traj_exp, (0, 0, 1))
+            if (self.total_steps % update_future_freq == 0):
+                predicted_traj_exp, info2 = self.predict_agent_future_trajectory(self.last_obs, 10, action_behavior=expert_action.copy())
+                self.render_traj(predicted_traj_exp, (0, 0, 1))
             if hasattr(self, "model") and hasattr(self.model, "imagreplay_buffer"):
                 self.store_preference_pairs(predicted_traj, future_steps_preference, expert_action.copy())
             

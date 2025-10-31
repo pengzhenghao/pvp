@@ -37,10 +37,10 @@ if __name__ == '__main__':
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="/home/caihy/pvp/runs/OursCNNbcw1.0/OursCNNbcw1.0_5aba8f94/models/rl_model_40000_steps.zip", type=str)
+    parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
-    parser.add_argument("--future_steps_preference", default=1, type=int)
+    parser.add_argument("--future_steps_preference", default=3, type=int)
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
@@ -86,7 +86,7 @@ if __name__ == '__main__':
             # window_size=(1600, 1100),
 
             # FakeHumanEnv config:
-            use_render=False,
+            use_render=True,
             future_steps_predict=args.future_steps_predict,
             update_future_freq=args.update_future_freq,
             future_steps_preference=args.future_steps_preference,
@@ -227,8 +227,8 @@ if __name__ == '__main__':
         tb_log_name=experiment_batch_name,
         log_interval=1,
         save_buffer=True,
-        save_path_human="CNN-ROUND2L=1MOREDATAFEWBC",
-        save_path_replay="CNN-ROUND2L=1MOREDATAFEWBC",
+        save_path_human="start",
+        save_path_replay="start",
         buffer_save_timesteps=20000,
         # load_buffer=True,
         # load_path_human="humanbuffer/human_buffer_6000.pkl",
