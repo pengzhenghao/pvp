@@ -126,7 +126,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=50_100,  # We only conduct experiment less than 50K steps
+            buffer_size=100_100,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -213,7 +213,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=500_100,
+        total_timesteps=100_100,
         callback=callbacks,
         reset_num_timesteps=True,
 

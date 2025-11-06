@@ -350,10 +350,10 @@ class PVPTD3(TD3):
                 #     self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
             if save_buffer and self.num_timesteps > 0 and self.num_timesteps % buffer_save_timesteps == 0:
                 buffer_location_human = os.path.join(
-                    save_path_human, "human_buffer_" + ".pkl"
+                    save_path_human, "human_buffer_" + str(self.num_timesteps) + ".pkl"
                 )
                 buffer_location_replay = os.path.join(
-                    save_path_replay, "replay_buffer_" + ".pkl"
+                    save_path_replay, "replay_buffer_" + str(self.num_timesteps) + ".pkl"
                 )
                 self.logger.info("Saving..." + str(buffer_location_human))
                 self.logger.info("Saving..." + str(buffer_location_replay))
