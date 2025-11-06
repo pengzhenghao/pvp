@@ -141,7 +141,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
     def decide_takeover(self, obs, future_steps_predict):
         predicted_traj_real, info_real = self.predict_agent_future_trajectory(obs, future_steps_predict)
-        self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
+        # self.render_traj(predicted_traj_real, (info_real["failure"], 1 - info_real["failure"], 0))
         return info_real["failure"]
     
     def store_preference_pairs(self, predicted_traj, future_steps_preference, expert_action):
@@ -186,8 +186,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
             self.takeover = self.decide_takeover(self.last_obs, future_steps_predict)
-            # predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
-            # self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
+            predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())
+            self.render_traj(predicted_traj[:10], (self.takeover, 1 - self.takeover, 0))
 
         if self.takeover:
             predicted_traj, info2 = self.predict_agent_future_trajectory(self.last_obs, future_steps_predict, action_behavior=self.agent_action.copy())

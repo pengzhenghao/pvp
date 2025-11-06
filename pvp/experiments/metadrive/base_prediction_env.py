@@ -90,11 +90,55 @@ class BasePredictionEnv(SafeMetaDriveEnv):
 
             state["_navi_info"] = vehicle.navigation._navi_info.tolist() if hasattr(vehicle.navigation, "_navi_info") and vehicle.navigation._navi_info is not None else None
             state["navi_arrow_dir"] = vehicle.navigation.navi_arrow_dir if hasattr(vehicle.navigation, "navi_arrow_dir") else None
-            
+        state["episode_rewards"] = self.episode_rewards.copy()  # defaultdict 也可以转为普通 dict
+        state["episode_lengths"] = self.episode_lengths.copy()
+        state["dones"] = self.dones.copy()
+        state["episode_step"] = self.episode_step
+        import copy
+        state["vehicle"] = copy.deepcopy(self.vehicle.get_state())
+        agent_states = dict()
+        for agent_id, agent in self.agents.items():
+            if hasattr(agent, "get_global_states") and callable(agent.get_global_states):
+                agent_states[agent_id] = agent.get_global_states()
+            elif hasattr(agent, "get_state") and callable(agent.get_state):
+                agent_states[agent_id] = agent.get_state()
+            else:
+                agent_states[agent_id] = copy.deepcopy(agent)
+        manager_states = dict()
+        for agent_id, agent in self.engine.managers.items():
+            if hasattr(agent, "get_global_states") and callable(agent.get_global_states):
+                manager_states[agent_id] = agent.get_global_states()
+            elif hasattr(agent, "get_state") and callable(agent.get_state):
+                manager_states[agent_id] = agent.get_state()
+        state["manager_states"] = manager_states
+        state["agent_states"] = agent_states
+        if hasattr(self, "last_obs"):
+            state["last_obs"] = self.last_obs  
         return copy.deepcopy(state)
         
     def set_state(self, state):
         from metadrive.component.vehicle.base_vehicle import BaseVehicle
+        self.episode_rewards = state.get("episode_rewards", self.episode_rewards)
+        self.episode_lengths = state.get("episode_lengths", self.episode_lengths)
+        self.dones = state.get("dones", self.dones)
+        self.vehicle.set_state(state.get("vehicle", self.vehicle))
+        if "episode_step" in state and hasattr(self.engine, "episode_step"):
+            self.engine.episode_step = state["episode_step"]
+        # 还原 agents 状态（前提是各 agent 实现了 get_state/set_state）
+        agent_states = state.get("agent_states", dict())
+        for agent_id, agent in self.agents.items():
+            if agent_id in agent_states and hasattr(agent, "set_state") and callable(agent.set_state):
+                agent.set_state(agent_states[agent_id])
+                
+        manager_states = state.get("manager_states", dict())
+        for agent_id, agent in self.engine.managers.items():
+            if agent_id in manager_states and hasattr(agent, "set_global_states"):
+                agent.set_global_states(manager_states[agent_id])
+            elif agent_id in manager_states and hasattr(agent, "set_state") and callable(agent.set_state):
+                agent.set_state(manager_states[agent_id])
+        # 还原 self.last_obs 等变量
+        if "last_obs" in state:
+            self.last_obs = state["last_obs"]
         vehicle = self.vehicle
         super(BaseVehicle, vehicle).set_state(state)
         vehicle.set_throttle_brake(float(state["throttle_brake"]))
@@ -198,6 +242,10 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         total_reward = 0
         failure = False
         
+        self.engine.on_screen_message2 = self.engine.on_screen_message
+        self.engine.on_screen_message = None
+        self.engine.task_manager.stopp = True  # pause the normal task manager stepping
+        
         for step in range(n_steps):
             old_pos = copy.deepcopy(self.vehicle.position)
             action = action_behavior
@@ -213,53 +261,60 @@ class BasePredictionEnv(SafeMetaDriveEnv):
             if self.config["use_discrete"]:
                 action = self.discrete_to_continuous(action)
             actions = self._preprocess_actions(action) 
+            engine_info = self._step_simulator(actions)  # step the simulation
+            while self.in_stop:
+                self.engine.taskMgr.step()  # pause simulation
+            new_obs, r, tm, tc, i = super(BasePredictionEnv, self)._get_step_return(actions, engine_info=engine_info)
+            d = tm or tc
             #actions = self._preprocess_actions(action) 
-            dt = self.config["physics_world_step_size"] * self.config["decision_repeat"]
-            self.vehicle.before_step(action)
+            # dt = self.config["physics_world_step_size"] * self.config["decision_repeat"]
+            # self.vehicle.before_step(action)
                 
-            params = self.vehicle.get_dynamics_parameters()
-            mass = params["mass"]
-            max_engine_force = params["max_engine_force"]
-            max_brake_force = params["max_brake_force"]
+            # params = self.vehicle.get_dynamics_parameters()
+            # mass = params["mass"]
+            # max_engine_force = params["max_engine_force"]
+            # max_brake_force = params["max_brake_force"]
 
-            throttle = self.vehicle.throttle_brake
-            if throttle >= 0:
-                if self.vehicle.speed >= self.vehicle.max_speed_m_s:
-                    a = 0.0
-                else:
-                    engine_force = max_engine_force * throttle
-                    a = engine_force / mass * 4
-            else:
-                brake_force = max_brake_force * abs(throttle)
-                a = -brake_force / mass * 4
+            # throttle = self.vehicle.throttle_brake
+            # if throttle >= 0:
+            #     if self.vehicle.speed >= self.vehicle.max_speed_m_s:
+            #         a = 0.0
+            #     else:
+            #         engine_force = max_engine_force * throttle
+            #         a = engine_force / mass * 4
+            # else:
+            #     brake_force = max_brake_force * abs(throttle)
+            #     a = -brake_force / mass * 4
 
-            new_speed = self.vehicle.speed + a * dt
-            new_speed = max(new_speed, 0.0)
+            # new_speed = self.vehicle.speed + a * dt
+            # new_speed = max(new_speed, 0.0)
 
-            step_info = self.vehicle.after_step()
-            current_steering = self.vehicle.steering
-            max_steering_rad = math.radians(self.vehicle.config["max_steering"])
+            # step_info = self.vehicle.after_step()
+            # current_steering = self.vehicle.steering
+            # max_steering_rad = math.radians(self.vehicle.config["max_steering"])
 
-            L = self.vehicle.FRONT_WHEELBASE + self.vehicle.REAR_WHEELBASE
-            new_heading = self.vehicle.heading_theta + (new_speed / L) * math.tan(current_steering * max_steering_rad) * dt
+            # L = self.vehicle.FRONT_WHEELBASE + self.vehicle.REAR_WHEELBASE
+            # new_heading = self.vehicle.heading_theta + (new_speed / L) * math.tan(current_steering * max_steering_rad) * dt
 
-            new_x = self.vehicle.position[0] + new_speed * dt * math.cos(new_heading)
-            new_y = self.vehicle.position[1] + new_speed * dt * math.sin(new_heading)
-            new_position = [new_x, new_y]
-            new_velocity = [new_speed * math.cos(new_heading), new_speed * math.sin(new_heading)]
+            # new_x = self.vehicle.position[0] + new_speed * dt * math.cos(new_heading)
+            # new_y = self.vehicle.position[1] + new_speed * dt * math.sin(new_heading)
+            # new_position = [new_x, new_y]
+            # new_velocity = [new_speed * math.cos(new_heading), new_speed * math.sin(new_heading)]
 
-            self.set_position(new_position)
-            self.vehicle.set_heading_theta(new_heading)
-            self.vehicle.set_velocity(new_velocity)
-            self.vehicle.navigation.update_localization(self.vehicle)
-            r = self.reward_function('default_agent')[0]
-            total_reward += r
+            # self.set_position(new_position)
+            # self.vehicle.set_heading_theta(new_heading)
+            # self.vehicle.set_velocity(new_velocity)
+            # self.vehicle.navigation.update_localization(self.vehicle)
+            # r = self.reward_function('default_agent')[0]
+            # total_reward += r
             
-            if return_all_states:
-                all_states.append(self.get_state())
-            d = self.done_function('default_agent')[0]
+            # if return_all_states:
+            #     all_states.append(self.get_state())
+            # d = self.done_function('default_agent')[0]
 
-            new_obs = self.get_single_observation().observe(self.vehicle)
+            # new_obs = self.get_single_observation().observe(self.vehicle)
+            
+            
             
             traj.append({
                 "obs": obs.copy(),
@@ -285,6 +340,9 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         info["all_states"] = all_states
         info["failure"] = failure
         info["total_reward"] = total_reward
+        
+        self.engine.on_screen_message = self.engine.on_screen_message2
+        del self.engine.task_manager.stopp 
         
         return traj, info
     
