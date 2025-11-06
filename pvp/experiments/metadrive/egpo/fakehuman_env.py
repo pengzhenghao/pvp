@@ -181,7 +181,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         expert_action = np.clip(expert_action, self.action_space.low, self.action_space.high)
         
 
-        if self.total_steps <= 0:
+        if self.total_steps <= 2000:
             self.takeover = True
         elif (self.total_steps % update_future_freq == 0):
             self.render_reset()
