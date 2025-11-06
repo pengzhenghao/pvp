@@ -37,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument("--bc_loss_weight", type=float, default=1.0)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="", type=str)
+    parser.add_argument("--ckpt", default="stu.zip", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
     parser.add_argument("--future_steps_preference", default=3, type=int)
@@ -226,7 +226,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=200,
+        n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
         # logging
@@ -236,6 +236,6 @@ if __name__ == '__main__':
         save_path_human="humanbuffer",
         save_path_replay="prefbuffer",
         load_buffer=True,
-        load_path_human="/home/caihy/pvp/CNN-ROUND2L=3/human_buffer_20000.pkl",
-        load_path_replay="/home/caihy/pvp/CNN-ROUND2L=3/replay_buffer_20000.pkl"
+        load_path_human="/home/caihy/pvp/start/human_buffer_.pkl",
+        load_path_replay="/home/caihy/pvp/start/replay_buffer_.pkl"
     )
