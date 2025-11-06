@@ -201,10 +201,14 @@ class BasePredictionEnv(SafeMetaDriveEnv):
         for step in range(n_steps):
             old_pos = copy.deepcopy(self.vehicle.position)
             action = action_behavior
+            
             if action_behavior is None:
                 action = self.agent_action
                 if hasattr(self, "model"):
                      action, _ = self.model.policy.predict(obs, deterministic=True)
+            
+            # action = np.ones_like(action)
+            # action[0] = 0.0
             
             if self.config["use_discrete"]:
                 action = self.discrete_to_continuous(action)
@@ -268,7 +272,7 @@ class BasePredictionEnv(SafeMetaDriveEnv):
             })
             obs = new_obs.copy()
             
-            if d:
+            if d or (r < 0):
                 failure = (r < 0)
                 if r < 0:
                     total_reward = -100
