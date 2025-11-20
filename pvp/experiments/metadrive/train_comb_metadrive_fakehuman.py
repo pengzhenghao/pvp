@@ -155,7 +155,7 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 5000
+    eval_env, eval_freq = SubprocVecEnv([_make_eval_env] * 5), 100
     
     # ===== Setup the training environment =====
     train_env = FakeHumanEnv(config=config["env_config"], )
@@ -213,6 +213,6 @@ if __name__ == '__main__':
         save_path_human="humanbuffer",
         save_path_replay="prefbuffer",
         load_buffer=True,
-        load_path_human="/home/caihy/pvp/1119/human_buffer_30000.pkl",
-        load_path_replay="/home/caihy/pvp/1119/replay_buffer_30000.pkl"
+        load_path_human="/home/caihy/pvp/1119/human_buffer_",
+        load_path_replay="/home/caihy/pvp/1119/replay_buffer_"
     )

@@ -306,8 +306,12 @@ class PVPTD3(TD3):
             reset_num_timesteps,
             tb_log_name,
         )
+        
+        next_upd = 200
+        
         if load_buffer:
-            self.load_replay_buffer(load_path_human, load_path_replay)
+            self.load_replay_buffer(load_path_human + str(next_upd) + ".pkl", load_path_replay + str(next_upd) + ".pkl")
+            
         callback.on_training_start(locals(), globals())
         if warmup:
             assert load_buffer, "warmup is useful only when load buffer"
@@ -316,8 +320,15 @@ class PVPTD3(TD3):
         # policy_path = f"/home/caihy/pvp/rlinitB.pth"
         # policy_weights = torch.load(policy_path, map_location=self.device)
         # self.policy.load_state_dict(policy_weights)
-        next_upd = 10000
+        
         while self.num_timesteps < total_timesteps:
+            if self.num_timesteps == next_upd:
+                next_upd += 200
+                if next_upd > 30000:
+                    next_upd = 30000
+                self.load_replay_buffer(load_path_human + str(next_upd) + ".pkl", load_path_replay + str(next_upd) + ".pkl")
+                
+            
             rollout = self.collect_rollouts(
                 self.env,
                 train_freq=self.train_freq,
