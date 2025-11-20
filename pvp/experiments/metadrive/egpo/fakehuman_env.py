@@ -151,7 +151,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 "done": False,
             }
             positive_traj = [step_info].copy()
-            negative_traj = predicted_traj[step+1:]
+            negative_traj = predicted_traj[step:]
             self.model.imagreplay_buffer.add(positive_traj, negative_traj)
     
     def step(self, actions):

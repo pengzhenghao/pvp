@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--future_steps_predict", default=20, type=int)
     parser.add_argument("--update_future_freq", default=10, type=int)
-    parser.add_argument("--future_steps_preference", default=3, type=int)
+    parser.add_argument("--future_steps_preference", default=1, type=int)
     parser.add_argument("--expert_noise", default=0, type=float)
     parser.add_argument("--toy_env", action="store_true", help="Whether to use a toy environment.")
     parser.add_argument("--dpo_loss_weight", default=1.0, type=float)
@@ -102,7 +102,7 @@ if __name__ == '__main__':
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
             replay_buffer_kwargs=dict(
-                discard_reward=True,  # We run in reward-free manner!
+                discard_reward=False,  # We run in reward-free manner!
             ),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
@@ -210,9 +210,9 @@ if __name__ == '__main__':
         tb_log_name=experiment_batch_name,
         log_interval=1,
         save_buffer=True,
-        save_path_human="pref500expert1ktakeoverSR0.9L=3",
-        save_path_replay="pref500expert1ktakeoverSR0.9L=3",
-        buffer_save_timesteps=10000,
+        save_path_human="1119pref500expert1ktakeoverSR0.9L=3",
+        save_path_replay="1119pref500expert1ktakeoverSR0.9L=3",
+        buffer_save_timesteps=5000,
         # load_buffer=True,
         # load_path_human="humanbuffer/human_buffer_6000.pkl",
         # load_path_replay="prefbuffer/replay_buffer_6000.pkl"
