@@ -314,9 +314,9 @@ class PVPTD3(TD3):
             print("Start warmup with steps: " + str(warmup_steps))
             self.train(batch_size=self.batch_size, gradient_steps=warmup_steps)
 
-        policy_path = f"/home/caihy/pvp/policy.pth"
-        policy_weights = torch.load(policy_path, map_location=self.device)
-        self.policy.load_state_dict(policy_weights)
+        # policy_path = f"/home/caihy/pvp/policy.pth"
+        # policy_weights = torch.load(policy_path, map_location=self.device)
+        # self.policy.load_state_dict(policy_weights)
         next_upd = 10000
         
         while self.num_timesteps < total_timesteps:
