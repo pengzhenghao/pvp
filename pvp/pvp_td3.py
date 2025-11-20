@@ -86,6 +86,15 @@ class PVPTD3(TD3):
             )
         else:
             self.human_data_buffer = self.replay_buffer
+        self.all_data_buffer = HACOReplayBuffer(
+                self.buffer_size,
+                self.observation_space,
+                self.action_space,
+                self.device,
+                n_envs=self.n_envs,
+                optimize_memory_usage=self.optimize_memory_usage,
+                **self.replay_buffer_kwargs
+            )
 
     def train(self, gradient_steps: int, batch_size: int = 100) -> None:
         # Switch to train mode (this affects batch norm / dropout)
@@ -292,6 +301,7 @@ class PVPTD3(TD3):
         load_buffer: bool = False,
         load_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "",
         load_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "",
+        load_path_all: Union[str, pathlib.Path, io.BufferedIOBase] = "",
         warmup: bool = False,
         warmup_steps: int = 5000,
     ) -> "OffPolicyAlgorithm":
@@ -307,9 +317,11 @@ class PVPTD3(TD3):
             tb_log_name,
         )
         
-        next_upd = 200
+        next_upd = 30000
         
         if load_buffer:
+            load_path_all = load_path_all + str(next_upd) + ".pkl"
+            self.all_data_buffer = load_from_pkl(load_path_all, self.verbose)
             self.load_replay_buffer(load_path_human + str(next_upd) + ".pkl", load_path_replay + str(next_upd) + ".pkl")
             
         callback.on_training_start(locals(), globals())
@@ -326,6 +338,7 @@ class PVPTD3(TD3):
                 next_upd += 200
                 if next_upd > 30000:
                     next_upd = 30000
+                self.all_data_buffer = load_from_pkl(load_path_all, self.verbose)
                 self.load_replay_buffer(load_path_human + str(next_upd) + ".pkl", load_path_replay + str(next_upd) + ".pkl")
                 
             
@@ -418,58 +431,66 @@ class COMB(PVPTD3):
         self.policy.set_training_mode(True)
 
         # Update learning rate according to lr schedule
-        self._update_learning_rate([self.actor.optimizer])
+        self._update_learning_rate([self.actor.optimizer, self.critic.optimizer])
 
-        stat_recorder = defaultdict(list)
+        actor_losses, critic_losses = [], []
 
-        for step in range(gradient_steps):
+        for _ in range(gradient_steps):
+
             self._n_updates += 1
             # Sample replay buffer
-            if self.human_data_buffer.pos == 0:
-                break
-            replay_data = self.human_data_buffer.sample(int(batch_size * 10), env=self._vec_normalize_env)
-            preference_data = self.imagreplay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
-            
-            new_action = self.actor(replay_data.observations)
-            bc_loss = (replay_data.interventions * F.mse_loss(replay_data.actions_behavior, new_action, reduction="none")).sum() / (replay_data.interventions.flatten().sum() + 1e-5)
-            
-            stat_recorder["new_action_steering"] = new_action[:, 0].mean().item()
-            stat_recorder["new_action_abs_steering"] = th.abs(new_action[:, 0]).mean().item()
-            stat_recorder["new_action_accerler"] = new_action[:, 1].mean().item()
+            replay_data = self.all_data_buffer.sample(batch_size, env=self._vec_normalize_env)
 
-            pos_obs, pos_action = preference_data.pos_observations.squeeze(), preference_data.pos_actions.squeeze()
-            neg_obs, neg_action = preference_data.neg_observations.squeeze(), preference_data.neg_actions.squeeze()
-            
-            def get_log_prob(obs, target_action):
-                mean = self.actor(obs)
-                log_prob = -((mean - target_action) ** 2).sum(dim = -1)
-                return log_prob
-            
-            alpha, bias = self.extra_config["alpha"], self.extra_config["bias"]
-            log_prob_pos = get_log_prob(pos_obs, pos_action)
-            log_prob_neg = get_log_prob(neg_obs, neg_action)
-            adv_pos, adv_neg = alpha * log_prob_pos, alpha * log_prob_neg
-            label = torch.ones_like(adv_pos)
-            dpo_loss, accuracy = biased_bce_with_logits(adv_neg, adv_pos, label.float(), bias=bias)
-            
-            bc_loss_weight, dpo_loss_weight = self.extra_config["bc_loss_weight"], self.extra_config["dpo_loss_weight"]
-            if self.extra_config["only_bc_loss"]:
-                bc_loss_weight, dpo_loss_weight = 1.0, 0.0
-            
-            loss = bc_loss_weight * bc_loss + dpo_loss_weight * dpo_loss
-            
-            self.actor.optimizer.zero_grad()
-            loss.backward()
-            self.actor.optimizer.step()
-            
-            stat_recorder["bc_loss"].append(bc_loss.item() if bc_loss is not None else float('nan'))
-            stat_recorder["cpl_loss"].append(dpo_loss.item() if dpo_loss is not None else float('nan'))
-            stat_recorder["cpl_accuracy"].append(accuracy.item() if accuracy is not None else float('nan'))
-            stat_recorder["loss"].append(loss.item() if loss is not None else float('nan'))
+            with th.no_grad():
+                # Select action according to policy and add clipped noise
+                noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
+                noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
+                next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
 
-        self._n_updates += gradient_steps
-        self.logger.record("train/predicted_steps", self.imagreplay_buffer.pos)
-        self.logger.record("train/human_involved_steps", self.human_data_buffer.pos)
+                # Compute the next Q-values: min over all critics targets
+                next_q_values = th.cat(self.critic_target(replay_data.next_observations, next_actions), dim=1)
+                next_q_values, _ = th.min(next_q_values, dim=1, keepdim=True)
+                target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
+
+            # Get current Q-values estimates for each critic network
+            current_q_values = self.critic(replay_data.observations, replay_data.actions_behavior)
+
+            # Compute critic loss
+            critic_loss = sum([F.mse_loss(current_q, target_q_values) for current_q in current_q_values])
+            critic_losses.append(critic_loss.item())
+
+            # Optimize the critics
+            self.critic.optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic.optimizer.step()
+
+            # Delayed policy updates
+            if self._n_updates % self.policy_delay == 0:
+                # Compute actor loss
+                
+                norm_coeff = th.abs(self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations))).mean().detach()
+                
+                actor_loss = -self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations)).mean()  / norm_coeff / 10
+                
+                actor_losses.append(actor_loss.item())
+                replay_data_human = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+                new_action = self.actor(replay_data_human.observations)
+                bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean()
+                
+                actor_loss += bc_loss * 1
+                
+                # Optimize the actor
+                self.actor.optimizer.zero_grad()
+                actor_loss.backward()
+                self.actor.optimizer.step()
+
+                polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
+                polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)
+
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        for key, values in stat_recorder.items():
-            self.logger.record("train/{}".format(key), np.mean(values))
+        if len(actor_losses) > 0:
+            self.logger.record("train/actor_loss", np.mean(actor_losses))
+            self.logger.record("train/bc_loss", bc_loss.item())
+            self.logger.record("train/q_value", self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations)).mean().item())
+            self.logger.record("train/norm_coeff", norm_coeff.item())
+        self.logger.record("train/critic_loss", np.mean(critic_losses))

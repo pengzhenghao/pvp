@@ -196,7 +196,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=100_000,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -214,5 +214,6 @@ if __name__ == '__main__':
         save_path_replay="prefbuffer",
         load_buffer=True,
         load_path_human="/home/caihy/pvp/1119/human_buffer_",
-        load_path_replay="/home/caihy/pvp/1119/replay_buffer_"
+        load_path_replay="/home/caihy/pvp/1119/replay_buffer_",
+        load_path_all="/home/caihy/pvp/1119/all_buffer_"
     )
