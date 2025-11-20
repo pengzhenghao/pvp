@@ -213,6 +213,6 @@ if __name__ == '__main__':
         save_path_human="humanbuffer",
         save_path_replay="prefbuffer",
         load_buffer=True,
-        load_path_human="/home/caihy/pvp/1119pref500expert1ktakeoverSR0.9L=3/human_buffer_40000.pkl",
-        load_path_replay="/home/caihy/pvp/1119pref500expert1ktakeoverSR0.9L=3/replay_buffer_40000.pkl"
+        load_path_human="/home/caihy/pvp/humanbufferoffbc8k/human_buffer_50000.pkl",
+        load_path_replay="/home/caihy/pvp/prefbufferoffbc8k/replay_buffer_50000.pkl"
     )
