@@ -109,7 +109,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=50_000,  # We only conduct experiment less than 50K steps
+            buffer_size=30_000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -213,6 +213,6 @@ if __name__ == '__main__':
         save_path_human="humanbuffer",
         save_path_replay="prefbuffer",
         load_buffer=True,
-        load_path_human="/home/caihy/pvp/humanbufferoffbc8k/human_buffer_50000.pkl",
-        load_path_replay="/home/caihy/pvp/prefbufferoffbc8k/replay_buffer_50000.pkl"
+        load_path_human="/home/caihy/pvp/1119/human_buffer_30000.pkl",
+        load_path_replay="/home/caihy/pvp/1119/replay_buffer_30000.pkl"
     )
