@@ -268,7 +268,7 @@ class BasePredictionEnv(SafeMetaDriveEnv):
             })
             obs = new_obs.copy()
             
-            if d or (r < 0):
+            if d:
                 failure = (r < 0)
                 if r < 0:
                     total_reward = -100
