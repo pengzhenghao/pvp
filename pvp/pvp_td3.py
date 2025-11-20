@@ -427,11 +427,11 @@ class COMB(PVPTD3):
             # Sample replay buffer
             if self.human_data_buffer.pos == 0:
                 break
-            replay_data = self.human_data_buffer.sample(int(batch_size * 10), env=self._vec_normalize_env)
+            replay_data = self.human_data_buffer.sample(int(batch_size), env=self._vec_normalize_env)
             preference_data = self.imagreplay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
             
             new_action = self.actor(replay_data.observations)
-            bc_loss = (replay_data.interventions * F.mse_loss(replay_data.actions_behavior, new_action, reduction="none")).sum() / (replay_data.interventions.flatten().sum() + 1e-5)
+            bc_loss = F.mse_loss(replay_data.actions_behavior, new_action, reduction="none").mean()
             
             stat_recorder["new_action_steering"] = new_action[:, 0].mean().item()
             stat_recorder["new_action_abs_steering"] = th.abs(new_action[:, 0]).mean().item()
