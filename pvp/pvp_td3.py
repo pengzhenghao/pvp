@@ -317,7 +317,7 @@ class PVPTD3(TD3):
             tb_log_name,
         )
         
-        next_upd = 30000
+        next_upd = 200
         
         if load_buffer:
             load_path_all = load_path_all + str(next_upd) + ".pkl"
