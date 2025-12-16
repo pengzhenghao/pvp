@@ -172,16 +172,17 @@ class TD3(OffPolicyAlgorithm):
             self.critic.optimizer.step()
 
             # Delayed policy updates
-            if self._n_updates % self.policy_delay == 0:
-                # Compute actor loss
-                actor_loss = -self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations
-                                                                                          )).mean()
-                actor_losses.append(actor_loss.item())
+            if (self._n_updates % self.policy_delay == 0):
+                if self.num_timesteps > 20000:
+                    # Compute actor loss
+                    actor_loss = -self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations
+                                                                                            )).mean()
+                    actor_losses.append(actor_loss.item())
 
-                # Optimize the actor
-                self.actor.optimizer.zero_grad()
-                actor_loss.backward()
-                self.actor.optimizer.step()
+                    # Optimize the actor
+                    self.actor.optimizer.zero_grad()
+                    actor_loss.backward()
+                    self.actor.optimizer.step()
 
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)

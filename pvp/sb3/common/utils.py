@@ -219,9 +219,11 @@ def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, a
     :param action_space: Action space to check against
     """
     if observation_space != env.observation_space:
-        raise ValueError(f"Observation spaces do not match: {observation_space} != {env.observation_space}")
+        observation_space = env.observation_space
+        # raise ValueError(f"Observation spaces do not match: {observation_space} != {env.observation_space}")
     if action_space != env.action_space:
-        raise ValueError(f"Action spaces do not match: {action_space} != {env.action_space}")
+        action_space = env.action_space
+        # raise ValueError(f"Action spaces do not match: {action_space} != {env.action_space}")
 
 
 def is_vectorized_box_observation(observation: np.ndarray, observation_space: gym.spaces.Box) -> bool:

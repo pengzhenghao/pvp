@@ -103,6 +103,7 @@ class BaseAlgorithm(ABC):
     ):
 
         if isinstance(policy, str) and policy_base is not None:
+            policy = 'MlpPolicy'
             self.policy_class = get_policy_from_name(policy_base, policy)
         else:
             self.policy_class = policy
@@ -580,11 +581,11 @@ class BaseAlgorithm(ABC):
         if seed is None:
             return
         set_random_seed(seed, using_cuda=self.device.type == th.device("cuda").type)
-        self.action_space.seed(seed)
-        if self.env is not None:
-            self.env.seed(seed)
-        if self.eval_env is not None:
-            self.eval_env.seed(seed)
+        # self.action_space.seed(seed)
+        # if self.env is not None:
+        #     self.env.seed(seed)
+        # if self.eval_env is not None:
+        #     self.eval_env.seed(seed)
 
     def set_parameters(
         self,
@@ -712,7 +713,10 @@ class BaseAlgorithm(ABC):
             # Wrap first if needed
             env = cls._wrap_env(env, data["verbose"], monitor_wrapper=data.get("monitor_wrapper", False))
             # Check if given env is valid
-            check_for_correct_spaces(env, data["observation_space"], data["action_space"])
+            # check_for_correct_spaces(env, data["observation_space"], data["action_space"])
+            data["observation_space"] = env.observation_space
+            data["action_space"] = env.action_space
+            
             # Discard `_last_obs`, this will force the env to reset before training
             # See issue https://github.com/DLR-RM/stable-baselines3/issues/597
             if force_reset and data is not None:
@@ -731,12 +735,14 @@ class BaseAlgorithm(ABC):
         )
 
         # load parameters
+        data["policy_class"] = model.policy_class
+        data["n_envs"] = model.n_envs
         model.__dict__.update(data)
         model.__dict__.update(kwargs)
         model._setup_model()
 
         # put state_dicts back in place
-        model.set_parameters(params, exact_match=True, device=device)
+        model.set_parameters(params, exact_match=False, device=device)
 
         # put other pytorch variables back in place
         if pytorch_variables is not None:

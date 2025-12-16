@@ -22,8 +22,9 @@ if __name__ == '__main__':
     parser.add_argument("--exp_name", default="td3_metadrive", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="TD3", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/best_model_drive.zip", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -58,11 +59,11 @@ if __name__ == '__main__':
             policy=TD3Policy,
             replay_buffer_class=ReplayBuffer,  ###
             replay_buffer_kwargs=dict(),
-            policy_kwargs=dict(net_arch=[400, 300]),
+            policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
             learning_rate=1e-4,
             optimize_memory_usage=True,
-            learning_starts=200,
+            learning_starts=10000,
             batch_size=1024,
             tau=0.005,
             gamma=0.99,
@@ -71,7 +72,7 @@ if __name__ == '__main__':
             action_noise=None,
             # action_noise=NormalActionNoise(mean=np.zeros([2,]), sigma=0.15 * np.ones([2,])),
             # target_policy_noise=0,
-            # policy_delay=1,
+            policy_delay=2,
             tensorboard_log=trial_dir,
             create_eval_env=False,
             verbose=2,
@@ -88,29 +89,18 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    def make_train_env():
-        env_config = dict(
-            use_render=False,  # Open the interface
-            manual_control=False,  # Allow receiving control signal from external device
-            # controller=control_device,
-            window_size=(1600, 1100),
-        )
 
-        train_env = HumanInTheLoopEnv(config=env_config)
-        return train_env
-
-    train_env = make_train_env()
-    train_env = Monitor(env=train_env, filename=str(trial_dir))
-    config["algo"]["env"] = train_env
-    assert config["algo"]["env"] is not None
 
     # ===== Also build the eval env =====
     def _make_eval_env():
         eval_env_config = dict(
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
-            start_seed=1000,
+            start_seed=0,
             horizon=1500,
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT"
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
@@ -119,6 +109,26 @@ if __name__ == '__main__':
         return eval_env
 
     eval_env = SubprocVecEnv([_make_eval_env])
+    
+    def make_train_env():
+        env_config = dict(
+            use_render=False,  # Open the interface
+            manual_control=False,  # Allow receiving control signal from external device
+            # controller=control_device,
+            window_size=(1600, 1100),
+            num_scenarios=1,
+            traffic_density=0.0,
+            map="COT"
+        )
+
+        train_env = HumanInTheLoopEnv(config=env_config)
+        train_env = Monitor(env=train_env, filename=str(trial_dir))
+        return train_env
+
+    train_env = SubprocVecEnv([make_train_env])
+    train_env.num_envs = 1
+    config["algo"]["env"] = train_env
+    assert config["algo"]["env"] is not None
 
     # ===== Setup the callbacks =====
     callbacks = [
@@ -144,22 +154,22 @@ if __name__ == '__main__':
     #     config["algo"]["train_freq"] = (1, "step")
 
     # ===== Setup the training algorithm =====
-    # if args.ckpt:
-    #     model = TD3.load(args.ckpt, **config["algo"])
-    # else:
-    model = TD3(**config["algo"])
+    if args.ckpt:
+        model = TD3.load(args.ckpt, **config["algo"])
+    else:
+        model = TD3(**config["algo"])
 
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=10_0000,
+        total_timesteps=1000_0000,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
         eval_env=eval_env,
         # eval_freq=5000,
-        eval_freq=150,
+        eval_freq=10000,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
