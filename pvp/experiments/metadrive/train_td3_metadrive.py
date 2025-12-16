@@ -92,21 +92,20 @@ if __name__ == '__main__':
 
 
     # ===== Also build the eval env =====
+    # ===== Also build the eval env =====
     def _make_eval_env():
         eval_env_config = dict(
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
-            start_seed=0,
+            start_seed=1000,
             horizon=1500,
-            num_scenarios=1,
-            traffic_density=0.0,
-            map="COT"
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
         eval_env = HumanInTheLoopEnv(config=eval_env_config)
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
+
 
     eval_env = SubprocVecEnv([_make_eval_env])
     
@@ -116,9 +115,6 @@ if __name__ == '__main__':
             manual_control=False,  # Allow receiving control signal from external device
             # controller=control_device,
             window_size=(1600, 1100),
-            num_scenarios=1,
-            traffic_density=0.0,
-            map="COT"
         )
 
         train_env = HumanInTheLoopEnv(config=env_config)
