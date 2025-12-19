@@ -162,17 +162,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             assert expert_action.shape[0] == action_prob.shape[0] == 1
             action_prob = action_prob[0]
             expert_action = expert_action[0]
-            if action_prob < 1 - self.config['free_level']:
-
-                # print(f"Action probability: {action_prob}, agent action: {actions}, expert action: {expert_action},")
-
-                if self.config["use_discrete"]:
-                    expert_action = self.continuous_to_discrete(expert_action)
-                    expert_action = self.discrete_to_continuous(expert_action)
-
-                actions = expert_action
-
-                self.takeover = True
+            if self.total_steps > 50000:
+                self.takeover = False
             else:
                 self.takeover = False
             # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")

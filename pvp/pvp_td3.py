@@ -256,8 +256,8 @@ class PVPTD3(TD3):
         reset_num_timesteps: bool = True,
         save_timesteps: int = 2000,
         buffer_save_timesteps: int = 2000,
-        save_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "",
-        save_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "",
+        save_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "1218largehumanpvptd3",
+        save_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "1218largereplaypvptd3",
         save_buffer: bool = True,
         load_buffer: bool = False,
         load_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "",
@@ -297,13 +297,13 @@ class PVPTD3(TD3):
 
             if rollout.continue_training is False:
                 break
-            if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts:
-                # If no `gradient_steps` is specified,
-                # do as many gradients steps as steps performed during the rollout
-                gradient_steps = self.gradient_steps if self.gradient_steps >= 0 else rollout.episode_timesteps
-                # Special case when the user passes `gradient_steps=0`
-                if gradient_steps > 0:
-                    self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
+            # if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts:
+            #     # If no `gradient_steps` is specified,
+            #     # do as many gradients steps as steps performed during the rollout
+            #     gradient_steps = self.gradient_steps if self.gradient_steps >= 0 else rollout.episode_timesteps
+            #     # Special case when the user passes `gradient_steps=0`
+            #     if gradient_steps > 0:
+            #         self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
             if save_buffer and self.num_timesteps > 0 and self.num_timesteps % buffer_save_timesteps == 0:
                 buffer_location_human = os.path.join(
                     save_path_human, "human_buffer_" + str(self.num_timesteps) + ".pkl"

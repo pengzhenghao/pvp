@@ -31,6 +31,7 @@ if __name__ == '__main__':
         type=str,
         help="The control device, selected from [wheel, gamepad, keyboard]."
     )
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/best_model_drive.zip", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -56,8 +57,8 @@ if __name__ == '__main__':
 
         # Environment config
         env_config=dict(
-            use_render=True,  # Open the interface
-            manual_control=True,  # Allow receiving control signal from external device
+            use_render=False,  # Open the interface
+            manual_control=False,  # Allow receiving control signal from external device
             controller=control_device,
             window_size=(1600, 1100),
         ),
@@ -67,16 +68,14 @@ if __name__ == '__main__':
             use_balance_sample=True,
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
-            replay_buffer_kwargs=dict(
-                discard_reward=True,  # We run in reward-free manner!
-            ),
+            replay_buffer_kwargs=dict(),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
             buffer_size=50_000,  # We only conduct experiment less than 50K steps
-            learning_starts=100,  # The number of steps before
+            learning_starts=10000,  # The number of steps before
             batch_size=128,  # Reduce the batch size for real-time copilot
             tau=0.005,
             gamma=0.99,
@@ -113,7 +112,7 @@ if __name__ == '__main__':
     assert config["algo"]["env"] is not None
 
     # ===== Setup the callbacks =====
-    save_freq = 500  # Number of steps per model checkpoint
+    save_freq = 50000000  # Number of steps per model checkpoint
     callbacks = [
         CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=save_freq, save_path=str(trial_dir / "models"))
     ]
@@ -131,11 +130,17 @@ if __name__ == '__main__':
 
     # ===== Setup the training algorithm =====
     model = PVPTD3(**config["algo"])
+    if args.ckpt:
+            ckpt = Path(args.ckpt)
+            print(f"Loading checkpoint from {ckpt}!")
+            from pvp.sb3.common.save_util import load_from_zip_file
+            data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
+            model.set_parameters(params, exact_match=False, device=model.device)
 
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=10000_100,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -148,6 +153,7 @@ if __name__ == '__main__':
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=False,
+        save_buffer=True,
         load_buffer=False,
+        buffer_save_timesteps=10000_000,
     )

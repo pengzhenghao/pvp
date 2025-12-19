@@ -20,12 +20,12 @@ if __name__ == '__main__':
         "--exp_name", default="pvp_metadrive_fakehuman", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--batch_size", default=1024, type=int)
-    parser.add_argument("--learning_starts", default=10, type=int)
-    parser.add_argument("--save_freq", default=500, type=int)
+    parser.add_argument("--learning_starts", default=50000, type=int)
+    parser.add_argument("--save_freq", default=50000000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="", help="The project name for wandb.")
-    parser.add_argument("--wandb_team", type=str, default="", help="The team name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="td3", help="The project name for wandb.")
+    parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/zhenghao/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument("--with_agent_proxy_value_loss", default="True", type=str)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="", type=str)
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/best_model_drive.zip", type=str)
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -87,15 +87,13 @@ if __name__ == '__main__':
             agent_data_ratio=1.0,
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
-            replay_buffer_kwargs=dict(
-                discard_reward=True,  # We run in reward-free manner!
-            ),
+            replay_buffer_kwargs=dict(),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=50_000,  # We only conduct experiment less than 50K steps
+            buffer_size=10000_000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -125,22 +123,6 @@ if __name__ == '__main__':
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
-    # ===== Also build the eval env =====
-    def _make_eval_env():
-        eval_env_config = dict(
-            use_render=False,  # Open the interface
-            manual_control=False,  # Allow receiving control signal from external device
-            start_seed=1000,
-            horizon=1500,
-        )
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
-        from pvp.sb3.common.monitor import Monitor
-        eval_env = HumanInTheLoopEnv(config=eval_env_config)
-        eval_env = Monitor(env=eval_env, filename=str(trial_dir))
-        return eval_env
-
-    eval_env = SubprocVecEnv([_make_eval_env])
-
     # ===== Setup the callbacks =====
     save_freq = args.save_freq  # Number of steps per model checkpoint
     callbacks = [
@@ -166,24 +148,25 @@ if __name__ == '__main__':
         from pvp.sb3.common.save_util import load_from_zip_file
 
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
-        model.set_parameters(params, exact_match=True, device=model.device)
+        model.set_parameters(params, exact_match=False, device=model.device)
 
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=50_000,
+        total_timesteps=10000_100,
         callback=callbacks,
         reset_num_timesteps=True,
 
         # eval
-        eval_env=eval_env,
-        eval_freq=150,
+        eval_env=None,
+        eval_freq=-1,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
         # logging
         tb_log_name=experiment_batch_name,
         log_interval=1,
-        save_buffer=False,
+        save_buffer=True,
         load_buffer=False,
+        buffer_save_timesteps=10000_000,
     )
