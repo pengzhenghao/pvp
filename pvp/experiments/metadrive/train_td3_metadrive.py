@@ -129,7 +129,7 @@ if __name__ == '__main__':
 
     # ===== Setup the callbacks =====
     callbacks = [
-        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=50000, save_path=str(trial_dir / "models"))
+        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=10000, save_path=str(trial_dir / "models"))
     ]
     if use_wandb:
         callbacks.append(
@@ -166,7 +166,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         # eval_freq=5000,
-        eval_freq=50000,
+        eval_freq=10000,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
