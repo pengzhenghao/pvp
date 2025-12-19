@@ -67,7 +67,7 @@ if __name__ == '__main__':
             batch_size=1024,
             tau=0.005,
             gamma=0.99,
-            train_freq=1,
+            train_freq=5,
             gradient_steps=1,
             action_noise=None,
             # action_noise=NormalActionNoise(mean=np.zeros([2,]), sigma=0.15 * np.ones([2,])),
@@ -78,6 +78,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
+            buffer_size=1_000_000,
         ),
 
         # Experiment log
@@ -107,7 +108,7 @@ if __name__ == '__main__':
         return eval_env
 
 
-    eval_env = SubprocVecEnv([_make_eval_env])
+    eval_env = SubprocVecEnv([_make_eval_env] * 20)
     
     def make_train_env():
         env_config = dict(
@@ -128,7 +129,7 @@ if __name__ == '__main__':
 
     # ===== Setup the callbacks =====
     callbacks = [
-        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=1_0000, save_path=str(trial_dir / "models"))
+        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=50000, save_path=str(trial_dir / "models"))
     ]
     if use_wandb:
         callbacks.append(
@@ -165,7 +166,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         # eval_freq=5000,
-        eval_freq=10000,
+        eval_freq=50000,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 
