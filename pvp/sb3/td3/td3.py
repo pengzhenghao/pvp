@@ -175,10 +175,17 @@ class TD3(OffPolicyAlgorithm):
             if (self._n_updates % self.policy_delay == 0):
                 if self.num_timesteps > 20000:
                     # Compute actor loss
+                    norm_coeff = th.abs(self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations))).mean().detach()
+                    
                     actor_loss = -self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations
-                                                                                            )).mean()
+                                                                                            )).mean()  / norm_coeff
                     actor_losses.append(actor_loss.item())
-
+                    
+                    replay_data_human = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
+                    new_action = self.actor(replay_data_human.observations)
+                    bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean()
+                    actor_loss += bc_loss * 1
+                    
                     # Optimize the actor
                     self.actor.optimizer.zero_grad()
                     actor_loss.backward()
@@ -191,7 +198,9 @@ class TD3(OffPolicyAlgorithm):
         self.logger.record("train/current_q_values_average_values", th.mean(th.abs(q1) + th.abs(q2)).item() * 0.5, exclude="tensorboard")
         if len(actor_losses) > 0:
             self.logger.record("train/actor_loss", np.mean(actor_losses))
+            self.logger.record("train/bc_loss", bc_loss.item())
         self.logger.record("train/critic_loss", np.mean(critic_losses))
+        
         import wandb
         wandb.log(self.logger.name_to_value, step=self.num_timesteps)
 
