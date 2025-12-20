@@ -160,6 +160,7 @@ class TD3(OffPolicyAlgorithm):
 
             # Get current Q-values estimates for each critic network
             current_q_values = self.critic(replay_data.observations, replay_data.actions_behavior)
+            q1, q2 = current_q_values
 
             # Compute critic loss
             critic_loss = sum([F.mse_loss(current_q, target_q_values) for current_q in current_q_values])
@@ -187,9 +188,12 @@ class TD3(OffPolicyAlgorithm):
                 polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)
 
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record("train/current_q_values_average_values", th.mean(th.abs(q1) + th.abs(q2)).item() * 0.5, exclude="tensorboard")
         if len(actor_losses) > 0:
             self.logger.record("train/actor_loss", np.mean(actor_losses))
         self.logger.record("train/critic_loss", np.mean(critic_losses))
+        import wandb
+        wandb.log(self.logger.name_to_value, step=self.num_timesteps)
 
     def learn(
         self,
