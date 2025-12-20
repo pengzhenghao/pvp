@@ -147,10 +147,9 @@ class TD3(OffPolicyAlgorithm):
             self._n_updates += 1
             # Sample replay buffer
             replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
-
             with th.no_grad():
                 # Select action according to policy and add clipped noise
-                noise = replay_data.actions.clone().data.normal_(0, self.target_policy_noise)
+                noise = replay_data.actions_behavior.clone().data.normal_(0, self.target_policy_noise)
                 noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
                 next_actions = (self.actor_target(replay_data.next_observations) + noise).clamp(-1, 1)
 
@@ -160,7 +159,7 @@ class TD3(OffPolicyAlgorithm):
                 target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
 
             # Get current Q-values estimates for each critic network
-            current_q_values = self.critic(replay_data.observations, replay_data.actions)
+            current_q_values = self.critic(replay_data.observations, replay_data.actions_behavior)
 
             # Compute critic loss
             critic_loss = sum([F.mse_loss(current_q, target_q_values) for current_q in current_q_values])
@@ -204,7 +203,8 @@ class TD3(OffPolicyAlgorithm):
         eval_log_path: Optional[str] = None,
         reset_num_timesteps: bool = True,
     ) -> OffPolicyAlgorithm:
-
+        from pvp.sb3.common.save_util import load_from_pkl, save_to_pkl
+        self.replay_buffer = load_from_pkl("/home/caihy/pvp/1218largehuman/human_buffer_10000000.pkl", self.verbose)
         return super(TD3, self).learn(
             total_timesteps=total_timesteps,
             callback=callback,

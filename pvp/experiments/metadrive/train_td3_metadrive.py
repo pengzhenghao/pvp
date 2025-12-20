@@ -9,6 +9,7 @@ from pvp.sb3.common.vec_env import SubprocVecEnv
 from pvp.sb3.common.wandb_callback import WandbCallback
 from pvp.sb3.td3.policies import TD3Policy
 from pvp.sb3.td3.td3 import TD3, ReplayBuffer
+from pvp.sb3.haco import HACOReplayBuffer
 from pvp.utils.utils import get_time_str
 
 
@@ -22,9 +23,9 @@ if __name__ == '__main__':
     parser.add_argument("--exp_name", default="td3_metadrive", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="TD3", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="TD3Offline", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--ckpt", default="/home/caihy/pvp/best_model_drive.zip", type=str, help="Path to previous checkpoint.")
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/runs/trainfreq5/trainfreq5_2025-12-19_00-13-10_faec4da3/models/rl_model_6370000_steps.zip", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -57,7 +58,7 @@ if __name__ == '__main__':
         # Algorithm config
         algo=dict(
             policy=TD3Policy,
-            replay_buffer_class=ReplayBuffer,  ###
+            replay_buffer_class=HACOReplayBuffer,  ###
             replay_buffer_kwargs=dict(),
             policy_kwargs=dict(net_arch=[256, 256]),
             env=None,
