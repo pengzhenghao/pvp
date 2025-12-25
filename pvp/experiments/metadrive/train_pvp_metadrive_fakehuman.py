@@ -2,6 +2,9 @@ import argparse
 import os
 import uuid
 from pathlib import Path
+import sys
+import gymnasium
+sys.modules['gym'] = gymnasium
 
 from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
 from pvp.pvp_td3 import PVPTD3
@@ -13,6 +16,7 @@ from pvp.sb3.haco import HACOReplayBuffer
 from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
+from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -33,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument("--with_agent_proxy_value_loss", default="True", type=str)
     parser.add_argument("--adaptive_batch_size", default="False", type=str)
     parser.add_argument("--only_bc_loss", default="False", type=str)
-    parser.add_argument("--ckpt", default="/home/caihy/pvp/best_model_drive.zip", type=str)
+    parser.add_argument("--ckpt", default="", type=str)
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -57,7 +61,8 @@ if __name__ == '__main__':
     print(f"We start logging training data into {trial_dir}")
 
     free_level = args.free_level
-
+    from metadrive.component.sensors.depth_camera import DepthCamera
+    sensor_size = (42, 42)
     # ===== Setup the config =====
     config = dict(
 
@@ -72,6 +77,10 @@ if __name__ == '__main__':
 
             # FakeHumanEnv config:
             free_level=free_level,
+            image_observation=True, 
+            vehicle_config=dict(image_source="depth_camera"),
+            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            stack_size=3,
         ),
 
         # Algorithm config
@@ -88,12 +97,20 @@ if __name__ == '__main__':
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
             replay_buffer_kwargs=dict(),
-            policy_kwargs=dict(net_arch=[256, 256]),
+            policy_kwargs=dict(            
+                    policy_kwargs=dict(
+                    features_extractor_class=OurFeaturesExtractor,
+                    features_extractor_kwargs=dict(features_dim=147),
+                    share_features_extractor=False, 
+                    net_arch=[
+                        256,
+                    ]
+            ),),
             env=None,
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=10000_000,  # We only conduct experiment less than 50K steps
+            buffer_size=4000000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -153,7 +170,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=10000_100,
+        total_timesteps=4000100,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -168,5 +185,7 @@ if __name__ == '__main__':
         log_interval=1,
         save_buffer=True,
         load_buffer=False,
-        buffer_save_timesteps=10000_000,
+        buffer_save_timesteps=4000000,
+        save_path_human= "/bigdata/caihy/1225cnnhumanpvptd3",
+        save_path_replay= "/bigdata/caihy/1225cnnreplaypvptd3",
     )

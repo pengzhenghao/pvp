@@ -205,8 +205,7 @@ class PVPTD3(TD3):
         dones: np.ndarray,
         infos: List[Dict[str, Any]],
     ) -> None:
-        if infos[0]["takeover"] or infos[0]["takeover_start"]:
-            replay_buffer = self.human_data_buffer
+        replay_buffer = self.human_data_buffer
         super(PVPTD3, self)._store_transition(replay_buffer, buffer_action, new_obs, reward, dones, infos)
 
     def save_replay_buffer(
@@ -214,7 +213,7 @@ class PVPTD3(TD3):
                                                                                           io.BufferedIOBase]
     ) -> None:
         save_to_pkl(path_human, self.human_data_buffer, self.verbose)
-        super(PVPTD3, self).save_replay_buffer(path_replay)
+        # super(PVPTD3, self).save_replay_buffer(path_replay)
 
     def load_replay_buffer(
         self,
@@ -256,8 +255,8 @@ class PVPTD3(TD3):
         reset_num_timesteps: bool = True,
         save_timesteps: int = 2000,
         buffer_save_timesteps: int = 2000,
-        save_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "1218largehumanpvptd3",
-        save_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "1218largereplaypvptd3",
+        save_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "1225cnnhumanpvptd3",
+        save_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "1225cnnreplaypvptd3",
         save_buffer: bool = True,
         load_buffer: bool = False,
         load_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "",

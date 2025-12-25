@@ -86,6 +86,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
     def __init__(self, config):
         super(FakeHumanEnv, self).__init__(config)
+        from metadrive.obs.state_obs import LidarStateObservation
+        self.lidar = LidarStateObservation(self.config)
         if self.config["use_discrete"]:
             self._num_bins = 13
             self._grid = np.linspace(-1, 1, self._num_bins)
@@ -149,31 +151,19 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             if self.expert is None:
                 global _expert
                 self.expert = _expert
-            last_obs, _ = self.expert.obs_to_tensor(self.last_obs)
-            distribution = self.expert.get_distribution(last_obs)
-            log_prob = distribution.log_prob(torch.from_numpy(actions).to(last_obs.device))
-            action_prob = log_prob.exp().detach().cpu().numpy()
-
-            if self.config["expert_deterministic"]:
-                expert_action = distribution.mode().detach().cpu().numpy()
-            else:
-                expert_action = distribution.sample().detach().cpu().numpy()
-
-            assert expert_action.shape[0] == action_prob.shape[0] == 1
-            action_prob = action_prob[0]
-            expert_action = expert_action[0]
+            
+            lidar_o = self.lidar.observe(self.agent)
+            expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
             if self.total_steps > 50000:
-                self.takeover = False
+                self.takeover = True
+                actions = expert_action
             else:
                 self.takeover = False
-            # print(f"Action probability: {action_prob:.3f}, agent action: {actions}, expert action: {expert_action}, takeover: {self.takeover}")
 
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
         self.takeover_recorder.append(self.takeover)
         self.total_steps += 1
 
-        if not self.config["disable_expert"]:
-            i["takeover_log_prob"] = log_prob.item()
 
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             super(HumanInTheLoopEnv, self).render(
