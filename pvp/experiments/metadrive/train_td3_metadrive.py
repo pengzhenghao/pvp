@@ -168,7 +168,7 @@ if __name__ == '__main__':
         eval_env=eval_env,
         # eval_freq=5000,
         eval_freq=10000,
-        n_eval_episodes=50,
+        n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
         # logging

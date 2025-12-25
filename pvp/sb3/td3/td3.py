@@ -178,8 +178,9 @@ class TD3(OffPolicyAlgorithm):
                     norm_coeff = th.abs(self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations))).mean().detach()
                     
                     actor_loss = -self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations
-                                                                                            )).mean()  / norm_coeff
+                                                                                            )).mean()
                     actor_losses.append(actor_loss.item())
+                    actor_loss /= norm_coeff
                     
                     replay_data_human = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
                     new_action = self.actor(replay_data_human.observations)
