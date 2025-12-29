@@ -1,6 +1,9 @@
 import argparse
 import os
 from pathlib import Path
+import sys
+import gymnasium
+sys.modules['gym'] = gymnasium
 
 from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
@@ -11,6 +14,7 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.sb3.td3.td3 import TD3, ReplayBuffer
 from pvp.sb3.haco import HACOReplayBuffer
 from pvp.utils.utils import get_time_str
+from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
 
 
 def register_env(make_env_fn, env_name):
@@ -23,9 +27,9 @@ if __name__ == '__main__':
     parser.add_argument("--exp_name", default="td3_metadrive", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="TD3Offline", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="TD3OfflineCNN", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--ckpt", default="/home/caihy/pvp/runs/trainfreq5/trainfreq5_2025-12-19_00-13-10_faec4da3/models/rl_model_6370000_steps.zip", type=str, help="Path to previous checkpoint.")
+    parser.add_argument("--ckpt", default="", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -49,7 +53,8 @@ if __name__ == '__main__':
     os.makedirs(experiment_dir, exist_ok=True)
     os.makedirs(trial_dir, exist_ok=True)
     print(f"We start logging training data into {trial_dir}")
-
+    from metadrive.component.sensors.depth_camera import DepthCamera
+    sensor_size = (42, 42)
     # ===== Setup the config =====
     config = dict(
         # Environment config
@@ -60,7 +65,14 @@ if __name__ == '__main__':
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,  ###
             replay_buffer_kwargs=dict(),
-            policy_kwargs=dict(net_arch=[256, 256]),
+            policy_kwargs=dict(
+                    features_extractor_class=OurFeaturesExtractor,
+                    features_extractor_kwargs=dict(features_dim=147),
+                    share_features_extractor=False, 
+                    net_arch=[
+                        256,
+                    ]
+            ),
             env=None,
             learning_rate=1e-4,
             optimize_memory_usage=True,
@@ -116,7 +128,10 @@ if __name__ == '__main__':
             use_render=False,  # Open the interface
             manual_control=False,  # Allow receiving control signal from external device
             # controller=control_device,
-            window_size=(1600, 1100),
+            image_observation=True, 
+            vehicle_config=dict(image_source="depth_camera"),
+            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            stack_size=3,
         )
 
         train_env = HumanInTheLoopEnv(config=env_config)
