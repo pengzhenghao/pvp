@@ -97,15 +97,14 @@ if __name__ == '__main__':
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
             replay_buffer_kwargs=dict(),
-            policy_kwargs=dict(            
-                    policy_kwargs=dict(
+            policy_kwargs=dict(
                     features_extractor_class=OurFeaturesExtractor,
                     features_extractor_kwargs=dict(features_dim=147),
                     share_features_extractor=False, 
                     net_arch=[
                         256,
                     ]
-            ),),
+            ),
             env=None,
             learning_rate=1e-4,
             q_value_bound=1,
