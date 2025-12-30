@@ -116,19 +116,26 @@ def get_linear_fn(start: float, end: float, end_fraction: float) -> Schedule:
     return func
 
 
-def constant_fn(val: float) -> Schedule:
+def constant_fn(val: float):
     """
     Create a function that returns a constant
     It is useful for learning rate schedule (to avoid code duplication)
 
-    :param val:
-    :return:
+    :param val: The constant value to return
+    :return: A function that takes an argument and returns the constant value
     """
-    def func(_):
-        return val
+    from functools import partial
+    return partial(_constant_value_fn, val=val)
+def _constant_value_fn(_, val: float) -> float:
+    """
+    Helper function to return a constant value. This is defined at the global scope
+    to ensure it can be pickled and used with multiprocessing.
 
-    return func
-
+    :param _: Ignored input (can be any type)
+    :param val: The constant value to return
+    :return: The constant value
+    """
+    return val
 
 def get_device(device: Union[th.device, str] = "auto") -> th.device:
     """
@@ -219,11 +226,9 @@ def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, a
     :param action_space: Action space to check against
     """
     if observation_space != env.observation_space:
-        observation_space = env.observation_space
-        # raise ValueError(f"Observation spaces do not match: {observation_space} != {env.observation_space}")
+        raise ValueError(f"Observation spaces do not match: {observation_space} != {env.observation_space}")
     if action_space != env.action_space:
-        action_space = env.action_space
-        # raise ValueError(f"Action spaces do not match: {action_space} != {env.action_space}")
+        raise ValueError(f"Action spaces do not match: {action_space} != {env.action_space}")
 
 
 def is_vectorized_box_observation(observation: np.ndarray, observation_space: gym.spaces.Box) -> bool:
@@ -458,7 +463,11 @@ def obs_as_tensor(obs: Union[np.ndarray, Dict[Union[str, int], np.ndarray]],
     :return: PyTorch tensor of the observation on a desired device.
     """
     if isinstance(obs, np.ndarray):
-        return th.as_tensor(obs).to(device)
+        try:
+            return th.as_tensor(obs).to(device)
+        except:
+            obs = obs[0]
+            return {key: th.as_tensor(_obs).to(device) for (key, _obs) in obs.items()}
     elif isinstance(obs, dict):
         return {key: th.as_tensor(_obs).to(device) for (key, _obs) in obs.items()}
     else:

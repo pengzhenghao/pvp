@@ -42,7 +42,7 @@ if __name__ == '__main__':
     trial_name = "{}_{}_{}".format(experiment_batch_name, get_time_str(), uuid.uuid4().hex[:8])
     print("Trial name is set to: ", trial_name)
 
-    use_wandb = args.wandb
+    use_wandb = True
     project_name = args.wandb_project
     team_name = args.wandb_team
     if not use_wandb:
@@ -76,7 +76,7 @@ if __name__ == '__main__':
             env=None,
             learning_rate=1e-4,
             optimize_memory_usage=True,
-            learning_starts=10000,
+            learning_starts=0,
             batch_size=1024,
             tau=0.005,
             gamma=0.99,
@@ -91,7 +91,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            buffer_size=1_000_000,
+            buffer_size=4_000_000,
         ),
 
         # Experiment log
@@ -113,6 +113,10 @@ if __name__ == '__main__':
             manual_control=False,  # Allow receiving control signal from external device
             start_seed=1000,
             horizon=1500,
+            image_observation=True, 
+            vehicle_config=dict(image_source="depth_camera"),
+            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            stack_size=3,
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
@@ -175,7 +179,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=1000_0000,
+        total_timesteps=100000_0000,
         callback=callbacks,
         reset_num_timesteps=True,
 
