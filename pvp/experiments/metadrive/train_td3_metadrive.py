@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="TD3OfflineCNN", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--ckpt", default="", type=str, help="Path to previous checkpoint.")
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/runs/td3_metadrive/td3_metadrive_2025-12-30_00-33-49_88520fae/best_model.zip", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -77,10 +77,10 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             optimize_memory_usage=True,
             learning_starts=0,
-            batch_size=1024,
+            batch_size=32768,
             tau=0.005,
             gamma=0.99,
-            train_freq=5,
+            train_freq=1,
             gradient_steps=1,
             action_noise=None,
             # action_noise=NormalActionNoise(mean=np.zeros([2,]), sigma=0.15 * np.ones([2,])),
@@ -125,7 +125,7 @@ if __name__ == '__main__':
         return eval_env
 
 
-    eval_env = SubprocVecEnv([_make_eval_env] * 20)
+    eval_env = SubprocVecEnv([_make_eval_env] * 40)
     
     def make_train_env():
         env_config = dict(
@@ -187,7 +187,7 @@ if __name__ == '__main__':
         eval_env=eval_env,
         # eval_freq=5000,
         eval_freq=10000,
-        n_eval_episodes=50,
+        n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
         # logging
