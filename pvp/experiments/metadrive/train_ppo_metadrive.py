@@ -101,9 +101,9 @@ if __name__ == '__main__':
     train_env_config = config["env_config"]
 
     def _make_train_env():
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+        from pvp.experiments.metadrive.human_in_the_loop_env import DrivingEnv
         from pvp.sb3.common.monitor import Monitor
-        train_env = HumanInTheLoopEnv(config=train_env_config)
+        train_env = DrivingEnv(config=train_env_config)
         train_env = Monitor(env=train_env, filename=str(trial_dir))
         return train_env
 
@@ -121,9 +121,9 @@ if __name__ == '__main__':
             start_seed=1000,
             horizon=1500,
         )
-        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+        from pvp.experiments.metadrive.human_in_the_loop_env import DrivingEnv
         from pvp.sb3.common.monitor import Monitor
-        eval_env = HumanInTheLoopEnv(config=eval_env_config)
+        eval_env = DrivingEnv(config=eval_env_config)
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
@@ -165,7 +165,7 @@ if __name__ == '__main__':
 
         # eval
         eval_env=eval_env,
-        eval_freq=150,
+        eval_freq=2000,
         n_eval_episodes=50,
         eval_log_path=str(trial_dir),
 

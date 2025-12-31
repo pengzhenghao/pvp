@@ -173,7 +173,7 @@ class TD3(OffPolicyAlgorithm):
 
             # Delayed policy updates
             if (self._n_updates % self.policy_delay == 0):
-                if self.num_timesteps > 20000:
+                if self.num_timesteps > 0:
                     # Compute actor loss
                     norm_coeff = th.abs(self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations))).mean().detach()
                     
@@ -185,7 +185,7 @@ class TD3(OffPolicyAlgorithm):
                     replay_data_human = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
                     new_action = self.actor(replay_data_human.observations)
                     bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean()
-                    actor_loss = bc_loss * 1
+                    actor_loss += bc_loss * 1
                     
                     # Optimize the actor
                     self.actor.optimizer.zero_grad()
