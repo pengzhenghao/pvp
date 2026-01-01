@@ -311,7 +311,6 @@ class PVPTD3(TD3):
                     save_path_replay, "replay_buffer_" + str(self.num_timesteps) + ".pkl"
                 )
                 logger.info("Saving..." + str(buffer_location_human))
-                logger.info("Saving..." + str(buffer_location_replay))
                 self.save_replay_buffer(buffer_location_human, buffer_location_replay)
 
         callback.on_training_end()

@@ -24,7 +24,7 @@ if __name__ == '__main__':
         "--exp_name", default="pvp_metadrive_fakehuman", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--batch_size", default=1024, type=int)
-    parser.add_argument("--learning_starts", default=0, type=int)
+    parser.add_argument("--learning_starts", default=50000000, type=int)
     parser.add_argument("--save_freq", default=50000000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
@@ -109,7 +109,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=400000,  # We only conduct experiment less than 50K steps
+            buffer_size=100000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -169,7 +169,7 @@ if __name__ == '__main__':
     # ===== Launch training =====
     model.learn(
         # training
-        total_timesteps=4000100,
+        total_timesteps=100100,
         callback=callbacks,
         reset_num_timesteps=True,
 
@@ -184,7 +184,7 @@ if __name__ == '__main__':
         log_interval=1,
         save_buffer=True,
         load_buffer=False,
-        buffer_save_timesteps=400000,
+        buffer_save_timesteps=100000,
         save_path_human= "/bigdata/caihy/1231cnnhumanpvptd3domainA",
         save_path_replay= "/bigdata/caihy/1231cnnreplaypvptd3domainA",
     )
