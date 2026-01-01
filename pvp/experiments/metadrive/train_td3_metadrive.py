@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="TD3OfflineCNN", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--ckpt", default="/home/caihy/pvp/runs/td3_metadrive/td3_metadrive_2025-12-30_00-33-49_88520fae/best_model.zip", type=str, help="Path to previous checkpoint.")
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/cnnbestexpert.zip", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -125,7 +125,7 @@ if __name__ == '__main__':
         return eval_env
 
 
-    eval_env = SubprocVecEnv([_make_eval_env] * 40)
+    eval_env = SubprocVecEnv([_make_eval_env] * 10)
     
     def make_train_env():
         env_config = dict(
@@ -149,7 +149,7 @@ if __name__ == '__main__':
 
     # ===== Setup the callbacks =====
     callbacks = [
-        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=10000, save_path=str(trial_dir / "models"))
+        CheckpointCallback(name_prefix="rl_model", verbose=1, save_freq=5000, save_path=str(trial_dir / "models"))
     ]
     if use_wandb:
         callbacks.append(
@@ -186,7 +186,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         # eval_freq=5000,
-        eval_freq=10000,
+        eval_freq=5000,
         n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
