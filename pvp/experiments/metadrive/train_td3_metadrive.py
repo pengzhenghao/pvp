@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="TD3OfflineCNN", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--ckpt", default="/home/caihy/pvp/cnnbestexpert.zip", type=str, help="Path to previous checkpoint.")
+    parser.add_argument("--ckpt", default="", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     os.makedirs(trial_dir, exist_ok=True)
     print(f"We start logging training data into {trial_dir}")
     from metadrive.component.sensors.depth_camera import DepthCamera
-    sensor_size = (42, 42)
+    sensor_size = (320, 180)
     # ===== Setup the config =====
     config = dict(
         # Environment config
@@ -67,7 +67,7 @@ if __name__ == '__main__':
             replay_buffer_kwargs=dict(),
             policy_kwargs=dict(
                     features_extractor_class=OurFeaturesExtractor,
-                    features_extractor_kwargs=dict(features_dim=147),
+                    features_extractor_kwargs=dict(features_dim=275),
                     share_features_extractor=False, 
                     net_arch=[
                         256,
@@ -77,7 +77,7 @@ if __name__ == '__main__':
             learning_rate=1e-4,
             optimize_memory_usage=True,
             learning_starts=0,
-            batch_size=32768,
+            batch_size=1024,
             tau=0.005,
             gamma=0.99,
             train_freq=1,
@@ -91,7 +91,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            buffer_size=4_000_000,
+            buffer_size=100000,
         ),
 
         # Experiment log
