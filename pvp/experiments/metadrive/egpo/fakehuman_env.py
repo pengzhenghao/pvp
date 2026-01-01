@@ -154,7 +154,7 @@ class FakeHumanEnv(HumanInTheLoopEnv):
             
             lidar_o = self.lidar.observe(self.agent)
             expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
-            if self.total_steps > 50000:
+            if self.total_steps > 0:
                 self.takeover = True
                 actions = expert_action
             else:

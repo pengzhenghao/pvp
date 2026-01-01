@@ -24,13 +24,13 @@ if __name__ == '__main__':
         "--exp_name", default="pvp_metadrive_fakehuman", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--batch_size", default=1024, type=int)
-    parser.add_argument("--learning_starts", default=50000, type=int)
+    parser.add_argument("--learning_starts", default=0, type=int)
     parser.add_argument("--save_freq", default=50000000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="td3", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--log_dir", type=str, default="/home/zhenghao/pvp", help="Folder to store the logs.")
+    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--bc_loss_weight", type=float, default=0.0)
     parser.add_argument("--with_human_proxy_value_loss", default="True", type=str)
@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
     free_level = args.free_level
     from metadrive.component.sensors.depth_camera import DepthCamera
-    sensor_size = (42, 42)
+    sensor_size = (320, 180)
     # ===== Setup the config =====
     config = dict(
 
@@ -96,21 +96,20 @@ if __name__ == '__main__':
             agent_data_ratio=1.0,
             policy=TD3Policy,
             replay_buffer_class=HACOReplayBuffer,
-            replay_buffer_kwargs=dict(),
-            policy_kwargs=dict(            
-                    policy_kwargs=dict(
+            replay_buffer_kwargs=dict(),          
+            policy_kwargs=dict(
                     features_extractor_class=OurFeaturesExtractor,
-                    features_extractor_kwargs=dict(features_dim=147),
+                    features_extractor_kwargs=dict(features_dim=275),
                     share_features_extractor=False, 
                     net_arch=[
                         256,
                     ]
-            ),),
+            ),
             env=None,
             learning_rate=1e-4,
             q_value_bound=1,
             optimize_memory_usage=True,
-            buffer_size=4000000,  # We only conduct experiment less than 50K steps
+            buffer_size=400000,  # We only conduct experiment less than 50K steps
             learning_starts=args.learning_starts,  # The number of steps before
             batch_size=args.batch_size,  # Reduce the batch size for real-time copilot
             tau=0.005,
@@ -185,7 +184,7 @@ if __name__ == '__main__':
         log_interval=1,
         save_buffer=True,
         load_buffer=False,
-        buffer_save_timesteps=4000000,
-        save_path_human= "/bigdata/caihy/1225cnnhumanpvptd3",
-        save_path_replay= "/bigdata/caihy/1225cnnreplaypvptd3",
+        buffer_save_timesteps=400000,
+        save_path_human= "/bigdata/caihy/1231cnnhumanpvptd3domainA",
+        save_path_replay= "/bigdata/caihy/1231cnnreplaypvptd3domainA",
     )
