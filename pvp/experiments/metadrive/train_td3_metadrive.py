@@ -24,12 +24,12 @@ def register_env(make_env_fn, env_name):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp_name", default="td3_metadrive", type=str, help="The name for this batch of experiments.")
+    parser.add_argument("--exp_name", default="td3w1bcw1", type=str, help="The name for this batch of experiments.")
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="TD3OfflineCNN", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--ckpt", default="", type=str, help="Path to previous checkpoint.")
+    parser.add_argument("--ckpt", default="/home/caihy/pvp/runs/td3_metadrive/td3_metadrive_2026-01-01_13-53-24_a5d24e97/best_model.zip", type=str, help="Path to previous checkpoint.")
     args = parser.parse_args()
 
     # ===== Set up some arguments =====
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     os.makedirs(trial_dir, exist_ok=True)
     print(f"We start logging training data into {trial_dir}")
     from metadrive.component.sensors.depth_camera import DepthCamera
-    sensor_size = (84, 84)
+    sensor_size = (320, 180)
     # ===== Setup the config =====
     config = dict(
         # Environment config
@@ -91,7 +91,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            buffer_size=2000000,
+            buffer_size=100000,
         ),
 
         # Experiment log
@@ -186,7 +186,7 @@ if __name__ == '__main__':
         # eval
         eval_env=eval_env,
         # eval_freq=5000,
-        eval_freq=5000,
+        eval_freq=1000,
         n_eval_episodes=200,
         eval_log_path=str(trial_dir),
 
