@@ -54,7 +54,7 @@ if __name__ == '__main__':
     os.makedirs(trial_dir, exist_ok=True)
     print(f"We start logging training data into {trial_dir}")
     from metadrive.component.sensors.depth_camera import DepthCamera
-    sensor_size = (320, 180)
+    sensor_size = (84, 84)
     # ===== Setup the config =====
     config = dict(
         # Environment config
@@ -91,7 +91,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            buffer_size=100000,
+            buffer_size=2000000,
         ),
 
         # Experiment log
