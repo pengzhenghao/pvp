@@ -185,7 +185,7 @@ class TD3(OffPolicyAlgorithm):
                     replay_data_human = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
                     new_action = self.actor(replay_data_human.observations)
                     bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean()
-                    actor_loss += bc_loss * 1
+                    actor_loss += bc_loss * 0.1
                     
                     # Optimize the actor
                     self.actor.optimizer.zero_grad()
@@ -218,7 +218,7 @@ class TD3(OffPolicyAlgorithm):
         reset_num_timesteps: bool = True,
     ) -> OffPolicyAlgorithm:
         from pvp.sb3.common.save_util import load_from_pkl, save_to_pkl
-        self.replay_buffer = load_from_pkl("/bigdata/caihy/1231cnnhumanpvptd3domainA/human_buffer_100000.pkl", self.verbose)
+        self.replay_buffer = load_from_pkl("/bigdata/caihy/1231cnnhumanpvptd3domainAfov60/human_buffer_2000000.pkl", self.verbose)
         return super(TD3, self).learn(
             total_timesteps=total_timesteps,
             callback=callback,
