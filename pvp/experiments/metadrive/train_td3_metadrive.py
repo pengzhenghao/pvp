@@ -147,7 +147,7 @@ if __name__ == '__main__':
         return train_env
 
     train_env = SubprocVecEnv([make_train_env])
-    train_env.num_envs = 10
+    train_env.num_envs = 20
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
