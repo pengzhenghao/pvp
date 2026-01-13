@@ -61,8 +61,8 @@ if __name__ == '__main__':
     print(f"We start logging training data into {trial_dir}")
 
     free_level = args.free_level
-    from metadrive.component.sensors.depth_camera import DepthCamera
-    sensor_size = (320, 180)
+    from metadrive.component.sensors.rgb_camera import RGBCamera
+    sensor_size = (84, 84)
     # ===== Setup the config =====
     config = dict(
 
@@ -78,9 +78,12 @@ if __name__ == '__main__':
             # FakeHumanEnv config:
             free_level=free_level,
             image_observation=True, 
-            vehicle_config=dict(image_source="depth_camera"),
-            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            vehicle_config=dict(image_source="rgb_camera"),
+            sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
+            interface_panel=["rgb_camera", "dashboard"],
+            daytime="08:30",
+            use_render=False,
         ),
 
         # Algorithm config
@@ -132,10 +135,14 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    train_env = FakeHumanEnv(config=config["env_config"], )
-    train_env = Monitor(env=train_env, filename=str(trial_dir))
-    # Store all shared control data to the files.
-    train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+    def _make_train_env():
+        train_env = FakeHumanEnv(config=config["env_config"], )
+        train_env = Monitor(env=train_env, filename=str(trial_dir))
+        # Store all shared control data to the files.
+        train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
+        return train_env
+    
+    train_env = SubprocVecEnv([_make_train_env] * 10)
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 
@@ -185,6 +192,6 @@ if __name__ == '__main__':
         save_buffer=True,
         load_buffer=False,
         buffer_save_timesteps=100000,
-        save_path_human= "/bigdata/caihy/1231cnnhumanpvptd3domainA",
-        save_path_replay= "/bigdata/caihy/1231cnnreplaypvptd3domainA",
+        save_path_human= "0112cnnhumanpvptd3domainA",
+        save_path_replay= "0112cnnreplaypvptd3domainA",
     )
