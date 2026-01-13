@@ -53,7 +53,7 @@ if __name__ == '__main__':
     os.makedirs(experiment_dir, exist_ok=True)
     os.makedirs(trial_dir, exist_ok=True)
     print(f"We start logging training data into {trial_dir}")
-    from metadrive.component.sensors.depth_camera import DepthCamera
+    from metadrive.component.sensors.rgb_camera import RGBCamera
     sensor_size = (84, 84)
     # ===== Setup the config =====
     config = dict(
@@ -91,7 +91,7 @@ if __name__ == '__main__':
             verbose=2,
             seed=seed,
             device="auto",
-            buffer_size=2000000,
+            buffer_size=100000,
         ),
 
         # Experiment log
@@ -114,9 +114,11 @@ if __name__ == '__main__':
             start_seed=1000,
             horizon=1500,
             image_observation=True, 
-            vehicle_config=dict(image_source="depth_camera"),
-            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            vehicle_config=dict(image_source="rgb_camera"),
+            sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
+            interface_panel=["rgb_camera", "dashboard"],
+            daytime="08:30",
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         from pvp.sb3.common.monitor import Monitor
@@ -133,9 +135,11 @@ if __name__ == '__main__':
             manual_control=False,  # Allow receiving control signal from external device
             # controller=control_device,
             image_observation=True, 
-            vehicle_config=dict(image_source="depth_camera"),
-            sensors={"depth_camera": (DepthCamera, *sensor_size)},
+            vehicle_config=dict(image_source="rgb_camera"),
+            sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
+            interface_panel=["rgb_camera", "dashboard"],
+            daytime="08:30",
         )
 
         train_env = HumanInTheLoopEnv(config=env_config)
@@ -143,7 +147,7 @@ if __name__ == '__main__':
         return train_env
 
     train_env = SubprocVecEnv([make_train_env])
-    train_env.num_envs = 1
+    train_env.num_envs = 10
     config["algo"]["env"] = train_env
     assert config["algo"]["env"] is not None
 

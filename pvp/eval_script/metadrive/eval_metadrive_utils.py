@@ -128,7 +128,18 @@ def evaluate_metadrive_once(
 
 
 def make_metadrive_env(use_render=False):
+    from metadrive.component.sensors.rgb_camera import RGBCamera
+    sensor_size = (84, 84)
+    
     config = copy.deepcopy(baseline_eval_config)
+    config.update(dict(
+        image_observation=True,
+        vehicle_config=dict(image_source="rgb_camera"),
+        sensors={"rgb_camera": (RGBCamera, *sensor_size)},
+        stack_size=3,
+        interface_panel=["rgb_camera", "dashboard"],
+        daytime="08:30",
+    ))
 
     if use_render:
         config["use_render"] = True
