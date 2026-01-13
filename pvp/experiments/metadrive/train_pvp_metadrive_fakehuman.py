@@ -192,6 +192,6 @@ if __name__ == '__main__':
         save_buffer=True,
         load_buffer=False,
         buffer_save_timesteps=100000,
-        save_path_human= "/bigdata/caihy/0112cnnhumanpvptd3domainA",
-        save_path_replay= "/bigdata/caihy/0112cnnreplaypvptd3domainA",
+        save_path_human= "/bigdata/caihy/0113idmdomainA",
+        save_path_replay= "/bigdata/caihy/0113idmdomainA",
     )
