@@ -603,13 +603,13 @@ class OffPolicyAlgorithm(BaseAlgorithm):
                 # Sample a new noise matrix
                 self.actor.reset_noise(env.num_envs)
 
-            # # Select action randomly or according to policy
-            # actions, buffer_actions = self._sample_action(
-            #     learning_starts, action_noise, env.num_envs, deterministic=deterministic
-            # )
+            # Select action randomly or according to policy
+            actions, buffer_actions = self._sample_action(
+                learning_starts, action_noise, env.num_envs, deterministic=deterministic
+            )
 
-            # # Rescale and perform action
-            # new_obs, rewards, dones, infos = env.step(actions)
+            # Rescale and perform action
+            new_obs, rewards, dones, infos = env.step(actions)
 
             self.num_timesteps += env.num_envs
             self.since_last_reset += env.num_envs
@@ -624,10 +624,10 @@ class OffPolicyAlgorithm(BaseAlgorithm):
                 )
 
             # Retrieve reward and episode length if using Monitor wrapper
-            # self._update_info_buffer(infos, dones)
+            self._update_info_buffer(infos, dones)
 
             # Store data in replay buffer (normalized action and unnormalized observation)
-            # self._store_transition(replay_buffer, buffer_actions, new_obs, rewards, dones, infos)
+            self._store_transition(replay_buffer, buffer_actions, new_obs, rewards, dones, infos)
 
             self._update_current_progress_remaining(self.num_timesteps, self._total_timesteps)
 
@@ -637,22 +637,22 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             # see https://github.com/hill-a/stable-baselines/issues/900
             self._on_step()
 
-            # for idx, done in enumerate(dones):
-            #     if done:
-            #         # Update stats
-            #         num_collected_episodes += 1
-            #         self._episode_num += 1
+            for idx, done in enumerate(dones):
+                if done:
+                    # Update stats
+                    num_collected_episodes += 1
+                    self._episode_num += 1
 
-            #         if action_noise is not None:
-            #             kwargs = dict(indices=[idx]) if env.num_envs > 1 else {}
-            #             action_noise.reset(**kwargs)
+                    if action_noise is not None:
+                        kwargs = dict(indices=[idx]) if env.num_envs > 1 else {}
+                        action_noise.reset(**kwargs)
 
-            #         # Log training infos
-            #         if log_interval is not None and self._episode_num % log_interval == 0:
-            #             self._dump_logs()
+                    # Log training infos
+                    if log_interval is not None and self._episode_num % log_interval == 0:
+                        self._dump_logs()
 
-            #         # PZH: We add a callback here to allow doing something after each episode is ended.
-            #         self._on_episode_end(infos[idx])
+                    # PZH: We add a callback here to allow doing something after each episode is ended.
+                    self._on_episode_end(infos[idx])
 
         callback.on_rollout_end()
 

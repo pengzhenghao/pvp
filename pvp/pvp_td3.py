@@ -205,8 +205,7 @@ class PVPTD3(TD3):
         dones: np.ndarray,
         infos: List[Dict[str, Any]],
     ) -> None:
-        if infos[0]["takeover"] or infos[0]["takeover_start"]:
-            replay_buffer = self.human_data_buffer
+        replay_buffer = self.human_data_buffer
         super(PVPTD3, self)._store_transition(replay_buffer, buffer_action, new_obs, reward, dones, infos)
 
     def save_replay_buffer(
@@ -214,7 +213,7 @@ class PVPTD3(TD3):
                                                                                           io.BufferedIOBase]
     ) -> None:
         save_to_pkl(path_human, self.human_data_buffer, self.verbose)
-        super(PVPTD3, self).save_replay_buffer(path_replay)
+        # super(PVPTD3, self).save_replay_buffer(path_replay)
 
     def load_replay_buffer(
         self,
@@ -256,8 +255,8 @@ class PVPTD3(TD3):
         reset_num_timesteps: bool = True,
         save_timesteps: int = 2000,
         buffer_save_timesteps: int = 2000,
-        save_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "",
-        save_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "",
+        save_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "1225cnnhumanpvptd3",
+        save_path_replay: Union[str, pathlib.Path, io.BufferedIOBase] = "1225cnnreplaypvptd3",
         save_buffer: bool = True,
         load_buffer: bool = False,
         load_path_human: Union[str, pathlib.Path, io.BufferedIOBase] = "",
@@ -297,13 +296,13 @@ class PVPTD3(TD3):
 
             if rollout.continue_training is False:
                 break
-            if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts:
-                # If no `gradient_steps` is specified,
-                # do as many gradients steps as steps performed during the rollout
-                gradient_steps = self.gradient_steps if self.gradient_steps >= 0 else rollout.episode_timesteps
-                # Special case when the user passes `gradient_steps=0`
-                if gradient_steps > 0:
-                    self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
+            # if self.num_timesteps > 0 and self.num_timesteps > self.learning_starts:
+            #     # If no `gradient_steps` is specified,
+            #     # do as many gradients steps as steps performed during the rollout
+            #     gradient_steps = self.gradient_steps if self.gradient_steps >= 0 else rollout.episode_timesteps
+            #     # Special case when the user passes `gradient_steps=0`
+            #     if gradient_steps > 0:
+            #         self.train(batch_size=self.batch_size, gradient_steps=gradient_steps)
             if save_buffer and self.num_timesteps > 0 and self.num_timesteps % buffer_save_timesteps == 0:
                 buffer_location_human = os.path.join(
                     save_path_human, "human_buffer_" + str(self.num_timesteps) + ".pkl"
@@ -312,7 +311,6 @@ class PVPTD3(TD3):
                     save_path_replay, "replay_buffer_" + str(self.num_timesteps) + ".pkl"
                 )
                 logger.info("Saving..." + str(buffer_location_human))
-                logger.info("Saving..." + str(buffer_location_replay))
                 self.save_replay_buffer(buffer_location_human, buffer_location_replay)
 
         callback.on_training_end()

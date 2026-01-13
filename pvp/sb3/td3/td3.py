@@ -218,7 +218,7 @@ class TD3(OffPolicyAlgorithm):
         reset_num_timesteps: bool = True,
     ) -> OffPolicyAlgorithm:
         from pvp.sb3.common.save_util import load_from_pkl, save_to_pkl
-        self.replay_buffer = load_from_pkl("/bigdata/caihy/0113idmdomainA/human_buffer_100000.pkl", self.verbose)
+        self.replay_buffer = load_from_pkl("/bigdata/caihy/0113idmdomainA/human_buffer_400000.pkl", self.verbose)
         return super(TD3, self).learn(
             total_timesteps=total_timesteps,
             callback=callback,
