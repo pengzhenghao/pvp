@@ -17,9 +17,42 @@ logger = get_logger()
 
 
 def get_expert():
-    # Return IDM Policy class instead of PPO policy
-    from metadrive.policy.idm_policy import IDMPolicy
-    return IDMPolicy
+    from pvp.sb3.common.save_util import load_from_zip_file
+    from pvp.sb3.ppo import PPO
+    from pvp.sb3.ppo.policies import ActorCriticPolicy
+
+    train_env = HumanInTheLoopEnv(config={'manual_control': False, "use_render": False})
+
+    # Initialize agent
+    algo_config = dict(
+        policy=ActorCriticPolicy,
+        n_steps=1024,  # n_steps * n_envs = total_batch_size
+        n_epochs=20,
+        learning_rate=5e-5,
+        batch_size=256,
+        clip_range=0.1,
+        vf_coef=0.5,
+        ent_coef=0.0,
+        max_grad_norm=10.0,
+        # tensorboard_log=trial_dir,
+        create_eval_env=False,
+        verbose=2,
+        # seed=seed,
+        device="auto",
+        env=train_env
+    )
+    model = PPO(**algo_config)
+
+    ckpt = FOLDER_PATH / "metadrive_pvp_20m_steps"
+
+    print(f"Loading checkpoint from {ckpt}!")
+    data, params, pytorch_variables = load_from_zip_file(ckpt, device=model.device, print_system_info=False)
+    model.set_parameters(params, exact_match=True, device=model.device)
+    print(f"Model is loaded from {ckpt}!")
+
+    train_env.close()
+
+    return model.policy
 
 
 def obs_correction(obs):
@@ -43,7 +76,7 @@ def load():
     return _expert_weights
 
 
-_expert_class = get_expert()
+_expert = get_expert()
 
 
 class FakeHumanEnv(HumanInTheLoopEnv):
@@ -116,17 +149,14 @@ class FakeHumanEnv(HumanInTheLoopEnv):
 
         else:
             if self.expert is None:
-                global _expert_class
-                # Initialize IDM Policy with the agent vehicle
-                self.expert = _expert_class(control_object=self.agent, random_seed=self.engine.global_random_seed)
+                global _expert
+                self.expert = _expert
             
-            # IDM Policy's act() method doesn't need observation, it uses control_object directly
-            expert_action = self.expert.act()
-            # Always use IDMPolicy's action to ensure all actions are from IDMPolicy
-            # This is critical for BC training to use the correct expert actions
-            if self.total_steps >= 0:  # Changed from > 0 to >= 0 to use IDMPolicy from the first step
+            lidar_o = self.lidar.observe(self.agent)
+            expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
+            if self.total_steps > 0:
                 self.takeover = True
-                actions = np.array(expert_action, dtype=np.float32)
+                actions = expert_action
             else:
                 self.takeover = False
 
@@ -184,14 +214,6 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         o, info = super(HumanInTheLoopEnv, self)._get_reset_return(reset_info)
         self.last_obs = o
         self.last_takeover = False
-        # Reset and re-initialize IDM Policy with the new agent vehicle after reset
-        if self.expert is not None:
-            self.expert.reset()
-            self.expert.control_object = self.agent
-        else:
-            # Initialize IDM Policy if not already initialized
-            global _expert_class
-            self.expert = _expert_class(control_object=self.agent, random_seed=self.engine.global_random_seed)
         return o, info
 
 

@@ -34,11 +34,11 @@ if __name__ == '__main__':
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--ckpt", default="", type=str)
-    parser.add_argument("--data_collection_timesteps", default=400000, type=int, help="Total timesteps for data collection.")
+    parser.add_argument("--data_collection_timesteps", default=20000, type=int, help="Total timesteps for data collection.")
     parser.add_argument("--bc_training_timesteps", default=1000000000, type=int, help="Total timesteps for BC training (can be very large).")
     parser.add_argument("--train_freq", default=1, type=int, help="Train every N steps.")
     parser.add_argument("--gradient_steps", default=1, type=int, help="Number of gradient steps per training update.")
-    parser.add_argument("--eval_freq", default=5000, type=int, help="Evaluate policy every N steps.")
+    parser.add_argument("--eval_freq", default=1000, type=int, help="Evaluate policy every N steps.")
     parser.add_argument("--n_eval_episodes", default=200, type=int, help="Number of episodes for evaluation.")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
     args = parser.parse_args()
@@ -97,14 +97,14 @@ if __name__ == '__main__':
         sensors={"rgb_camera": (RGBCamera, *sensor_size)},
         stack_size=3,
         interface_panel=["rgb_camera", "dashboard"],
-        daytime="08:30",
+        daytime="06:10",
         use_render=False,
         disable_expert=False,  # Ensure IDMPolicy is used
     )
 
     # ===== Setup the training environment =====
-    num_envs = 2 if args.toy else 50
-    num_eval_envs = 2 if args.toy else 10
+    num_envs = 1 if args.toy else 50
+    num_eval_envs = 1 if args.toy else 10
     
     def _make_train_env():
         train_env = FakeHumanEnv(config=env_config)
@@ -127,7 +127,7 @@ if __name__ == '__main__':
             sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
             interface_panel=["rgb_camera", "dashboard"],
-            daytime="08:30",
+            daytime="06:10",
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         eval_env = HumanInTheLoopEnv(config=eval_env_config)
@@ -153,7 +153,7 @@ if __name__ == '__main__':
         learning_rate=1e-4,
         q_value_bound=1,
         optimize_memory_usage=True,
-        buffer_size=args.data_collection_timesteps if not args.toy else 200,
+        buffer_size=args.data_collection_timesteps if not args.toy else 2000,
         learning_starts=args.learning_starts,
         batch_size=args.batch_size,
         tau=0.005,
@@ -203,8 +203,15 @@ if __name__ == '__main__':
     
     bc_trainer = TD3(**td3_config)
     
-    # DO NOT copy policy weights - Phase 2 should train from scratch
-    # bc_trainer will start with random weights
+    # Load initial policy from checkpoint
+    initial_ckpt = Path("/home/caihy/pvp/rgbsr70.zip")
+    if initial_ckpt.exists():
+        print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
+        from pvp.sb3.common.save_util import load_from_zip_file
+        data, params, pytorch_variables = load_from_zip_file(initial_ckpt, device=bc_trainer.device, print_system_info=False)
+        bc_trainer.set_parameters(params, exact_match=False, device=bc_trainer.device)
+    else:
+        print(f"Warning: Initial checkpoint {initial_ckpt} not found! bc_trainer will start with random weights.")
 
     # ===== Setup callbacks =====
     # Phase 1: No wandb, only data collection
