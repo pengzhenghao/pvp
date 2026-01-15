@@ -207,10 +207,11 @@ def generate_gradcam(model, obs_dict, target_layer, target_output=None, debug=Fa
             if target_output is None or not target_output.requires_grad or target_output.grad_fn is None:
                 if action_dim is not None:
                     # 使用指定的action维度 (0=steering, 1=acceleration)
-                    # 使用绝对值，因为我们关心的是响应强度而非方向
-                    target_output = torch.abs(model_output[:, action_dim]).mean()
+                    # 直接使用原始值（不用abs），后面在计算CAM时对梯度取绝对值
+                    # 这样可以捕获正负两个方向的影响
+                    target_output = model_output[:, action_dim].mean()
                     if debug:
-                        print(f"Debug: Using action_dim={action_dim} as target, value={model_output[:, action_dim].item():.4f}")
+                        print(f"Debug: Using action_dim={action_dim} as target, raw value={model_output[:, action_dim].item():.4f}")
                 else:
                     # 使用L2 norm
                     target_output = torch.norm(model_output, dim=1).mean()
@@ -297,12 +298,23 @@ def generate_gradcam(model, obs_dict, target_layer, target_output=None, debug=Fa
         gradients_tensor = gradients  # [batch, channels, H, W]
         activations_tensor = activations  # [batch, channels, H, W]
         
-        # 对每个通道的梯度进行全局平均池化
-        weights = torch.mean(gradients_tensor, dim=(2, 3), keepdim=True)  # [batch, channels, 1, 1]
+        # 关键修复：对梯度取绝对值，这样正负影响都会被捕获
+        # 这意味着：不管一个像素让steering变大还是变小，只要影响大就显示红色
+        # 原始Grad-CAM只关注正贡献，但我们想看所有显著影响
+        gradients_abs = torch.abs(gradients_tensor)
+        
+        # 对每个通道的梯度绝对值进行全局平均池化
+        weights = torch.mean(gradients_abs, dim=(2, 3), keepdim=True)  # [batch, channels, 1, 1]
+        
+        # 使用激活的绝对值，因为我们关心的是激活的强度而非方向
+        activations_abs = torch.abs(activations_tensor)
         
         # 加权组合特征图
-        cam = torch.sum(weights * activations_tensor, dim=1, keepdim=True)  # [batch, 1, H, W]
-        cam = F.relu(cam)  # 只保留正激活
+        cam = torch.sum(weights * activations_abs, dim=1, keepdim=True)  # [batch, 1, H, W]
+        
+        # 不需要ReLU了，因为abs已经保证非负
+        if debug:
+            print(f"Debug: CAM range before normalization: [{cam.min().item():.4f}, {cam.max().item():.4f}]")
         
         # 归一化到0-1
         cam = cam.cpu().detach().numpy()
@@ -314,8 +326,9 @@ def generate_gradcam(model, obs_dict, target_layer, target_output=None, debug=Fa
         # 处理各种形状情况
         if cam.ndim == 0:
             # 标量（1x1 feature map），创建一个1x1的2D数组
-            print(f"Warning: CAM is a scalar (1x1 feature map). Using uniform attention.")
-            cam = np.array([[cam.item()]])
+            if debug:
+                print(f"Debug: CAM is a scalar (1x1 feature map). Using uniform attention.")
+            cam = np.array([[max(cam.item(), 0.5)]])  # 使用0.5作为默认值，避免全零
         elif cam.ndim == 1:
             # 1D数组，reshape成2D
             size = int(np.sqrt(cam.shape[0]))
@@ -332,11 +345,15 @@ def generate_gradcam(model, obs_dict, target_layer, target_output=None, debug=Fa
         if debug:
             print(f"Debug: CAM shape after processing: {cam.shape}")
         
-        if cam.max() > 0:
-            cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        # 归一化到0-1
+        cam_range = cam.max() - cam.min()
+        if cam_range > 1e-8:
+            cam = (cam - cam.min()) / cam_range
         else:
-            print("Warning: CAM is all zeros")
-            return None
+            # CAM全为相同值或接近零，使用均匀分布
+            if debug:
+                print(f"Debug: CAM has very small range ({cam_range:.6f}), using uniform attention")
+            cam = np.ones_like(cam) * 0.5  # 使用0.5作为均匀注意力
         
         return cam
     except Exception as e:
