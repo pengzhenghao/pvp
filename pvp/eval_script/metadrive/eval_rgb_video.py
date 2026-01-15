@@ -914,7 +914,7 @@ def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=str, default="/home/caihy/pvp/rgbsr70.zip", help="Path to model checkpoint")
+    parser.add_argument("--ckpt", type=str, default="/home/caihy/pvp/bestppomodeldomainA.zip", help="Path to model checkpoint")
     parser.add_argument("--num_episodes", type=int, default=50, help="Number of episodes to evaluate")
     parser.add_argument("--save_video", action="store_true", help="Save videos (default: False)")
     parser.add_argument("--video_dir", type=str, default="eval_videos", help="Directory to save videos")
