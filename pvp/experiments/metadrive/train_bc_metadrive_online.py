@@ -18,6 +18,13 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.utils.shared_control_monitor import SharedControlMonitor
 from pvp.utils.utils import get_time_str
 from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFeaturesExtractor
+from pvp.sb3.common.lora import (
+    apply_lora_to_model, 
+    get_lora_parameters, 
+    freeze_non_lora_parameters,
+    print_trainable_parameters
+)
+import torch
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -41,6 +48,13 @@ if __name__ == '__main__':
     parser.add_argument("--eval_freq", default=1000, type=int, help="Evaluate policy every N steps.")
     parser.add_argument("--n_eval_episodes", default=200, type=int, help="Number of episodes for evaluation.")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
+    # LoRA arguments
+    parser.add_argument("--use_lora", action="store_true", help="Use LoRA for efficient fine-tuning.")
+    parser.add_argument("--lora_rank", default=4, type=int, help="Rank of LoRA decomposition.")
+    parser.add_argument("--lora_alpha", default=1.0, type=float, help="Scaling factor for LoRA.")
+    parser.add_argument("--lora_dropout", default=0.0, type=float, help="Dropout for LoRA layers.")
+    parser.add_argument("--lora_target", default="actor", type=str, choices=["actor", "all"], 
+                       help="Which networks to apply LoRA to: 'actor' (policy only) or 'all' (actor + critic).")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled
@@ -48,7 +62,7 @@ if __name__ == '__main__':
         print("=" * 80)
         print("TOY MODE ENABLED - Using small numbers for debugging")
         print("=" * 80)
-        args.data_collection_timesteps = 2000
+        args.data_collection_timesteps = 200
         args.bc_training_timesteps = 2000
         args.batch_size = 64
         args.eval_freq = 20
@@ -153,7 +167,7 @@ if __name__ == '__main__':
         learning_rate=1e-4,
         q_value_bound=1,
         optimize_memory_usage=True,
-        buffer_size=args.data_collection_timesteps if not args.toy else 2000,
+        buffer_size=args.data_collection_timesteps if not args.toy else 200,
         learning_starts=args.learning_starts,
         batch_size=args.batch_size,
         tau=0.005,
@@ -204,7 +218,7 @@ if __name__ == '__main__':
     bc_trainer = TD3(**td3_config)
     
     # Load initial policy from checkpoint
-    initial_ckpt = Path("/home/caihy/pvp/rgbsr70.zip")
+    initial_ckpt = Path("/home/caihy/pvp/bestppomodeldomainA.zip")
     if initial_ckpt.exists():
         print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
@@ -212,6 +226,91 @@ if __name__ == '__main__':
         bc_trainer.set_parameters(params, exact_match=False, device=bc_trainer.device)
     else:
         print(f"Warning: Initial checkpoint {initial_ckpt} not found! bc_trainer will start with random weights.")
+
+    # ===== Apply LoRA if enabled =====
+    if args.use_lora:
+        print("=" * 80)
+        print("Applying LoRA (Low-Rank Adaptation) for efficient fine-tuning")
+        print("=" * 80)
+        
+        # Print parameter count before LoRA
+        print_trainable_parameters(bc_trainer.actor, "Actor (before LoRA)")
+        
+        # Apply LoRA to actor network (MLP layers in self.mu)
+        # The actor structure: features_extractor (CNN) -> mu (MLP)
+        # We apply LoRA to the MLP layers (mu) which are the policy head
+        apply_lora_to_model(
+            bc_trainer.actor.mu,
+            rank=args.lora_rank,
+            alpha=args.lora_alpha,
+            dropout=args.lora_dropout,
+            verbose=True
+        )
+        
+        # IMPORTANT: Also apply LoRA to actor_target to match parameter structure for polyak_update
+        apply_lora_to_model(
+            bc_trainer.actor_target.mu,
+            rank=args.lora_rank,
+            alpha=args.lora_alpha,
+            dropout=args.lora_dropout,
+            verbose=False  # Don't print again
+        )
+        # Copy LoRA parameters from actor to actor_target
+        bc_trainer.actor_target.load_state_dict(bc_trainer.actor.state_dict())
+        
+        # Freeze all non-LoRA parameters in the actor
+        freeze_non_lora_parameters(bc_trainer.actor)
+        # Also freeze actor_target completely (it's updated via polyak update, not gradient)
+        for param in bc_trainer.actor_target.parameters():
+            param.requires_grad = False
+        
+        # Recreate the actor optimizer to only optimize LoRA parameters
+        lora_params = get_lora_parameters(bc_trainer.actor)
+        bc_trainer.actor.optimizer = torch.optim.Adam(
+            lora_params, 
+            lr=bc_trainer.learning_rate
+        )
+        
+        # Print parameter count after LoRA
+        print_trainable_parameters(bc_trainer.actor, "Actor (after LoRA)")
+        
+        # Also apply LoRA to critic if requested
+        if args.lora_target == "all":
+            print("\nApplying LoRA to Critic networks...")
+            for i, qf in enumerate(bc_trainer.critic.q_networks):
+                apply_lora_to_model(
+                    qf,
+                    rank=args.lora_rank,
+                    alpha=args.lora_alpha,
+                    dropout=args.lora_dropout,
+                    verbose=True
+                )
+            # Also apply to critic_target
+            for i, qf in enumerate(bc_trainer.critic_target.q_networks):
+                apply_lora_to_model(
+                    qf,
+                    rank=args.lora_rank,
+                    alpha=args.lora_alpha,
+                    dropout=args.lora_dropout,
+                    verbose=False
+                )
+            bc_trainer.critic_target.load_state_dict(bc_trainer.critic.state_dict())
+            
+            freeze_non_lora_parameters(bc_trainer.critic)
+            for param in bc_trainer.critic_target.parameters():
+                param.requires_grad = False
+            
+            # Recreate critic optimizer for LoRA parameters
+            critic_lora_params = get_lora_parameters(bc_trainer.critic)
+            bc_trainer.critic.optimizer = torch.optim.Adam(
+                critic_lora_params,
+                lr=bc_trainer.learning_rate
+            )
+            print_trainable_parameters(bc_trainer.critic, "Critic (after LoRA)")
+        
+        print("=" * 80)
+        print("LoRA applied successfully!")
+        print("=" * 80)
 
     # ===== Setup callbacks =====
     # Phase 1: No wandb, only data collection
