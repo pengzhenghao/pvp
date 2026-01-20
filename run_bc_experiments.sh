@@ -1,12 +1,11 @@
 #!/bin/bash
 
-# TD3+BC Hyperparameter Search Script
-# This script runs TD3+BC experiments with different data amounts and hyperparameters
+# Pure BC (Behavioral Cloning) Experiment Script
+# This script runs pure BC experiments with different data amounts
 # across 8 GPUs in parallel
 #
-# TD3+BC paper: "A Minimalist Approach to Offline Reinforcement Learning"
-# Key hyperparameter: alpha (default 2.5 in paper)
-# Actor loss = -(alpha / avg|Q|) * Q(s, π(s)) + BC_loss
+# BC is the simplest baseline - just supervised learning on expert data
+# No hyperparameters to tune, only data amount matters
 
 # Base directory
 BASE_DIR="/home/caihy/pvp"
@@ -22,20 +21,17 @@ SAVE_FREQ=5000
 run_experiment() {
     local GPU_ID=$1
     local DATA_STEPS=$2
-    local TD3_BC_ALPHA=$3
-    local SEED=$4
+    local SEED=$3
     
     # Create descriptive experiment name
-    local EXP_NAME="td3bc_data${DATA_STEPS}_alpha${TD3_BC_ALPHA}_seed${SEED}"
+    local EXP_NAME="bc_data${DATA_STEPS}_seed${SEED}"
     
     echo "Starting experiment: ${EXP_NAME} on GPU ${GPU_ID}"
     
     CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
         --exp_name "${EXP_NAME}" \
-        --use_td3_bc \
         --data_collection_timesteps ${DATA_STEPS} \
         --bc_training_timesteps ${BC_TRAINING_TIMESTEPS} \
-        --td3_bc_alpha ${TD3_BC_ALPHA} \
         --eval_freq ${EVAL_FREQ} \
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \
@@ -54,12 +50,8 @@ mkdir -p ${BASE_DIR}/logs
 # ============================================================
 # You can customize the experiments below
 
-# Data collection amounts to test
+# Data collection amounts to test (from large to small)
 DATA_STEPS_LIST=(50000 20000 10000 5000)
-
-# TD3+BC alpha values to test (paper default is 2.5)
-# Higher alpha = more weight on Q-learning, lower alpha = more weight on BC
-TD3_BC_ALPHA_LIST=(0.5 1.0 2.5 5.0 10.0)
 
 # Seeds for reproducibility
 SEED_LIST=(0)
@@ -72,36 +64,33 @@ GPU_ID=0
 MAX_GPUS=8
 
 echo "============================================================"
-echo "Starting TD3+BC Hyperparameter Search"
+echo "Starting Pure BC Experiments"
 echo "============================================================"
 echo "Data steps: ${DATA_STEPS_LIST[@]}"
-echo "TD3+BC alpha: ${TD3_BC_ALPHA_LIST[@]}"
 echo "Seeds: ${SEED_LIST[@]}"
 echo "============================================================"
 echo ""
-echo "TD3+BC Actor Loss Formula:"
-echo "  actor_loss = -(α / avg|Q(s,a)|) * Q(s, π(s)) + BC_loss"
-echo "  - Higher α: more weight on Q-learning (maximize Q)"
-echo "  - Lower α: more weight on BC (imitate data)"
+echo "Pure BC:"
+echo "  - Supervised learning to imitate expert actions"
+echo "  - No Q-learning, no conservative penalties"
+echo "  - Simplest offline RL baseline"
 echo "============================================================"
 
 for DATA_STEPS in "${DATA_STEPS_LIST[@]}"; do
-    for TD3_BC_ALPHA in "${TD3_BC_ALPHA_LIST[@]}"; do
-        for SEED in "${SEED_LIST[@]}"; do
-            
-            run_experiment ${GPU_ID} ${DATA_STEPS} ${TD3_BC_ALPHA} ${SEED}
-            
-            # Move to next GPU
-            GPU_ID=$(( (GPU_ID + 1) % MAX_GPUS ))
-            
-            # If we've used all GPUs, wait for them to finish before continuing
-            if [ ${GPU_ID} -eq 0 ]; then
-                echo "All 8 GPUs are running experiments. Waiting for completion..."
-                wait
-                echo "Batch completed. Starting next batch..."
-            fi
-            
-        done
+    for SEED in "${SEED_LIST[@]}"; do
+        
+        run_experiment ${GPU_ID} ${DATA_STEPS} ${SEED}
+        
+        # Move to next GPU
+        GPU_ID=$(( (GPU_ID + 1) % MAX_GPUS ))
+        
+        # If we've used all GPUs, wait for them to finish before continuing
+        if [ ${GPU_ID} -eq 0 ]; then
+            echo "All 8 GPUs are running experiments. Waiting for completion..."
+            wait
+            echo "Batch completed. Starting next batch..."
+        fi
+        
     done
 done
 
@@ -110,6 +99,6 @@ echo "Waiting for remaining experiments to complete..."
 wait
 
 echo "============================================================"
-echo "All TD3+BC experiments completed!"
+echo "All Pure BC experiments completed!"
 echo "Logs are saved in ${BASE_DIR}/logs/"
 echo "============================================================"

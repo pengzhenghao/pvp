@@ -59,7 +59,7 @@ mkdir -p ${BASE_DIR}/logs
 # You can customize the experiments below
 
 # Data collection amounts to test
-DATA_STEPS_LIST=(5000 10000 20000 50000)
+DATA_STEPS_LIST=(50000 20000 10000 5000)
 
 # IQL tau (expectile) values to test
 # - 0.5 = mean (no max approximation)
