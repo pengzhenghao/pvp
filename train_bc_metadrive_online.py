@@ -318,9 +318,18 @@ if __name__ == '__main__':
         # actions_behavior has shape (buffer_size, n_envs, action_dim)
         saved_buffer_size = hb.actions_behavior.shape[0]
         SAVED_NUM_ENVS = hb.actions_behavior.shape[1]
+        action_dim = hb.actions_behavior.shape[2]
         hb.buffer_size = saved_buffer_size
         hb.n_envs = SAVED_NUM_ENVS
         print(f"Updated buffer dimensions: buffer_size={saved_buffer_size}, n_envs={SAVED_NUM_ENVS}")
+        
+        # Reinitialize other arrays with correct dimensions (these weren't saved)
+        hb.interventions = np.zeros((saved_buffer_size, SAVED_NUM_ENVS), dtype=np.float32)
+        hb.intervention_starts = np.zeros((saved_buffer_size, SAVED_NUM_ENVS), dtype=np.float32)
+        hb.intervention_costs = np.zeros((saved_buffer_size, SAVED_NUM_ENVS), dtype=np.float32)
+        hb.takeover_log_prob = np.zeros((saved_buffer_size, SAVED_NUM_ENVS), dtype=np.float32)
+        hb.actions_novice = np.zeros((saved_buffer_size, SAVED_NUM_ENVS, action_dim), dtype=hb.actions_behavior.dtype)
+        hb.timeouts = np.zeros((saved_buffer_size, SAVED_NUM_ENVS), dtype=np.float32)
         
         # Restore observations (dict with potentially multiple keys)
         for key in list(buffer_data.keys()):
