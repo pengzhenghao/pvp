@@ -39,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument("--bc_training_timesteps", default=1000000000, type=int, help="Total timesteps for BC training (can be very large).")
     parser.add_argument("--train_freq", default=1, type=int, help="Train every N steps.")
     parser.add_argument("--gradient_steps", default=1, type=int, help="Number of gradient steps per training update.")
-    parser.add_argument("--eval_freq", default=5000, type=int, help="Evaluate policy every N steps.")
+    parser.add_argument("--eval_freq", default=1000, type=int, help="Evaluate policy every N steps.")
     parser.add_argument("--n_eval_episodes", default=200, type=int, help="Number of episodes for evaluation.")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
     parser.add_argument("--use_td3_bc", action="store_true", help="Enable TD3+BC mode (combine Q-learning loss with BC loss).")
@@ -113,8 +113,8 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    num_envs = 1 if args.toy else 50
-    num_eval_envs = 1 if args.toy else 10
+    num_envs = 2 if args.toy else 50
+    num_eval_envs = 2 if args.toy else 10
     
     def _make_train_env():
         train_env = FakeHumanEnv(config=env_config)
@@ -163,7 +163,7 @@ if __name__ == '__main__':
         learning_rate=1e-4,
         q_value_bound=1,
         optimize_memory_usage=True,
-        buffer_size=args.data_collection_timesteps if not args.toy else 2000,
+        buffer_size=args.data_collection_timesteps if not args.toy else 200,
         learning_starts=args.learning_starts,
         batch_size=args.batch_size,
         tau=0.005,
@@ -231,7 +231,7 @@ if __name__ == '__main__':
         print(f"Using TD3 trainer with use_td3_bc={args.use_td3_bc}, bc_loss_weight={args.bc_loss_weight}")
     
     # Load initial policy from checkpoint
-    initial_ckpt = Path("/home/caihy/pvp/bestppomodeldomainA.zip")
+    initial_ckpt = Path("/home/caihy/pvp/rgbsr70.zip")
     if initial_ckpt.exists():
         print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
@@ -241,11 +241,9 @@ if __name__ == '__main__':
         print(f"Warning: Initial checkpoint {initial_ckpt} not found! bc_trainer will start with random weights.")
 
     # ===== Setup callbacks =====
-    # Phase 1: No wandb, only data collection
+    # Phase 1: No model saving, only data collection
     save_freq = args.save_freq
-    phase1_callbacks = [
-        CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=500000000, save_path=str(trial_dir / "models"))
-    ]
+    phase1_callbacks = []  # No callbacks needed for Phase 1 (data collection only)
     # Do NOT add WandbCallback for Phase 1 - wandb will be enabled in Phase 2
     callbacks = CallbackList(phase1_callbacks)
 
