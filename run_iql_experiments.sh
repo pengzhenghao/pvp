@@ -1,5 +1,7 @@
 #!/bin/bash
 
+killall python -9 2>/dev/null || true
+
 # IQL (Implicit Q-Learning) Experiment Script
 # This script runs IQL experiments with different data amounts
 # Each data amount runs on a separate GPU (8 data amounts on 8 GPUs)
