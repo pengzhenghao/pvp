@@ -20,10 +20,10 @@ BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
 
 # Training parameters
-BC_TRAINING_TIMESTEPS=1000000000
+BC_TRAINING_TIMESTEPS=100000
 EVAL_FREQ=5000
 N_EVAL_EPISODES=50
-SAVE_FREQ=10000
+SAVE_FREQ=5000
 
 # Create descriptive experiment name
 EXP_NAME="iql_data${DATA_STEPS}_tau${IQL_TAU}_beta${IQL_BETA}_seed${SEED}"
@@ -65,4 +65,5 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
     --eval_freq ${EVAL_FREQ} \
     --n_eval_episodes ${N_EVAL_EPISODES} \
     --save_freq ${SAVE_FREQ} \
-    --seed ${SEED}
+    --seed ${SEED} \
+    --wandb_project "domain-adaptation"

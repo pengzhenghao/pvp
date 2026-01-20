@@ -13,10 +13,10 @@ BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
 
 # Common parameters
-BC_TRAINING_TIMESTEPS=1000000000  # Train until manually stopped or converged
+BC_TRAINING_TIMESTEPS=100000  # Train until manually stopped or converged
 EVAL_FREQ=5000
 N_EVAL_EPISODES=50
-SAVE_FREQ=10000
+SAVE_FREQ=5000
 
 # Function to run a single experiment
 run_experiment() {
@@ -40,6 +40,7 @@ run_experiment() {
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \
         --seed ${SEED} \
+        --wandb_project "domain-adaptation" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     
     echo "Experiment ${EXP_NAME} started with PID $!"
