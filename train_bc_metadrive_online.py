@@ -539,23 +539,6 @@ if __name__ == '__main__':
     phase2_callback.on_training_start(locals(), globals())
     
     bc_training_current_timesteps = 0  # Start from 0 (train from scratch)
-    last_phase2_eval_timesteps = 0  # Track last eval in Phase 2
-    
-    # Find EvalCallback in the callback list to manually trigger evaluation
-    from pvp.sb3.common.callbacks import EvalCallback
-    eval_callback = None
-    if hasattr(phase2_callback, 'callbacks'):
-        for cb in phase2_callback.callbacks:
-            if isinstance(cb, EvalCallback):
-                eval_callback = cb
-                break
-            elif hasattr(cb, 'callbacks'):  # Nested CallbackList
-                for sub_cb in cb.callbacks:
-                    if isinstance(sub_cb, EvalCallback):
-                        eval_callback = sub_cb
-                        break
-                if eval_callback is not None:
-                    break
     
     while bc_training_current_timesteps < bc_training_timesteps:
         # Only train, no data collection
@@ -564,23 +547,12 @@ if __name__ == '__main__':
             bc_trainer.train(batch_size=args.batch_size, gradient_steps=args.gradient_steps)
             bc_training_current_timesteps += args.train_freq
             
-            # Call callback.on_step() for other callbacks (e.g., CheckpointCallback, WandbCallback)
-            phase2_callback.on_step()
+            # Update num_timesteps AFTER incrementing so callbacks report correct value
+            bc_trainer.num_timesteps = bc_training_current_timesteps
             
-            # Manually trigger EvalCallback based on timesteps (not n_calls)
-            # This ensures evaluation happens every eval_freq timesteps
-            if (bc_training_current_timesteps - last_phase2_eval_timesteps >= args.eval_freq and 
-                eval_callback is not None):
-                # Temporarily adjust n_calls to trigger evaluation
-                # EvalCallback checks: if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0
-                original_n_calls = eval_callback.n_calls
-                # Calculate how many eval cycles we should have done by now in Phase 2
-                eval_cycles = bc_training_current_timesteps // args.eval_freq
-                # Set n_calls to trigger evaluation (it will be incremented by on_step() above)
-                eval_callback.n_calls = eval_cycles * args.eval_freq - 1
-                # Trigger evaluation (this will increment n_calls and check the condition)
-                eval_callback._on_step()
-                last_phase2_eval_timesteps = bc_training_current_timesteps
+            # Call callback.on_step() for all callbacks (CheckpointCallback, WandbCallback, EvalCallback)
+            # EvalCallback will trigger automatically when n_calls % eval_freq == 0
+            phase2_callback.on_step()
         
         # Log progress
         log_interval = 100 if args.toy else 10000
