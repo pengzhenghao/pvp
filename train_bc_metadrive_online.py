@@ -1,6 +1,7 @@
 import argparse
 import os
 import uuid
+import pickle
 from pathlib import Path
 import sys
 import gymnasium
@@ -28,7 +29,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=0, type=int)
-    parser.add_argument("--save_freq", default=5000, type=int)
+    parser.add_argument("--save_freq", default=1000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="td3", help="The project name for wandb.")
@@ -37,28 +38,31 @@ if __name__ == '__main__':
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--data_collection_timesteps", default=20000, type=int, help="Total timesteps for data collection.")
-    parser.add_argument("--bc_training_timesteps", default=100000, type=int, help="Total timesteps for BC training (can be very large).")
+    parser.add_argument("--bc_training_timesteps", default=10000, type=int, help="Total timesteps for BC training (can be very large).")
     parser.add_argument("--train_freq", default=1, type=int, help="Train every N steps.")
     parser.add_argument("--gradient_steps", default=1, type=int, help="Number of gradient steps per training update.")
     parser.add_argument("--eval_freq", default=1000, type=int, help="Evaluate policy every N steps.")
-    parser.add_argument("--n_eval_episodes", default=200, type=int, help="Number of episodes for evaluation.")
+    parser.add_argument("--n_eval_episodes", default=400, type=int, help="Number of episodes for evaluation.")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
     parser.add_argument("--use_td3_bc", action="store_true", help="Enable TD3+BC mode (combine Q-learning loss with BC loss).")
     parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="Weight for BC loss in pure BC mode.")
-    parser.add_argument("--td3_bc_alpha", default=2.5, type=float, help="TD3+BC alpha parameter (default 2.5 from paper).")
+    parser.add_argument("--td3_bc_alpha", default=0.5, type=float, help="TD3+BC alpha parameter (default 2.5 from paper).")
     # CQL specific arguments
     parser.add_argument("--use_cql", action="store_true", help="Enable CQL (Conservative Q-Learning) mode.")
-    parser.add_argument("--cql_alpha", default=1.0, type=float, help="CQL conservative penalty weight.")
+    parser.add_argument("--cql_alpha", default=10.0, type=float, help="CQL conservative penalty weight.")
     parser.add_argument("--num_random_actions", default=10, type=int, help="Number of random actions for CQL loss.")
     parser.add_argument("--cql_temp", default=1.0, type=float, help="Temperature for logsumexp in CQL loss.")
     parser.add_argument("--cql_with_lagrange", action="store_true", help="Use Lagrange multiplier for automatic CQL alpha tuning.")
     parser.add_argument("--lagrange_threshold", default=10.0, type=float, help="Target value for CQL penalty when using Lagrange.")
     # IQL specific arguments
     parser.add_argument("--use_iql", action="store_true", help="Enable IQL (Implicit Q-Learning) mode.")
-    parser.add_argument("--iql_tau", default=0.7, type=float, help="IQL expectile parameter (0.5=mean, closer to 1=max).")
-    parser.add_argument("--iql_beta", default=3.0, type=float, help="IQL temperature for advantage-weighted regression.")
+    parser.add_argument("--iql_tau", default=0.5, type=float, help="IQL expectile parameter (0.5=mean, closer to 1=max).")
+    parser.add_argument("--iql_beta", default=1.0, type=float, help="IQL temperature for advantage-weighted regression.")
     parser.add_argument("--clip_score", default=100.0, type=float, help="Maximum advantage weight for IQL.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Maximum gradient norm for IQL.")
+    # Data buffer save/load arguments
+    parser.add_argument("--load_buffer", type=str, default="", help="Path to load saved data buffer (skip Phase 1 if provided).")
+    parser.add_argument("--save_buffer", type=str, default="", help="Path to save data buffer after collection (auto-generated if not provided).")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled
@@ -254,7 +258,7 @@ if __name__ == '__main__':
             print(f"Using pure BC trainer with bc_loss_weight={args.bc_loss_weight}")
     
     # Load initial policy from checkpoint
-    initial_ckpt = Path("/home/caihy/pvp/rgbsr70.zip")
+    initial_ckpt = Path("/home/caihy/pvp/bestppomodeldomainA.zip")
     if initial_ckpt.exists():
         print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
@@ -271,59 +275,102 @@ if __name__ == '__main__':
     callbacks = CallbackList(phase1_callbacks)
 
     # ===== Custom learn loop: collect data with PVPTD3 and train with TD3 =====
-    # Phase 1: Data collection
+    # Phase 1: Data collection (or load from saved buffer)
     data_collection_timesteps = args.data_collection_timesteps
     bc_training_timesteps = args.bc_training_timesteps
     
-    total_timesteps, callback = data_collector._setup_learn(
-        data_collection_timesteps,
-        None,  # eval_env for evaluation
-        callbacks,
-        -1,  # eval_freq
-        args.n_eval_episodes,  # n_eval_episodes
-        str(trial_dir),  # eval_log_path
-        True,  # reset_num_timesteps
-        experiment_batch_name,  # tb_log_name
-    )
-    
-    callback.on_training_start(locals(), globals())
-    
-    print("=" * 80)
-    print("Phase 1: Data Collection ONLY (No Training, No Evaluation)")
-    print("=" * 80)
-    print(f"PVPTD3 will collect {data_collection_timesteps} timesteps from FakeHumanEnv (expert actions)")
-    print("No training or evaluation will be performed during data collection")
-    print("=" * 80)
-    
-    # Phase 1: Data collection ONLY - no training, no evaluation
-    while data_collector.num_timesteps < data_collection_timesteps:
-        # Collect rollouts using PVPTD3 (data goes to human_data_buffer)
-        rollout = data_collector.collect_rollouts(
-            data_collector.env,
-            train_freq=data_collector.train_freq,
-            action_noise=data_collector.action_noise,
-            callback=callback,
-            learning_starts=data_collector.learning_starts,
-            replay_buffer=data_collector.replay_buffer,
-            log_interval=1,
+    # Check if we should load from saved buffer instead of collecting data
+    if args.load_buffer and os.path.exists(args.load_buffer):
+        print("=" * 80)
+        print("Phase 1: SKIPPED - Loading data buffer from file")
+        print("=" * 80)
+        print(f"Loading buffer from: {args.load_buffer}")
+        
+        with open(args.load_buffer, 'rb') as f:
+            buffer_data = pickle.load(f)
+        
+        # Restore buffer state
+        data_collector.human_data_buffer.observations = buffer_data['observations']
+        data_collector.human_data_buffer.actions = buffer_data['actions']
+        data_collector.human_data_buffer.rewards = buffer_data['rewards']
+        data_collector.human_data_buffer.dones = buffer_data['dones']
+        data_collector.human_data_buffer.next_observations = buffer_data['next_observations']
+        data_collector.human_data_buffer.pos = buffer_data['pos']
+        data_collector.human_data_buffer.full = buffer_data['full']
+        
+        print(f"Loaded {buffer_data['pos']} transitions from saved buffer")
+        print("=" * 80)
+        
+        # Close train_env since we don't need it for data collection
+        print("Closing training environment (not needed when loading buffer)...")
+        train_env.close()
+    else:
+        # Phase 1: Collect data using PVPTD3
+        total_timesteps, callback = data_collector._setup_learn(
+            data_collection_timesteps,
+            None,  # eval_env for evaluation
+            callbacks,
+            -1,  # eval_freq
+            args.n_eval_episodes,  # n_eval_episodes
+            str(trial_dir),  # eval_log_path
+            True,  # reset_num_timesteps
+            experiment_batch_name,  # tb_log_name
         )
         
-        if rollout.continue_training is False:
-            break
+        callback.on_training_start(locals(), globals())
         
-        # Log progress
-        log_interval = 100 if args.toy else 1000
-        if data_collector.num_timesteps % log_interval == 0:
-            print(f"Data Collection: {data_collector.num_timesteps}/{data_collection_timesteps}, "
-                  f"Buffer size: {data_collector.human_data_buffer.pos * num_envs}")
-    
-    print("=" * 80)
-    print(f"Phase 1 completed! Collected {data_collector.human_data_buffer.pos} transitions")
-    print("=" * 80)
-    
-    # Close train_env from Phase 1 to free resources
-    print("Closing Phase 1 training environment...")
-    train_env.close()
+        print("=" * 80)
+        print("Phase 1: Data Collection ONLY (No Training, No Evaluation)")
+        print("=" * 80)
+        print(f"PVPTD3 will collect {data_collection_timesteps} timesteps from FakeHumanEnv (expert actions)")
+        print("No training or evaluation will be performed during data collection")
+        print("=" * 80)
+        
+        # Phase 1: Data collection ONLY - no training, no evaluation
+        while data_collector.num_timesteps < data_collection_timesteps:
+            # Collect rollouts using PVPTD3 (data goes to human_data_buffer)
+            rollout = data_collector.collect_rollouts(
+                data_collector.env,
+                train_freq=data_collector.train_freq,
+                action_noise=data_collector.action_noise,
+                callback=callback,
+                learning_starts=data_collector.learning_starts,
+                replay_buffer=data_collector.replay_buffer,
+                log_interval=1,
+            )
+            
+            if rollout.continue_training is False:
+                break
+            
+            # Log progress
+            log_interval = 100 if args.toy else 1000
+            if data_collector.num_timesteps % log_interval == 0:
+                print(f"Data Collection: {data_collector.num_timesteps}/{data_collection_timesteps}, "
+                      f"Buffer size: {data_collector.human_data_buffer.pos * num_envs}")
+        
+        print("=" * 80)
+        print(f"Phase 1 completed! Collected {data_collector.human_data_buffer.pos} transitions")
+        print("=" * 80)
+        
+        # Save buffer if requested
+        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"data_buffer_{data_collection_timesteps}.pkl")
+        print(f"Saving data buffer to: {save_buffer_path}")
+        buffer_data = {
+            'observations': data_collector.human_data_buffer.observations,
+            'actions': data_collector.human_data_buffer.actions,
+            'rewards': data_collector.human_data_buffer.rewards,
+            'dones': data_collector.human_data_buffer.dones,
+            'next_observations': data_collector.human_data_buffer.next_observations,
+            'pos': data_collector.human_data_buffer.pos,
+            'full': data_collector.human_data_buffer.full,
+        }
+        with open(save_buffer_path, 'wb') as f:
+            pickle.dump(buffer_data, f)
+        print(f"Buffer saved successfully!")
+        
+        # Close train_env from Phase 1 to free resources
+        print("Closing Phase 1 training environment...")
+        train_env.close()
     
     # Phase 2: BC training from scratch on collected data
     print("=" * 80)
