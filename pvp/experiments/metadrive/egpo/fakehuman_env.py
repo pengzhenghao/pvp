@@ -152,13 +152,33 @@ class FakeHumanEnv(HumanInTheLoopEnv):
                 global _expert
                 self.expert = _expert
             
-            lidar_o = self.lidar.observe(self.agent)
-            expert_action, _  = self.expert.predict(lidar_o, deterministic=True)
-            if self.total_steps > 0:
-                self.takeover = True
+            if self.total_steps <= 2500:
+                # Phase 1: Pure expert demonstrations
+                lidar_o = self.lidar.observe(self.agent)
+                expert_action, _ = self.expert.predict(lidar_o, deterministic=True)
                 actions = expert_action
+                self.takeover = True
             else:
-                self.takeover = False
+                # Phase 2: Use free_level mechanism for takeover
+                lidar_o = self.lidar.observe(self.agent)
+                obs_tensor, _ = self.expert.obs_to_tensor(lidar_o)
+                distribution = self.expert.get_distribution(obs_tensor)
+                log_prob = distribution.log_prob(torch.from_numpy(actions).to(obs_tensor.device))
+                action_prob = log_prob.exp().detach().cpu().numpy()
+
+                expert_action = distribution.mode().detach().cpu().numpy()
+
+                assert expert_action.shape[0] == action_prob.shape[0] == 1
+                action_prob = action_prob[0]
+                expert_action = expert_action[0]
+                if action_prob < 1 - self.config['free_level']:
+                    if self.config["use_discrete"]:
+                        expert_action = self.continuous_to_discrete(expert_action)
+                        expert_action = self.discrete_to_continuous(expert_action)
+                    actions = expert_action
+                    self.takeover = True
+                else:
+                    self.takeover = False
 
         o, r, d, i = super(HumanInTheLoopEnv, self).step(actions)
         self.takeover_recorder.append(self.takeover)

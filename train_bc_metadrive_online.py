@@ -126,8 +126,8 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    num_envs = 2 if args.toy else 2
-    num_eval_envs = 2 if args.toy else 2
+    num_envs = 1 if args.toy else 2
+    num_eval_envs = 1 if args.toy else 2
     
     # Check if we're loading buffer (skip Phase 1 entirely)
     loading_buffer = args.load_buffer and os.path.exists(args.load_buffer)
@@ -200,12 +200,12 @@ if __name__ == '__main__':
         )
         
         data_collector = PVPTD3(**pvp_config)
-        if args.ckpt:
-            ckpt = Path(args.ckpt)
-            print(f"Loading checkpoint from {ckpt}!")
-            from pvp.sb3.common.save_util import load_from_zip_file
-            data, params, pytorch_variables = load_from_zip_file(ckpt, device=data_collector.device, print_system_info=False)
-            data_collector.set_parameters(params, exact_match=False, device=data_collector.device)
+        # Load initial policy for data collection (default: rgbsr70.zip)
+        data_collector_ckpt = Path(args.ckpt) if args.ckpt else Path("/home/caihy/pvp/rgbsr70.zip")
+        print(f"Loading data collector checkpoint from {data_collector_ckpt}!")
+        from pvp.sb3.common.save_util import load_from_zip_file
+        data, params, pytorch_variables = load_from_zip_file(data_collector_ckpt, device=data_collector.device, print_system_info=False)
+        data_collector.set_parameters(params, exact_match=False, device=data_collector.device)
     else:
         print("=" * 80)
         print("SKIPPING Phase 1 setup - will load buffer directly")
@@ -315,9 +315,14 @@ if __name__ == '__main__':
         hb.dones = buffer_data['dones']
         
         # IMPORTANT: Update buffer_size and n_envs to match loaded data dimensions
-        # actions_behavior has shape (buffer_size, n_envs, action_dim)
-        saved_buffer_size = hb.actions_behavior.shape[0]
-        SAVED_NUM_ENVS = hb.actions_behavior.shape[1]
+        # Try to read from saved metadata first, fallback to inferring from array shape
+        if 'buffer_size' in buffer_data.keys() and 'n_envs' in buffer_data.keys():
+            saved_buffer_size = int(buffer_data['buffer_size'])
+            SAVED_NUM_ENVS = int(buffer_data['n_envs'])
+        else:
+            # Fallback: infer from actions_behavior shape (buffer_size, n_envs, action_dim)
+            saved_buffer_size = hb.actions_behavior.shape[0]
+            SAVED_NUM_ENVS = hb.actions_behavior.shape[1]
         action_dim = hb.actions_behavior.shape[2]
         hb.buffer_size = saved_buffer_size
         hb.n_envs = SAVED_NUM_ENVS
@@ -428,7 +433,7 @@ if __name__ == '__main__':
         print("=" * 80)
         
         # Save buffer if requested (only essential fields to save space)
-        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"data_buffer_{data_collection_timesteps}.npz")
+        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"egpo_data_buffer_{data_collection_timesteps}.npz")
         print(f"Saving data buffer to: {save_buffer_path}")
         
         # Check if optimize_memory_usage is enabled (next_observations will be None)
@@ -440,6 +445,8 @@ if __name__ == '__main__':
             'pos': np.array(data_collector.human_data_buffer.pos),
             'full': np.array(data_collector.human_data_buffer.full),
             'optimize_memory_usage': np.array(optimize_memory),
+            'buffer_size': np.array(data_collector.human_data_buffer.buffer_size),
+            'n_envs': np.array(data_collector.human_data_buffer.n_envs),
             'actions_behavior': data_collector.human_data_buffer.actions_behavior,
             'rewards': data_collector.human_data_buffer.rewards,
             'dones': data_collector.human_data_buffer.dones,
