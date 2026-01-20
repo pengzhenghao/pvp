@@ -37,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--data_collection_timesteps", default=20000, type=int, help="Total timesteps for data collection.")
-    parser.add_argument("--bc_training_timesteps", default=1000000000, type=int, help="Total timesteps for BC training (can be very large).")
+    parser.add_argument("--bc_training_timesteps", default=100000, type=int, help="Total timesteps for BC training (can be very large).")
     parser.add_argument("--train_freq", default=1, type=int, help="Train every N steps.")
     parser.add_argument("--gradient_steps", default=1, type=int, help="Number of gradient steps per training update.")
     parser.add_argument("--eval_freq", default=1000, type=int, help="Evaluate policy every N steps.")
