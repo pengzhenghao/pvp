@@ -7,6 +7,13 @@ https://arxiv.org/abs/2006.04779
 CQL adds a conservative regularization term to the Q-function that minimizes
 Q-values for out-of-distribution actions while maximizing Q-values for actions
 in the dataset.
+
+Key design (consistent with original paper):
+- Critic: TD loss + CQL penalty (logsumexp(Q) - Q(s, a_data))
+- Actor: Standard Q-value maximization (-Q(s, π(s)))
+- The conservative penalty is ONLY on the critic, NOT on the actor
+
+Optional: Set use_td3_bc=True to combine CQL with TD3+BC style actor loss.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
@@ -256,33 +263,27 @@ class CQL(TD3):
                 alpha_loss.backward()
                 self.alpha_cql_optimizer.step()
             
-            # Delayed policy updates (same as TD3)
+            # Delayed policy updates
             if (self._n_updates % self.policy_delay == 0):
                 if self.num_timesteps > 0:
-                    # Compute actor loss (Q-value maximization)
-                    norm_coeff = th.abs(self.critic.q1_forward(
-                        replay_data.observations, 
-                        self.actor(replay_data.observations)
-                    )).mean().detach()
+                    # Get policy actions
+                    pi_actions = self.actor(replay_data.observations)
                     
-                    actor_loss = -self.critic.q1_forward(
-                        replay_data.observations, 
-                        self.actor(replay_data.observations)
-                    ).mean()
+                    # CQL Actor Loss: Standard Q-value maximization (as per original paper)
+                    # actor_loss = -Q(s, π(s))
+                    q_pi = self.critic.q1_forward(replay_data.observations, pi_actions)
+                    actor_loss = -q_pi.mean()
                     actor_losses.append(actor_loss.item())
-                    actor_loss /= norm_coeff
                     
-                    # Compute BC loss
-                    replay_data_human = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
-                    new_action = self.actor(replay_data_human.observations)
-                    bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean()
+                    # Compute BC loss for monitoring (not used in optimization by default)
+                    bc_loss = F.mse_loss(pi_actions, replay_data.actions_behavior)
                     
-                    # TD3+BC: combine Q-learning loss with BC loss
-                    # Pure BC: only use BC loss
+                    # Optional: TD3+BC style - combine Q-learning with BC loss
                     if self.use_td3_bc:
-                        actor_loss += bc_loss * self.bc_loss_weight
-                    else:
-                        actor_loss = bc_loss * self.bc_loss_weight
+                        # Normalize Q-loss as in TD3+BC paper
+                        q_data = self.critic.q1_forward(replay_data.observations, replay_data.actions_behavior)
+                        lmbda = self.td3_bc_alpha / th.abs(q_data).mean().detach()
+                        actor_loss = -lmbda * q_pi.mean() + bc_loss
                     
                     # Optimize the actor
                     self.actor.optimizer.zero_grad()
@@ -297,13 +298,14 @@ class CQL(TD3):
         self.logger.record("train/current_q_values_average_values", th.mean(th.abs(q1) + th.abs(q2)).item() * 0.5, exclude="tensorboard")
         if len(actor_losses) > 0:
             self.logger.record("train/actor_loss", np.mean(actor_losses))
-            self.logger.record("train/bc_loss", bc_loss.item())
+            self.logger.record("train/bc_loss", bc_loss.item())  # BC loss for monitoring
         self.logger.record("train/critic_loss", np.mean(critic_losses))
         self.logger.record("train/cql_loss", np.mean(cql_losses))
         if self.with_lagrange:
             self.logger.record("train/cql_alpha", th.exp(self.log_alpha_cql).item())
         else:
             self.logger.record("train/cql_alpha", self.cql_alpha)
+        self.logger.record("train/use_td3_bc", int(self.use_td3_bc))  # Log whether TD3+BC is enabled
         
         import wandb
         wandb.log(self.logger.name_to_value, step=self.num_timesteps)
