@@ -137,6 +137,7 @@ class IQL(TD3):
         # Create value network with same structure as critic but single output
         # Use the policy's actor features extractor (which handles dict obs)
         self.value_features_extractor = self.policy.make_features_extractor()
+        self.value_features_extractor = self.value_features_extractor.to(self.device)
         features_dim = self.value_features_extractor.features_dim
         
         # Simple MLP for value head
