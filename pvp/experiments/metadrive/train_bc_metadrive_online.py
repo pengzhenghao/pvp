@@ -55,7 +55,7 @@ if __name__ == '__main__':
         args.batch_size = 64
         args.eval_freq = 20
         args.n_eval_episodes = 4
-        args.save_freq = 1000
+        args.save_freq = 1
         # num_envs will be set to 2 in the environment setup
 
     # ===== Set up some arguments =====
@@ -221,7 +221,7 @@ if __name__ == '__main__':
     # Phase 1: No wandb, only data collection
     save_freq = args.save_freq
     phase1_callbacks = [
-        CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=save_freq, save_path=str(trial_dir / "models"))
+        CheckpointCallback(name_prefix="rl_model", verbose=2, save_freq=500000000, save_path=str(trial_dir / "models"))
     ]
     # Do NOT add WandbCallback for Phase 1 - wandb will be enabled in Phase 2
     callbacks = CallbackList(phase1_callbacks)
