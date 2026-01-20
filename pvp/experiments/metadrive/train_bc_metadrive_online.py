@@ -26,7 +26,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=0, type=int)
-    parser.add_argument("--save_freq", default=50000000, type=int)
+    parser.add_argument("--save_freq", default=5000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="td3", help="The project name for wandb.")
@@ -38,9 +38,11 @@ if __name__ == '__main__':
     parser.add_argument("--bc_training_timesteps", default=1000000000, type=int, help="Total timesteps for BC training (can be very large).")
     parser.add_argument("--train_freq", default=1, type=int, help="Train every N steps.")
     parser.add_argument("--gradient_steps", default=1, type=int, help="Number of gradient steps per training update.")
-    parser.add_argument("--eval_freq", default=1000, type=int, help="Evaluate policy every N steps.")
+    parser.add_argument("--eval_freq", default=5000, type=int, help="Evaluate policy every N steps.")
     parser.add_argument("--n_eval_episodes", default=200, type=int, help="Number of episodes for evaluation.")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
+    parser.add_argument("--use_td3_bc", action="store_true", help="Enable TD3+BC mode (combine Q-learning loss with BC loss).")
+    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="Weight for BC loss in TD3+BC mode.")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled
@@ -199,12 +201,14 @@ if __name__ == '__main__':
         seed=seed,
         device="auto",
         buffer_size=args.data_collection_timesteps if not args.toy else 200,
+        use_td3_bc=args.use_td3_bc,
+        bc_loss_weight=args.bc_loss_weight,
     )
     
     bc_trainer = TD3(**td3_config)
     
     # Load initial policy from checkpoint
-    initial_ckpt = Path("/home/caihy/pvp/rgbsr70.zip")
+    initial_ckpt = Path("/home/caihy/pvp/bestppomodeldomainA.zip")
     if initial_ckpt.exists():
         print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
@@ -279,9 +283,13 @@ if __name__ == '__main__':
     
     # Phase 2: BC training from scratch on collected data
     print("=" * 80)
-    print("Phase 2: BC Training from Scratch on Collected Data")
+    if args.use_td3_bc:
+        print("Phase 2: TD3+BC Training (Q-learning + BC) on Collected Data")
+    else:
+        print("Phase 2: Pure BC Training on Collected Data")
     print("=" * 80)
-    print(f"Starting BC training from scratch for {bc_training_timesteps} timesteps using collected data")
+    print(f"Starting training for {bc_training_timesteps} timesteps using collected data")
+    print(f"TD3+BC mode: {args.use_td3_bc}, BC loss weight: {args.bc_loss_weight}")
     print(f"Evaluation will be performed every {args.eval_freq} steps via EvalCallback")
     print("=" * 80)
     

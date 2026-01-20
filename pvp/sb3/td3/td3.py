@@ -86,6 +86,8 @@ class TD3(OffPolicyAlgorithm):
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
         monitor_wrapper=False,
+        bc_loss_weight: float = 1.0,
+        use_td3_bc: bool = False,
     ):
 
         super(TD3, self).__init__(
@@ -119,6 +121,8 @@ class TD3(OffPolicyAlgorithm):
         self.policy_delay = policy_delay
         self.target_noise_clip = target_noise_clip
         self.target_policy_noise = target_policy_noise
+        self.bc_loss_weight = bc_loss_weight
+        self.use_td3_bc = use_td3_bc
 
         if _init_setup_model:
             self._setup_model()
@@ -174,7 +178,7 @@ class TD3(OffPolicyAlgorithm):
             # Delayed policy updates
             if (self._n_updates % self.policy_delay == 0):
                 if self.num_timesteps > 0:
-                    # Compute actor loss
+                    # Compute actor loss (Q-value maximization)
                     norm_coeff = th.abs(self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations))).mean().detach()
                     
                     actor_loss = -self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations
@@ -182,10 +186,17 @@ class TD3(OffPolicyAlgorithm):
                     actor_losses.append(actor_loss.item())
                     actor_loss /= norm_coeff
                     
+                    # Compute BC loss
                     replay_data_human = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
                     new_action = self.actor(replay_data_human.observations)
                     bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean()
-                    actor_loss = bc_loss * 1
+                    
+                    # TD3+BC: combine Q-learning loss with BC loss
+                    # Pure BC: only use BC loss
+                    if self.use_td3_bc:
+                        actor_loss += bc_loss * self.bc_loss_weight
+                    else:
+                        actor_loss = bc_loss * self.bc_loss_weight
                     
                     # Optimize the actor
                     self.actor.optimizer.zero_grad()
