@@ -914,7 +914,7 @@ def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=str, default="/home/caihy/pvp/bestppomodeldomainA.zip", help="Path to model checkpoint")
+    parser.add_argument("--ckpt", type=str, default="/home/caihy/pvp/rl_model_2999_steps.zip", help="Path to model checkpoint")
     parser.add_argument("--num_episodes", type=int, default=50, help="Number of episodes to evaluate")
     parser.add_argument("--save_video", action="store_true", help="Save videos (default: False)")
     parser.add_argument("--video_dir", type=str, default="eval_videos", help="Directory to save videos")
@@ -936,7 +936,7 @@ if __name__ == "__main__":
     
     # Evaluate and optionally record videos
     print("Starting evaluation...")
-    if args.visualize_attention:
+    if True:
         print("CNN Attention visualization enabled")
         print("Red/yellow regions indicate areas the CNN focuses on")
     # Handle action_dim=-1 as None (for L2 norm)
@@ -948,8 +948,8 @@ if __name__ == "__main__":
         num_episodes=args.num_episodes, 
         save_video=args.save_video,
         video_save_dir=args.video_dir,
-        enable_attention_vis=args.visualize_attention,
-        attention_save_dir=args.attention_dir if args.visualize_attention else None,
+        enable_attention_vis=True,
+        attention_save_dir=args.attention_dir if True else None,
         layer_index=args.layer_index,
         action_dim=action_dim
     )
