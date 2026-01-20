@@ -15,7 +15,7 @@ BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
 # Common parameters (optimized)
 BC_TRAINING_TIMESTEPS=10000
 EVAL_FREQ=1000
-N_EVAL_EPISODES=400
+N_EVAL_EPISODES=200
 SAVE_FREQ=1000
 SEED=0
 
@@ -47,7 +47,7 @@ run_experiment() {
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \
         --seed ${SEED} \
-        --wandb_project "domain-adaptation-0120" \
+        --wandb_project "adaptation-0120" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     
     echo "Experiment ${EXP_NAME} started with PID $!"

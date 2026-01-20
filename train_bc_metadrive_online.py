@@ -314,6 +314,14 @@ if __name__ == '__main__':
         hb.rewards = buffer_data['rewards']
         hb.dones = buffer_data['dones']
         
+        # IMPORTANT: Update buffer_size and n_envs to match loaded data dimensions
+        # actions_behavior has shape (buffer_size, n_envs, action_dim)
+        saved_buffer_size = hb.actions_behavior.shape[0]
+        SAVED_NUM_ENVS = hb.actions_behavior.shape[1]
+        hb.buffer_size = saved_buffer_size
+        hb.n_envs = SAVED_NUM_ENVS
+        print(f"Updated buffer dimensions: buffer_size={saved_buffer_size}, n_envs={SAVED_NUM_ENVS}")
+        
         # Restore observations (dict with potentially multiple keys)
         for key in list(buffer_data.keys()):
             if key.startswith('obs_'):
@@ -332,8 +340,6 @@ if __name__ == '__main__':
         
         # Calculate effective pos and full based on data_collection_timesteps
         # This allows using a subset of a larger saved buffer
-        # Note: Buffer was saved with 25 envs, so we use 25 for calculation regardless of current num_envs
-        SAVED_NUM_ENVS = 25  # Buffer was collected with 25 parallel envs
         effective_transitions = data_collection_timesteps // SAVED_NUM_ENVS
         
         if effective_transitions >= hb.buffer_size:
