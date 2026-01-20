@@ -289,12 +289,18 @@ if __name__ == '__main__':
         with open(args.load_buffer, 'rb') as f:
             buffer_data = pickle.load(f)
         
-        # Restore buffer state
+        # Restore buffer state (HACOReplayBuffer attributes)
         data_collector.human_data_buffer.observations = buffer_data['observations']
-        data_collector.human_data_buffer.actions = buffer_data['actions']
+        data_collector.human_data_buffer.actions_behavior = buffer_data['actions_behavior']
+        data_collector.human_data_buffer.actions_novice = buffer_data['actions_novice']
         data_collector.human_data_buffer.rewards = buffer_data['rewards']
         data_collector.human_data_buffer.dones = buffer_data['dones']
         data_collector.human_data_buffer.next_observations = buffer_data['next_observations']
+        data_collector.human_data_buffer.interventions = buffer_data['interventions']
+        data_collector.human_data_buffer.intervention_starts = buffer_data['intervention_starts']
+        data_collector.human_data_buffer.intervention_costs = buffer_data['intervention_costs']
+        data_collector.human_data_buffer.takeover_log_prob = buffer_data['takeover_log_prob']
+        data_collector.human_data_buffer.timeouts = buffer_data['timeouts']
         data_collector.human_data_buffer.pos = buffer_data['pos']
         data_collector.human_data_buffer.full = buffer_data['full']
         
@@ -324,6 +330,11 @@ if __name__ == '__main__':
         print("=" * 80)
         print(f"PVPTD3 will collect {data_collection_timesteps} timesteps from FakeHumanEnv (expert actions)")
         print("No training or evaluation will be performed during data collection")
+        print(f"use_balance_sample: {data_collector.use_balance_sample}")
+        print(f"human_data_buffer is replay_buffer: {data_collector.human_data_buffer is data_collector.replay_buffer}")
+        print(f"human_data_buffer type: {type(data_collector.human_data_buffer)}")
+        print(f"human_data_buffer.buffer_size: {data_collector.human_data_buffer.buffer_size}")
+        print(f"human_data_buffer.n_envs: {data_collector.human_data_buffer.n_envs}")
         print("=" * 80)
         
         # Phase 1: Data collection ONLY - no training, no evaluation
@@ -346,7 +357,8 @@ if __name__ == '__main__':
             log_interval = 100 if args.toy else 1000
             if data_collector.num_timesteps % log_interval == 0:
                 print(f"Data Collection: {data_collector.num_timesteps}/{data_collection_timesteps}, "
-                      f"Buffer size: {data_collector.human_data_buffer.pos * num_envs}")
+                      f"human_buffer.pos: {data_collector.human_data_buffer.pos}, "
+                      f"replay_buffer.pos: {data_collector.replay_buffer.pos}")
         
         print("=" * 80)
         print(f"Phase 1 completed! Collected {data_collector.human_data_buffer.pos} transitions")
@@ -356,11 +368,18 @@ if __name__ == '__main__':
         save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"data_buffer_{data_collection_timesteps}.pkl")
         print(f"Saving data buffer to: {save_buffer_path}")
         buffer_data = {
+            # HACOReplayBuffer attributes
             'observations': data_collector.human_data_buffer.observations,
-            'actions': data_collector.human_data_buffer.actions,
+            'actions_behavior': data_collector.human_data_buffer.actions_behavior,
+            'actions_novice': data_collector.human_data_buffer.actions_novice,
             'rewards': data_collector.human_data_buffer.rewards,
             'dones': data_collector.human_data_buffer.dones,
             'next_observations': data_collector.human_data_buffer.next_observations,
+            'interventions': data_collector.human_data_buffer.interventions,
+            'intervention_starts': data_collector.human_data_buffer.intervention_starts,
+            'intervention_costs': data_collector.human_data_buffer.intervention_costs,
+            'takeover_log_prob': data_collector.human_data_buffer.takeover_log_prob,
+            'timeouts': data_collector.human_data_buffer.timeouts,
             'pos': data_collector.human_data_buffer.pos,
             'full': data_collector.human_data_buffer.full,
         }
