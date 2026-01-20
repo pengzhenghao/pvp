@@ -39,6 +39,7 @@ run_experiment() {
         --bc_training_timesteps ${BC_TRAINING_TIMESTEPS} \
         --iql_tau ${IQL_TAU} \
         --iql_beta ${IQL_BETA} \
+        --max_grad_norm 1.0 \
         --eval_freq ${EVAL_FREQ} \
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \

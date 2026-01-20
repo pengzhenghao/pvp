@@ -30,31 +30,6 @@ from pvp.sb3.td3.policies import TD3Policy
 from pvp.sb3.td3.td3 import TD3
 
 
-class ValueNetwork(nn.Module):
-    """
-    Value network V(s) for IQL.
-    Uses the same architecture as the critic but outputs a single value.
-    """
-    def __init__(self, features_extractor, features_dim: int, net_arch: List[int] = [256, 256]):
-        super(ValueNetwork, self).__init__()
-        self.features_extractor = features_extractor
-        
-        # Build MLP layers
-        layers = []
-        last_dim = features_dim
-        for hidden_dim in net_arch:
-            layers.append(nn.Linear(last_dim, hidden_dim))
-            layers.append(nn.ReLU())
-            last_dim = hidden_dim
-        layers.append(nn.Linear(last_dim, 1))
-        
-        self.mlp = nn.Sequential(*layers)
-    
-    def forward(self, obs):
-        features = self.features_extractor(obs)
-        return self.mlp(features)
-
-
 class IQL(TD3):
     """
     Implicit Q-Learning (IQL) for offline RL.
@@ -72,6 +47,7 @@ class IQL(TD3):
         - higher = more greedy (exploit high-advantage actions)
         - lower = more uniform (explore more)
     :param clip_score: Maximum value for advantage weights to prevent explosion (default: 100.0)
+    :param max_grad_norm: Maximum gradient norm for clipping (default: 1.0)
     """
     
     def __init__(
@@ -108,6 +84,7 @@ class IQL(TD3):
         iql_tau: float = 0.7,
         iql_beta: float = 3.0,
         clip_score: float = 100.0,
+        max_grad_norm: float = 1.0,
     ):
         # Don't initialize model yet - we need to set up value network first
         super(IQL, self).__init__(
@@ -145,6 +122,7 @@ class IQL(TD3):
         self.iql_tau = iql_tau
         self.iql_beta = iql_beta
         self.clip_score = clip_score
+        self.max_grad_norm = max_grad_norm
         
         if _init_setup_model:
             self._setup_model()
@@ -152,19 +130,38 @@ class IQL(TD3):
     def _setup_model(self) -> None:
         super(IQL, self)._setup_model()
         
-        # Create value network V(s) using same features extractor architecture
-        # Get features dimension from the critic
-        features_dim = self.critic.features_extractor.features_dim
+        # Create value network V(s) - use Q1 network architecture but output single value
+        # We'll create a simple MLP that takes the same features as the critic
+        # For simplicity, we use the critic's Q1 network as a template
         
-        # Create a new features extractor for value network (same architecture)
-        self.value_net = ValueNetwork(
-            features_extractor=self.policy.make_features_extractor(),
-            features_dim=features_dim,
-            net_arch=[256, 256]
+        # Create value network with same structure as critic but single output
+        # Use the policy's actor features extractor (which handles dict obs)
+        self.value_features_extractor = self.policy.make_features_extractor()
+        features_dim = self.value_features_extractor.features_dim
+        
+        # Simple MLP for value head
+        self.value_mlp = nn.Sequential(
+            nn.Linear(features_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1)
         ).to(self.device)
         
-        # Create optimizer for value network
-        self.value_optimizer = th.optim.Adam(self.value_net.parameters(), lr=self.learning_rate)
+        # Initialize weights with small values for stability
+        for layer in self.value_mlp:
+            if isinstance(layer, nn.Linear):
+                nn.init.orthogonal_(layer.weight, gain=0.01)
+                nn.init.constant_(layer.bias, 0.0)
+        
+        # Create optimizer for value network (features extractor + mlp)
+        value_params = list(self.value_features_extractor.parameters()) + list(self.value_mlp.parameters())
+        self.value_optimizer = th.optim.Adam(value_params, lr=self.learning_rate)
+    
+    def _get_value(self, obs) -> th.Tensor:
+        """Get V(s) from value network."""
+        features = self.value_features_extractor(obs)
+        return self.value_mlp(features)
     
     def _expectile_loss(self, diff: th.Tensor, expectile: float) -> th.Tensor:
         """
@@ -173,7 +170,7 @@ class IQL(TD3):
         L_tau(u) = |tau - 1(u < 0)| * u^2
         
         When tau > 0.5:
-        - Underestimating (diff > 0) is penalized more
+        - Underestimating (diff > 0, meaning Q > V) is penalized more
         - This pushes V towards max Q
         """
         weight = th.where(diff > 0, expectile, 1 - expectile)
@@ -190,11 +187,14 @@ class IQL(TD3):
         """
         # Switch to train mode
         self.policy.set_training_mode(True)
+        self.value_features_extractor.train()
+        self.value_mlp.train()
         
         # Update learning rate according to lr schedule
         self._update_learning_rate([self.actor.optimizer, self.critic.optimizer])
         
-        actor_losses, critic_losses, value_losses = [], [], []
+        actor_losses, critic_losses, value_losses, bc_losses = [], [], [], []
+        advantages_mean, advantages_std = [], []
         
         for _ in range(gradient_steps):
             self._n_updates += 1
@@ -212,14 +212,20 @@ class IQL(TD3):
                 q_data = th.min(q1, q2)
             
             # Get V(s)
-            v_pred = self.value_net(replay_data.observations)
+            v_pred = self._get_value(replay_data.observations)
             
             # Expectile loss: pushes V towards max Q when tau > 0.5
+            # diff = Q - V, positive diff means Q > V (underestimating)
             value_loss = self._expectile_loss(q_data - v_pred, self.iql_tau)
             value_losses.append(value_loss.item())
             
             self.value_optimizer.zero_grad()
             value_loss.backward()
+            # Gradient clipping for stability
+            th.nn.utils.clip_grad_norm_(
+                list(self.value_features_extractor.parameters()) + list(self.value_mlp.parameters()),
+                self.max_grad_norm
+            )
             self.value_optimizer.step()
             
             # ==================== Update Q Networks ====================
@@ -227,7 +233,7 @@ class IQL(TD3):
             
             with th.no_grad():
                 # Use V(s') instead of max_a' Q(s', a')
-                next_v = self.value_net(replay_data.next_observations)
+                next_v = self._get_value(replay_data.next_observations)
                 target_q = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_v
             
             # Get current Q estimates
@@ -240,6 +246,8 @@ class IQL(TD3):
             
             self.critic.optimizer.zero_grad()
             critic_loss.backward()
+            # Gradient clipping for stability
+            th.nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
             self.critic.optimizer.step()
             
             # ==================== Update Policy (Actor) ====================
@@ -249,26 +257,46 @@ class IQL(TD3):
             if self._n_updates % self.policy_delay == 0:
                 # Compute advantages
                 with th.no_grad():
-                    v_s = self.value_net(replay_data.observations)
+                    v_s = self._get_value(replay_data.observations)
                     q1, q2 = self.critic(replay_data.observations, replay_data.actions_behavior)
                     q_s_a = th.min(q1, q2)
                     advantage = q_s_a - v_s
                     
+                    # Log advantage statistics
+                    advantages_mean.append(advantage.mean().item())
+                    advantages_std.append(advantage.std().item())
+                    
+                    # Normalize advantages for stability (important!)
+                    adv_std = advantage.std()
+                    if adv_std > 1e-8:
+                        advantage_normalized = advantage / adv_std
+                    else:
+                        advantage_normalized = advantage
+                    
                     # Compute weights: exp(β * A) with clipping for stability
-                    weights = th.exp(self.iql_beta * advantage)
+                    # Use normalized advantages to prevent explosion
+                    weights = th.exp(self.iql_beta * advantage_normalized)
                     weights = th.clamp(weights, max=self.clip_score)
+                    # Normalize weights to have mean 1 for stable gradients
+                    weights = weights / weights.mean()
                 
                 # Get policy actions
                 pi_actions = self.actor(replay_data.observations)
                 
                 # Advantage-weighted BC loss
-                # Minimize: -E[w(s,a) * log π(a|s)] ≈ E[w(s,a) * ||π(s) - a||^2]
+                # Minimize: E[w(s,a) * ||π(s) - a||^2]
                 bc_diff = (pi_actions - replay_data.actions_behavior) ** 2
-                actor_loss = (weights * bc_diff.mean(dim=1, keepdim=True)).mean()
+                actor_loss = (weights * bc_diff.sum(dim=1, keepdim=True)).mean()
                 actor_losses.append(actor_loss.item())
+                
+                # Also compute pure BC loss for monitoring
+                pure_bc_loss = bc_diff.mean()
+                bc_losses.append(pure_bc_loss.item())
                 
                 self.actor.optimizer.zero_grad()
                 actor_loss.backward()
+                # Gradient clipping for stability
+                th.nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
                 self.actor.optimizer.step()
                 
                 # Update target networks
@@ -281,6 +309,9 @@ class IQL(TD3):
         self.logger.record("train/critic_loss", np.mean(critic_losses))
         if len(actor_losses) > 0:
             self.logger.record("train/actor_loss", np.mean(actor_losses))
+            self.logger.record("train/bc_loss", np.mean(bc_losses))
+            self.logger.record("train/advantage_mean", np.mean(advantages_mean))
+            self.logger.record("train/advantage_std", np.mean(advantages_std))
         self.logger.record("train/iql_tau", self.iql_tau)
         self.logger.record("train/iql_beta", self.iql_beta)
         
@@ -288,9 +319,11 @@ class IQL(TD3):
         wandb.log(self.logger.name_to_value, step=self.num_timesteps)
     
     def _excluded_save_params(self) -> List[str]:
-        return super(IQL, self)._excluded_save_params() + ["value_net", "value_optimizer"]
+        return super(IQL, self)._excluded_save_params() + [
+            "value_features_extractor", "value_mlp", "value_optimizer"
+        ]
     
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
         state_dicts, _ = super(IQL, self)._get_torch_save_params()
-        state_dicts.extend(["value_net", "value_optimizer"])
+        state_dicts.extend(["value_features_extractor", "value_mlp", "value_optimizer"])
         return state_dicts, []

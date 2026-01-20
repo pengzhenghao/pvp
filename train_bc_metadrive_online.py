@@ -58,6 +58,7 @@ if __name__ == '__main__':
     parser.add_argument("--iql_tau", default=0.7, type=float, help="IQL expectile parameter (0.5=mean, closer to 1=max).")
     parser.add_argument("--iql_beta", default=3.0, type=float, help="IQL temperature for advantage-weighted regression.")
     parser.add_argument("--clip_score", default=100.0, type=float, help="Maximum advantage weight for IQL.")
+    parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Maximum gradient norm for IQL.")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled
@@ -240,9 +241,11 @@ if __name__ == '__main__':
             iql_tau=args.iql_tau,
             iql_beta=args.iql_beta,
             clip_score=args.clip_score,
+            max_grad_norm=args.max_grad_norm,
         ))
         bc_trainer = IQL(**trainer_config)
-        print(f"Using IQL trainer with tau={args.iql_tau}, beta={args.iql_beta}, clip_score={args.clip_score}")
+        print(f"Using IQL trainer with tau={args.iql_tau}, beta={args.iql_beta}, "
+              f"clip_score={args.clip_score}, max_grad_norm={args.max_grad_norm}")
     else:
         bc_trainer = TD3(**trainer_config)
         if args.use_td3_bc:

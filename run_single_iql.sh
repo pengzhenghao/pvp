@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # Single IQL Experiment Script
-# Usage: ./run_single_iql.sh <GPU_ID> <DATA_STEPS> <IQL_TAU> <IQL_BETA> [SEED]
+# Usage: ./run_single_iql.sh <GPU_ID> <DATA_STEPS> <IQL_TAU> <IQL_BETA> [SEED] [MAX_GRAD_NORM]
 # Example: ./run_single_iql.sh 0 20000 0.7 3.0
-# Example: ./run_single_iql.sh 1 50000 0.8 10.0 42
+# Example: ./run_single_iql.sh 1 50000 0.8 10.0 42 1.0
 
 set -e
 
@@ -13,6 +13,7 @@ DATA_STEPS=${2:-20000}
 IQL_TAU=${3:-0.7}
 IQL_BETA=${4:-3.0}
 SEED=${5:-0}
+MAX_GRAD_NORM=${6:-1.0}
 
 # Base directory
 BASE_DIR="/home/caihy/pvp"
@@ -34,6 +35,7 @@ echo "GPU: ${GPU_ID}"
 echo "Data collection steps: ${DATA_STEPS}"
 echo "IQL tau (expectile): ${IQL_TAU}"
 echo "IQL beta (temperature): ${IQL_BETA}"
+echo "Max grad norm: ${MAX_GRAD_NORM}"
 echo "Seed: ${SEED}"
 echo "Experiment name: ${EXP_NAME}"
 echo "============================================================"
@@ -59,6 +61,7 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
     --bc_training_timesteps ${BC_TRAINING_TIMESTEPS} \
     --iql_tau ${IQL_TAU} \
     --iql_beta ${IQL_BETA} \
+    --max_grad_norm ${MAX_GRAD_NORM} \
     --eval_freq ${EVAL_FREQ} \
     --n_eval_episodes ${N_EVAL_EPISODES} \
     --save_freq ${SAVE_FREQ} \
