@@ -1,6 +1,7 @@
 import argparse
 import os
 import uuid
+import gc
 import numpy as np
 from pathlib import Path
 import sys
@@ -32,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_freq", default=1000, type=int)
     parser.add_argument("--seed", default=0, type=int, help="The random seed.")
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
-    parser.add_argument("--wandb_project", type=str, default="td3", help="The project name for wandb.")
+    parser.add_argument("--wandb_project", type=str, default="domain-adaptation-0120", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
     parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
@@ -128,13 +129,14 @@ if __name__ == '__main__':
     num_envs = 2 if args.toy else 5
     num_eval_envs = 2 if args.toy else 5
     
+    # Check if we're loading buffer (skip Phase 1 entirely)
+    loading_buffer = args.load_buffer and os.path.exists(args.load_buffer)
+    
     def _make_train_env():
         train_env = FakeHumanEnv(config=env_config)
         train_env = Monitor(env=train_env, filename=str(trial_dir))
         train_env = SharedControlMonitor(env=train_env, folder=trial_dir / "data", prefix=trial_name)
         return train_env
-    
-    train_env = SubprocVecEnv([_make_train_env] * num_envs)
 
     # ===== Setup eval environment function =====
     # Note: eval_env will be created in Phase 2, not here, to avoid unnecessary process creation
@@ -156,55 +158,71 @@ if __name__ == '__main__':
         eval_env = Monitor(env=eval_env, filename=str(trial_dir))
         return eval_env
 
-    # ===== Setup PVPTD3 for data collection =====
-    # PVPTD3 will only collect data (train() is commented in learn())
-    pvp_config = dict(
-        adaptive_batch_size="False",
-        bc_loss_weight=1.0,
-        only_bc_loss="True",
-        with_human_proxy_value_loss="False",
-        with_agent_proxy_value_loss="False",
-        add_bc_loss="True",
-        use_balance_sample=True,
-        agent_data_ratio=1.0,
-        policy=TD3Policy,
-        replay_buffer_class=HACOReplayBuffer,
-        replay_buffer_kwargs=dict(),
-        policy_kwargs=policy_kwargs,
-        env=train_env,
-        learning_rate=1e-4,
-        q_value_bound=1,
-        optimize_memory_usage=True,
-        buffer_size=args.data_collection_timesteps if not args.toy else 2000,
-        learning_starts=args.learning_starts,
-        batch_size=args.batch_size,
-        tau=0.005,
-        gamma=0.99,
-        train_freq=(1, "step"),
-        action_noise=None,
-        tensorboard_log=trial_dir,
-        create_eval_env=False,
-        verbose=2,
-        seed=seed,
-        device="auto",
-    )
+    # Only create train_env and data_collector if NOT loading buffer
+    train_env = None
+    data_collector = None
     
-    data_collector = PVPTD3(**pvp_config)
-    if args.ckpt:
-        ckpt = Path(args.ckpt)
-        print(f"Loading checkpoint from {ckpt}!")
-        from pvp.sb3.common.save_util import load_from_zip_file
-        data, params, pytorch_variables = load_from_zip_file(ckpt, device=data_collector.device, print_system_info=False)
-        data_collector.set_parameters(params, exact_match=False, device=data_collector.device)
+    if not loading_buffer:
+        print("Creating training environment for data collection...")
+        train_env = SubprocVecEnv([_make_train_env] * num_envs)
+        
+        # ===== Setup PVPTD3 for data collection =====
+        # PVPTD3 will only collect data (train() is commented in learn())
+        pvp_config = dict(
+            adaptive_batch_size="False",
+            bc_loss_weight=1.0,
+            only_bc_loss="True",
+            with_human_proxy_value_loss="False",
+            with_agent_proxy_value_loss="False",
+            add_bc_loss="True",
+            use_balance_sample=True,
+            agent_data_ratio=1.0,
+            policy=TD3Policy,
+            replay_buffer_class=HACOReplayBuffer,
+            replay_buffer_kwargs=dict(),
+            policy_kwargs=policy_kwargs,
+            env=train_env,
+            learning_rate=1e-4,
+            q_value_bound=1,
+            optimize_memory_usage=True,
+            buffer_size=args.data_collection_timesteps if not args.toy else 2000,
+            learning_starts=args.learning_starts,
+            batch_size=args.batch_size,
+            tau=0.005,
+            gamma=0.99,
+            train_freq=(1, "step"),
+            action_noise=None,
+            tensorboard_log=trial_dir,
+            create_eval_env=False,
+            verbose=2,
+            seed=seed,
+            device="auto",
+        )
+        
+        data_collector = PVPTD3(**pvp_config)
+        if args.ckpt:
+            ckpt = Path(args.ckpt)
+            print(f"Loading checkpoint from {ckpt}!")
+            from pvp.sb3.common.save_util import load_from_zip_file
+            data, params, pytorch_variables = load_from_zip_file(ckpt, device=data_collector.device, print_system_info=False)
+            data_collector.set_parameters(params, exact_match=False, device=data_collector.device)
+    else:
+        print("=" * 80)
+        print("SKIPPING Phase 1 setup - will load buffer directly")
+        print("=" * 80)
 
     # ===== Setup trainer for BC/TD3+BC/CQL training =====
+    # Create a temporary dummy env for trainer initialization (will be replaced in Phase 2)
+    print("Creating temporary eval environment for trainer initialization...")
+    temp_eval_env = SubprocVecEnv([_make_eval_env] * 1)  # Single env for initialization
+    
     # Base config shared by TD3 and CQL
     trainer_config = dict(
         policy=TD3Policy,
         replay_buffer_class=HACOReplayBuffer,
         replay_buffer_kwargs=dict(),
         policy_kwargs=policy_kwargs,
-        env=train_env,
+        env=temp_eval_env,  # Use temp env for initialization
         learning_rate=1e-4,
         optimize_memory_usage=True,
         learning_starts=0,
@@ -280,7 +298,7 @@ if __name__ == '__main__':
     bc_training_timesteps = args.bc_training_timesteps
     
     # Check if we should load from saved buffer instead of collecting data
-    if args.load_buffer and os.path.exists(args.load_buffer):
+    if loading_buffer:
         print("=" * 80)
         print("Phase 1: SKIPPED - Loading data buffer from file")
         print("=" * 80)
@@ -288,35 +306,55 @@ if __name__ == '__main__':
         
         buffer_data = np.load(args.load_buffer, allow_pickle=True)
         
-        # Restore buffer state (essential HACOReplayBuffer attributes)
-        data_collector.human_data_buffer.pos = int(buffer_data['pos'])
-        data_collector.human_data_buffer.full = bool(buffer_data['full'])
-        data_collector.human_data_buffer.actions_behavior = buffer_data['actions_behavior']
-        data_collector.human_data_buffer.rewards = buffer_data['rewards']
-        data_collector.human_data_buffer.dones = buffer_data['dones']
+        # Load directly into bc_trainer's replay_buffer (no data_collector needed!)
+        hb = bc_trainer.replay_buffer
+        
+        # Restore buffer arrays (essential HACOReplayBuffer attributes)
+        hb.actions_behavior = buffer_data['actions_behavior']
+        hb.rewards = buffer_data['rewards']
+        hb.dones = buffer_data['dones']
         
         # Restore observations (dict with potentially multiple keys)
         for key in list(buffer_data.keys()):
             if key.startswith('obs_'):
                 obs_key = key[4:]  # Remove 'obs_' prefix
-                data_collector.human_data_buffer.observations[obs_key] = buffer_data[key]
+                hb.observations[obs_key] = buffer_data[key]
         
         # Restore next_observations if saved (only when optimize_memory_usage was False)
         saved_optimize_memory = bool(buffer_data['optimize_memory_usage'])
         if not saved_optimize_memory:
-            if data_collector.human_data_buffer.next_observations is None:
-                data_collector.human_data_buffer.next_observations = {}
+            if hb.next_observations is None:
+                hb.next_observations = {}
             for key in list(buffer_data.keys()):
                 if key.startswith('next_obs_'):
                     obs_key = key[9:]  # Remove 'next_obs_' prefix
-                    data_collector.human_data_buffer.next_observations[obs_key] = buffer_data[key]
+                    hb.next_observations[obs_key] = buffer_data[key]
         
-        print(f"Loaded {data_collector.human_data_buffer.pos} transitions from saved buffer")
+        # Calculate effective pos and full based on data_collection_timesteps
+        # This allows using a subset of a larger saved buffer
+        # Note: Buffer was saved with 25 envs, so we use 25 for calculation regardless of current num_envs
+        SAVED_NUM_ENVS = 25  # Buffer was collected with 25 parallel envs
+        effective_transitions = data_collection_timesteps // SAVED_NUM_ENVS
+        
+        if effective_transitions >= hb.buffer_size:
+            # Use full buffer (wrapped around)
+            hb.full = True
+            hb.pos = effective_transitions % hb.buffer_size
+        else:
+            # Use partial buffer
+            hb.full = False
+            hb.pos = effective_transitions
+        
+        actual_usable = hb.buffer_size if hb.full else hb.pos
+        print(f"Loaded buffer, using {actual_usable} transitions "
+              f"(data_collection_timesteps={data_collection_timesteps}, saved_num_envs={SAVED_NUM_ENVS}, "
+              f"pos={hb.pos}, full={hb.full})")
+        
+        # Free buffer_data memory
+        del buffer_data
+        gc.collect()
+        print("Buffer loaded and memory cleaned up!")
         print("=" * 80)
-        
-        # Close train_env since we don't need it for data collection
-        print("Closing training environment (not needed when loading buffer)...")
-        train_env.close()
     else:
         # Phase 1: Collect data using PVPTD3
         total_timesteps, callback = data_collector._setup_learn(
@@ -404,9 +442,22 @@ if __name__ == '__main__':
         np.savez_compressed(save_buffer_path, **save_dict)
         print(f"Buffer saved successfully!")
         
+        # Transfer buffer from data_collector to bc_trainer BEFORE cleanup
+        bc_trainer.replay_buffer = data_collector.human_data_buffer
+        
         # Close train_env from Phase 1 to free resources
         print("Closing Phase 1 training environment...")
         train_env.close()
+        
+        # Clean up data_collector to free memory (we already transferred the buffer)
+        print("Cleaning up data_collector memory...")
+        del data_collector
+        gc.collect()
+    
+    # Close temp_eval_env used for trainer initialization
+    print("Closing temporary eval environment...")
+    temp_eval_env.close()
+    gc.collect()
     
     # Phase 2: BC training from scratch on collected data
     print("=" * 80)
@@ -430,16 +481,15 @@ if __name__ == '__main__':
     print("Creating eval environment for Phase 2...")
     eval_env = SubprocVecEnv([_make_eval_env] * num_eval_envs)
     
-    # IMPORTANT: bc_trainer.env still points to train_env which was closed after Phase 1
+    # IMPORTANT: bc_trainer.env still points to temp_eval_env which was closed
     # _setup_learn() will call self.env.reset(), so we need to set bc_trainer.env to a valid env
     # Since BC training doesn't actually need train_env (only uses replay buffer), we can use eval_env
-    # or create a new train_env. Using eval_env is simpler.
     print("Updating bc_trainer.env to use eval_env (BC training doesn't need train_env)...")
     bc_trainer.env = eval_env
     
-    # Share the human_data_buffer between PVPTD3 and TD3
-    # This ensures TD3 trains on the same data collected by PVPTD3
-    bc_trainer.replay_buffer = data_collector.human_data_buffer
+    # Note: replay_buffer was already set either:
+    # - During buffer loading (loading_buffer=True)
+    # - At end of data collection (loading_buffer=False)
     
     # Setup callbacks for Phase 2 using bc_trainer (so EvalCallback model points to bc_trainer)
     # Create new callbacks for Phase 2
@@ -453,7 +503,7 @@ if __name__ == '__main__':
                 exp_name=experiment_batch_name,
                 team_name=team_name,
                 project_name=project_name,
-                config={"pvp_config": pvp_config, "trainer_config": trainer_config}
+                config={"trainer_config": trainer_config}
             )
         )
     phase2_callbacks = CallbackList(phase2_callbacks)
@@ -523,12 +573,17 @@ if __name__ == '__main__':
             print(f"BC Training: {bc_training_current_timesteps}/{bc_training_timesteps}, "
                   f"Training updates: {bc_trainer._n_updates}")
     
-    callback.on_training_end()
+    # Only call callback.on_training_end() if we collected data (not loaded from file)
+    if not loading_buffer:
+        callback.on_training_end()
+    
+    hb = bc_trainer.replay_buffer
+    final_buffer_size = hb.buffer_size if hb.full else hb.pos
     
     print("=" * 80)
     print("Training completed!")
     print("=" * 80)
     print(f"Data collection: {data_collection_timesteps} timesteps")
     print(f"BC training: {bc_training_timesteps} timesteps")
-    print(f"Final buffer size: {data_collector.human_data_buffer.pos}")
+    print(f"Final buffer size: {final_buffer_size} transitions")
     print(f"Total training updates: {bc_trainer._n_updates}")

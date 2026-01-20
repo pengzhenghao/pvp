@@ -9,6 +9,7 @@
 # Base directory
 BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
+BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
 
 # Common parameters (optimized)
 BC_TRAINING_TIMESTEPS=10000
@@ -35,6 +36,7 @@ run_experiment() {
     CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
         --exp_name "${EXP_NAME}" \
         --use_cql \
+        --load_buffer "${BUFFER_PATH}" \
         --data_collection_timesteps ${DATA_STEPS} \
         --bc_training_timesteps ${BC_TRAINING_TIMESTEPS} \
         --cql_alpha ${CQL_ALPHA} \
@@ -44,7 +46,7 @@ run_experiment() {
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \
         --seed ${SEED} \
-        --wandb_project "domain-adaptation" \
+        --wandb_project "domain-adaptation-0120" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     
     echo "Experiment ${EXP_NAME} started with PID $!"
@@ -72,6 +74,7 @@ echo "CQL temp: ${CQL_TEMP}"
 echo "Num random actions: ${NUM_RANDOM_ACTIONS}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
+echo "Loading buffer from: ${BUFFER_PATH}"
 echo "============================================================"
 echo ""
 echo "CQL adds conservative penalty to prevent Q-value overestimation"

@@ -10,6 +10,7 @@
 # Base directory
 BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
+BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
 
 # Common parameters (optimized)
 BC_TRAINING_TIMESTEPS=10000
@@ -34,6 +35,7 @@ run_experiment() {
     CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
         --exp_name "${EXP_NAME}" \
         --use_td3_bc \
+        --load_buffer "${BUFFER_PATH}" \
         --data_collection_timesteps ${DATA_STEPS} \
         --bc_training_timesteps ${BC_TRAINING_TIMESTEPS} \
         --td3_bc_alpha ${TD3_BC_ALPHA} \
@@ -41,7 +43,7 @@ run_experiment() {
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \
         --seed ${SEED} \
-        --wandb_project "domain-adaptation" \
+        --wandb_project "domain-adaptation-0120" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     
     echo "Experiment ${EXP_NAME} started with PID $!"
@@ -67,6 +69,7 @@ echo "Data steps: ${DATA_STEPS_LIST[@]}"
 echo "TD3+BC alpha: ${TD3_BC_ALPHA}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
+echo "Loading buffer from: ${BUFFER_PATH}"
 echo "============================================================"
 echo ""
 echo "TD3+BC Actor Loss Formula:"
