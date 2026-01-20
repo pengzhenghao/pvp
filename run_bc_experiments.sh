@@ -1,4 +1,5 @@
 #!/bin/bash
+killall python -9
 
 # Pure BC (Behavioral Cloning) Experiment Script
 # This script runs pure BC experiments with different data amounts

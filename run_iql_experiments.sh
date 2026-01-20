@@ -1,4 +1,5 @@
 #!/bin/bash
+killall python -9
 
 # IQL (Implicit Q-Learning) Experiment Script
 # This script runs IQL experiments with different data amounts

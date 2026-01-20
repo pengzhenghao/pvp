@@ -1,4 +1,5 @@
 #!/bin/bash
+killall python -9
 
 # CQL (Conservative Q-Learning) Experiment Script
 # This script runs CQL experiments with different data amounts

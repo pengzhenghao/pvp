@@ -1,4 +1,5 @@
 #!/bin/bash
+killall python -9
 
 # TD3+BC Experiment Script
 # This script runs TD3+BC experiments with different data amounts
