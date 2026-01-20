@@ -125,8 +125,8 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    num_envs = 2 if args.toy else 2
-    num_eval_envs = 2 if args.toy else 2
+    num_envs = 2 if args.toy else 5
+    num_eval_envs = 2 if args.toy else 5
     
     def _make_train_env():
         train_env = FakeHumanEnv(config=env_config)
