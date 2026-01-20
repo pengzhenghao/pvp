@@ -1,7 +1,7 @@
 import argparse
 import os
 import uuid
-import pickle
+import numpy as np
 from pathlib import Path
 import sys
 import gymnasium
@@ -25,7 +25,7 @@ from pvp.sb3.sac.our_features_extractor import OurFeaturesExtractorCNN as OurFea
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--exp_name", default="bc_metadrive_online", type=str, help="The name for this batch of experiments."
+        "--exp_name", default="domain-adaptation-0120", type=str, help="The name for this batch of experiments."
     )
     parser.add_argument("--batch_size", default=1024, type=int)
     parser.add_argument("--learning_starts", default=0, type=int)
@@ -175,7 +175,7 @@ if __name__ == '__main__':
         learning_rate=1e-4,
         q_value_bound=1,
         optimize_memory_usage=True,
-        buffer_size=args.data_collection_timesteps if not args.toy else 200,
+        buffer_size=args.data_collection_timesteps if not args.toy else 2000,
         learning_starts=args.learning_starts,
         batch_size=args.batch_size,
         tau=0.005,
@@ -220,7 +220,7 @@ if __name__ == '__main__':
         verbose=2,
         seed=seed,
         device="auto",
-        buffer_size=args.data_collection_timesteps if not args.toy else 200,
+        buffer_size=args.data_collection_timesteps if not args.toy else 2000,
         use_td3_bc=args.use_td3_bc,
         bc_loss_weight=args.bc_loss_weight,
         td3_bc_alpha=args.td3_bc_alpha,
@@ -286,25 +286,32 @@ if __name__ == '__main__':
         print("=" * 80)
         print(f"Loading buffer from: {args.load_buffer}")
         
-        with open(args.load_buffer, 'rb') as f:
-            buffer_data = pickle.load(f)
+        buffer_data = np.load(args.load_buffer, allow_pickle=True)
         
-        # Restore buffer state (HACOReplayBuffer attributes)
-        data_collector.human_data_buffer.observations = buffer_data['observations']
+        # Restore buffer state (essential HACOReplayBuffer attributes)
+        data_collector.human_data_buffer.pos = int(buffer_data['pos'])
+        data_collector.human_data_buffer.full = bool(buffer_data['full'])
         data_collector.human_data_buffer.actions_behavior = buffer_data['actions_behavior']
-        data_collector.human_data_buffer.actions_novice = buffer_data['actions_novice']
         data_collector.human_data_buffer.rewards = buffer_data['rewards']
         data_collector.human_data_buffer.dones = buffer_data['dones']
-        data_collector.human_data_buffer.next_observations = buffer_data['next_observations']
-        data_collector.human_data_buffer.interventions = buffer_data['interventions']
-        data_collector.human_data_buffer.intervention_starts = buffer_data['intervention_starts']
-        data_collector.human_data_buffer.intervention_costs = buffer_data['intervention_costs']
-        data_collector.human_data_buffer.takeover_log_prob = buffer_data['takeover_log_prob']
-        data_collector.human_data_buffer.timeouts = buffer_data['timeouts']
-        data_collector.human_data_buffer.pos = buffer_data['pos']
-        data_collector.human_data_buffer.full = buffer_data['full']
         
-        print(f"Loaded {buffer_data['pos']} transitions from saved buffer")
+        # Restore observations (dict with potentially multiple keys)
+        for key in list(buffer_data.keys()):
+            if key.startswith('obs_'):
+                obs_key = key[4:]  # Remove 'obs_' prefix
+                data_collector.human_data_buffer.observations[obs_key] = buffer_data[key]
+        
+        # Restore next_observations if saved (only when optimize_memory_usage was False)
+        saved_optimize_memory = bool(buffer_data['optimize_memory_usage'])
+        if not saved_optimize_memory:
+            if data_collector.human_data_buffer.next_observations is None:
+                data_collector.human_data_buffer.next_observations = {}
+            for key in list(buffer_data.keys()):
+                if key.startswith('next_obs_'):
+                    obs_key = key[9:]  # Remove 'next_obs_' prefix
+                    data_collector.human_data_buffer.next_observations[obs_key] = buffer_data[key]
+        
+        print(f"Loaded {data_collector.human_data_buffer.pos} transitions from saved buffer")
         print("=" * 80)
         
         # Close train_env since we don't need it for data collection
@@ -356,35 +363,45 @@ if __name__ == '__main__':
             # Log progress
             log_interval = 100 if args.toy else 1000
             if data_collector.num_timesteps % log_interval == 0:
+                hb = data_collector.human_data_buffer
+                actual_size = hb.buffer_size if hb.full else hb.pos
                 print(f"Data Collection: {data_collector.num_timesteps}/{data_collection_timesteps}, "
-                      f"human_buffer.pos: {data_collector.human_data_buffer.pos}, "
-                      f"replay_buffer.pos: {data_collector.replay_buffer.pos}")
+                      f"human_buffer: {actual_size} transitions (pos={hb.pos}, full={hb.full})")
         
+        hb = data_collector.human_data_buffer
+        actual_transitions = hb.buffer_size if hb.full else hb.pos
         print("=" * 80)
-        print(f"Phase 1 completed! Collected {data_collector.human_data_buffer.pos} transitions")
+        print(f"Phase 1 completed! Collected {actual_transitions} transitions (buffer_size={hb.buffer_size}, full={hb.full})")
         print("=" * 80)
         
-        # Save buffer if requested
-        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"data_buffer_{data_collection_timesteps}.pkl")
+        # Save buffer if requested (only essential fields to save space)
+        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"data_buffer_{data_collection_timesteps}.npz")
         print(f"Saving data buffer to: {save_buffer_path}")
-        buffer_data = {
-            # HACOReplayBuffer attributes
-            'observations': data_collector.human_data_buffer.observations,
+        
+        # Check if optimize_memory_usage is enabled (next_observations will be None)
+        optimize_memory = data_collector.human_data_buffer.optimize_memory_usage
+        print(f"optimize_memory_usage: {optimize_memory}")
+        
+        # Prepare data dict for saving
+        save_dict = {
+            'pos': np.array(data_collector.human_data_buffer.pos),
+            'full': np.array(data_collector.human_data_buffer.full),
+            'optimize_memory_usage': np.array(optimize_memory),
             'actions_behavior': data_collector.human_data_buffer.actions_behavior,
-            'actions_novice': data_collector.human_data_buffer.actions_novice,
             'rewards': data_collector.human_data_buffer.rewards,
             'dones': data_collector.human_data_buffer.dones,
-            'next_observations': data_collector.human_data_buffer.next_observations,
-            'interventions': data_collector.human_data_buffer.interventions,
-            'intervention_starts': data_collector.human_data_buffer.intervention_starts,
-            'intervention_costs': data_collector.human_data_buffer.intervention_costs,
-            'takeover_log_prob': data_collector.human_data_buffer.takeover_log_prob,
-            'timeouts': data_collector.human_data_buffer.timeouts,
-            'pos': data_collector.human_data_buffer.pos,
-            'full': data_collector.human_data_buffer.full,
         }
-        with open(save_buffer_path, 'wb') as f:
-            pickle.dump(buffer_data, f)
+        
+        # Save observations (dict with potentially multiple keys like 'image', 'state')
+        for key, value in data_collector.human_data_buffer.observations.items():
+            save_dict[f'obs_{key}'] = value
+        
+        # Only save next_observations if not using optimize_memory_usage
+        if not optimize_memory and data_collector.human_data_buffer.next_observations is not None:
+            for key, value in data_collector.human_data_buffer.next_observations.items():
+                save_dict[f'next_obs_{key}'] = value
+        
+        np.savez_compressed(save_buffer_path, **save_dict)
         print(f"Buffer saved successfully!")
         
         # Close train_env from Phase 1 to free resources
