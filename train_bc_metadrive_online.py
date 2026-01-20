@@ -393,7 +393,7 @@ if __name__ == '__main__':
         print("=" * 80)
         print("Phase 1: Data Collection ONLY (No Training, No Evaluation)")
         print("=" * 80)
-        print(f"PVPTD3 will collect {data_collection_timesteps} timesteps from FakeHumanEnv (expert actions)")
+        print(f"PVPTD3 will collect data until human_data_buffer is full (buffer_size={data_collector.human_data_buffer.buffer_size})")
         print("No training or evaluation will be performed during data collection")
         print(f"use_balance_sample: {data_collector.use_balance_sample}")
         print(f"human_data_buffer is replay_buffer: {data_collector.human_data_buffer is data_collector.replay_buffer}")
@@ -403,7 +403,8 @@ if __name__ == '__main__':
         print("=" * 80)
         
         # Phase 1: Data collection ONLY - no training, no evaluation
-        while data_collector.num_timesteps < data_collection_timesteps:
+        # Continue until human_data_buffer is full (due to takeover mechanism, num_timesteps != buffer.pos)
+        while not data_collector.human_data_buffer.full:
             # Collect rollouts using PVPTD3 (data goes to human_data_buffer)
             rollout = data_collector.collect_rollouts(
                 data_collector.env,
@@ -423,8 +424,8 @@ if __name__ == '__main__':
             if data_collector.num_timesteps % log_interval == 0:
                 hb = data_collector.human_data_buffer
                 actual_size = hb.buffer_size if hb.full else hb.pos
-                print(f"Data Collection: {data_collector.num_timesteps}/{data_collection_timesteps}, "
-                      f"human_buffer: {actual_size} transitions (pos={hb.pos}, full={hb.full})")
+                print(f"Data Collection: timesteps={data_collector.num_timesteps}, "
+                      f"human_buffer: {actual_size}/{hb.buffer_size} transitions (pos={hb.pos}, full={hb.full})")
         
         hb = data_collector.human_data_buffer
         actual_transitions = hb.buffer_size if hb.full else hb.pos
@@ -433,7 +434,8 @@ if __name__ == '__main__':
         print("=" * 80)
         
         # Save buffer if requested (only essential fields to save space)
-        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"egpo_data_buffer_{data_collection_timesteps}.npz")
+        buffer_size = data_collector.human_data_buffer.buffer_size
+        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"egpo_data_buffer_{buffer_size}.npz")
         print(f"Saving data buffer to: {save_buffer_path}")
         
         # Check if optimize_memory_usage is enabled (next_observations will be None)
