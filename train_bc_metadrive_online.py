@@ -43,7 +43,8 @@ if __name__ == '__main__':
     parser.add_argument("--n_eval_episodes", default=200, type=int, help="Number of episodes for evaluation.")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
     parser.add_argument("--use_td3_bc", action="store_true", help="Enable TD3+BC mode (combine Q-learning loss with BC loss).")
-    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="Weight for BC loss in TD3+BC mode.")
+    parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="Weight for BC loss in pure BC mode.")
+    parser.add_argument("--td3_bc_alpha", default=2.5, type=float, help="TD3+BC alpha parameter (default 2.5 from paper).")
     # CQL specific arguments
     parser.add_argument("--use_cql", action="store_true", help="Enable CQL (Conservative Q-Learning) mode.")
     parser.add_argument("--cql_alpha", default=1.0, type=float, help="CQL conservative penalty weight.")
@@ -113,8 +114,8 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    num_envs = 2 if args.toy else 50
-    num_eval_envs = 2 if args.toy else 10
+    num_envs = 2 if args.toy else 5
+    num_eval_envs = 2 if args.toy else 5
     
     def _make_train_env():
         train_env = FakeHumanEnv(config=env_config)
@@ -211,6 +212,7 @@ if __name__ == '__main__':
         buffer_size=args.data_collection_timesteps if not args.toy else 200,
         use_td3_bc=args.use_td3_bc,
         bc_loss_weight=args.bc_loss_weight,
+        td3_bc_alpha=args.td3_bc_alpha,
     )
     
     # Use CQL or TD3 based on command line argument
@@ -228,7 +230,10 @@ if __name__ == '__main__':
               f"num_random_actions={args.num_random_actions}, with_lagrange={args.cql_with_lagrange}")
     else:
         bc_trainer = TD3(**trainer_config)
-        print(f"Using TD3 trainer with use_td3_bc={args.use_td3_bc}, bc_loss_weight={args.bc_loss_weight}")
+        if args.use_td3_bc:
+            print(f"Using TD3+BC trainer with alpha={args.td3_bc_alpha}")
+        else:
+            print(f"Using pure BC trainer with bc_loss_weight={args.bc_loss_weight}")
     
     # Load initial policy from checkpoint
     initial_ckpt = Path("/home/caihy/pvp/rgbsr70.zip")
@@ -268,7 +273,7 @@ if __name__ == '__main__':
     print("=" * 80)
     print("Phase 1: Data Collection ONLY (No Training, No Evaluation)")
     print("=" * 80)
-    print(f"PVPTD3 will collect {data_collection_timesteps} timesteps from FakeHumanEnv (IDMPolicy actions)")
+    print(f"PVPTD3 will collect {data_collection_timesteps} timesteps from FakeHumanEnv (expert actions)")
     print("No training or evaluation will be performed during data collection")
     print("=" * 80)
     

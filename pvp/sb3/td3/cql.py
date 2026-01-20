@@ -76,6 +76,7 @@ class CQL(TD3):
         monitor_wrapper=False,
         bc_loss_weight: float = 1.0,
         use_td3_bc: bool = False,
+        td3_bc_alpha: float = 2.5,
         # CQL specific parameters
         cql_alpha: float = 1.0,
         num_random_actions: int = 10,
@@ -111,6 +112,7 @@ class CQL(TD3):
             monitor_wrapper=monitor_wrapper,
             bc_loss_weight=bc_loss_weight,
             use_td3_bc=use_td3_bc,
+            td3_bc_alpha=td3_bc_alpha,
         )
         
         # CQL specific parameters

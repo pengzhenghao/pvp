@@ -88,6 +88,7 @@ class TD3(OffPolicyAlgorithm):
         monitor_wrapper=False,
         bc_loss_weight: float = 1.0,
         use_td3_bc: bool = False,
+        td3_bc_alpha: float = 2.5,  # TD3+BC alpha parameter (default from paper)
     ):
 
         super(TD3, self).__init__(
@@ -123,6 +124,7 @@ class TD3(OffPolicyAlgorithm):
         self.target_policy_noise = target_policy_noise
         self.bc_loss_weight = bc_loss_weight
         self.use_td3_bc = use_td3_bc
+        self.td3_bc_alpha = td3_bc_alpha
 
         if _init_setup_model:
             self._setup_model()
@@ -178,25 +180,34 @@ class TD3(OffPolicyAlgorithm):
             # Delayed policy updates
             if (self._n_updates % self.policy_delay == 0):
                 if self.num_timesteps > 0:
-                    # Compute actor loss (Q-value maximization)
-                    norm_coeff = th.abs(self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations))).mean().detach()
+                    # Get current policy actions
+                    pi_actions = self.actor(replay_data.observations)
                     
-                    actor_loss = -self.critic.q1_forward(replay_data.observations, self.actor(replay_data.observations
-                                                                                            )).mean()
-                    actor_losses.append(actor_loss.item())
-                    actor_loss /= norm_coeff
+                    # Compute Q-value for policy actions
+                    q_pi = self.critic.q1_forward(replay_data.observations, pi_actions)
                     
-                    # Compute BC loss
-                    replay_data_human = self.replay_buffer.sample(int(batch_size), env=self._vec_normalize_env)
-                    new_action = self.actor(replay_data_human.observations)
-                    bc_loss = F.mse_loss(replay_data_human.actions_behavior, new_action, reduction="none").mean()
-                    
-                    # TD3+BC: combine Q-learning loss with BC loss
-                    # Pure BC: only use BC loss
+                    # TD3+BC: Original paper formula
+                    # actor_loss = -λ * Q(s, π(s)) + BC_loss
+                    # where λ = α / avg|Q(s, a_data)|
                     if self.use_td3_bc:
-                        actor_loss += bc_loss * self.bc_loss_weight
+                        # Normalize by Q-values of DATA actions (as per original TD3+BC paper)
+                        q_data = self.critic.q1_forward(replay_data.observations, replay_data.actions_behavior)
+                        lmbda = self.td3_bc_alpha / th.abs(q_data).mean().detach()
+                        
+                        # Q-learning term: maximize Q(s, π(s))
+                        q_loss = -lmbda * q_pi.mean()
+                        
+                        # BC term: minimize MSE between policy and data actions (same batch as paper)
+                        bc_loss = F.mse_loss(pi_actions, replay_data.actions_behavior)
+                        
+                        # Total actor loss (TD3+BC)
+                        actor_loss = q_loss + bc_loss
+                        actor_losses.append((-q_pi.mean()).item())
                     else:
+                        # Pure BC: only use BC loss
+                        bc_loss = F.mse_loss(pi_actions, replay_data.actions_behavior)
                         actor_loss = bc_loss * self.bc_loss_weight
+                        actor_losses.append(actor_loss.item())
                     
                     # Optimize the actor
                     self.actor.optimizer.zero_grad()
@@ -211,6 +222,8 @@ class TD3(OffPolicyAlgorithm):
         if len(actor_losses) > 0:
             self.logger.record("train/actor_loss", np.mean(actor_losses))
             self.logger.record("train/bc_loss", bc_loss.item())
+            if self.use_td3_bc:
+                self.logger.record("train/td3_bc_lambda", lmbda.item())
         self.logger.record("train/critic_loss", np.mean(critic_losses))
         
         import wandb
