@@ -55,4 +55,4 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
     --n_eval_episodes ${N_EVAL_EPISODES} \
     --save_freq ${SAVE_FREQ} \
     --seed ${SEED} \
-    --wandb_project "domain-adaptation"
+    --wandb_project "egpo-adapt"
