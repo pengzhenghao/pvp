@@ -10,6 +10,7 @@ from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
 from pvp.pvp_td3 import PVPTD3
 from pvp.sb3.td3.td3 import TD3
 from pvp.sb3.td3.cql import CQL
+from pvp.sb3.td3.iql import IQL
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
 from pvp.sb3.common.monitor import Monitor
 from pvp.sb3.common.vec_env import SubprocVecEnv
@@ -52,6 +53,11 @@ if __name__ == '__main__':
     parser.add_argument("--cql_temp", default=1.0, type=float, help="Temperature for logsumexp in CQL loss.")
     parser.add_argument("--cql_with_lagrange", action="store_true", help="Use Lagrange multiplier for automatic CQL alpha tuning.")
     parser.add_argument("--lagrange_threshold", default=10.0, type=float, help="Target value for CQL penalty when using Lagrange.")
+    # IQL specific arguments
+    parser.add_argument("--use_iql", action="store_true", help="Enable IQL (Implicit Q-Learning) mode.")
+    parser.add_argument("--iql_tau", default=0.7, type=float, help="IQL expectile parameter (0.5=mean, closer to 1=max).")
+    parser.add_argument("--iql_beta", default=3.0, type=float, help="IQL temperature for advantage-weighted regression.")
+    parser.add_argument("--clip_score", default=100.0, type=float, help="Maximum advantage weight for IQL.")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled
@@ -215,7 +221,7 @@ if __name__ == '__main__':
         td3_bc_alpha=args.td3_bc_alpha,
     )
     
-    # Use CQL or TD3 based on command line argument
+    # Use CQL, IQL, or TD3 based on command line argument
     if args.use_cql:
         # Add CQL specific parameters
         trainer_config.update(dict(
@@ -228,6 +234,15 @@ if __name__ == '__main__':
         bc_trainer = CQL(**trainer_config)
         print(f"Using CQL trainer with alpha={args.cql_alpha}, temp={args.cql_temp}, "
               f"num_random_actions={args.num_random_actions}, with_lagrange={args.cql_with_lagrange}")
+    elif args.use_iql:
+        # Add IQL specific parameters
+        trainer_config.update(dict(
+            iql_tau=args.iql_tau,
+            iql_beta=args.iql_beta,
+            clip_score=args.clip_score,
+        ))
+        bc_trainer = IQL(**trainer_config)
+        print(f"Using IQL trainer with tau={args.iql_tau}, beta={args.iql_beta}, clip_score={args.clip_score}")
     else:
         bc_trainer = TD3(**trainer_config)
         if args.use_td3_bc:
@@ -313,13 +328,15 @@ if __name__ == '__main__':
         print("Phase 2: CQL (Conservative Q-Learning) Training on Collected Data")
         print(f"CQL alpha: {args.cql_alpha}, temp: {args.cql_temp}, num_random_actions: {args.num_random_actions}")
         print(f"With Lagrange: {args.cql_with_lagrange}, threshold: {args.lagrange_threshold}")
+    elif args.use_iql:
+        print("Phase 2: IQL (Implicit Q-Learning) Training on Collected Data")
+        print(f"IQL tau: {args.iql_tau}, beta: {args.iql_beta}, clip_score: {args.clip_score}")
     elif args.use_td3_bc:
         print("Phase 2: TD3+BC Training (Q-learning + BC) on Collected Data")
     else:
         print("Phase 2: Pure BC Training on Collected Data")
     print("=" * 80)
     print(f"Starting training for {bc_training_timesteps} timesteps using collected data")
-    print(f"TD3+BC mode: {args.use_td3_bc}, BC loss weight: {args.bc_loss_weight}")
     print(f"Evaluation will be performed every {args.eval_freq} steps via EvalCallback")
     print("=" * 80)
     
