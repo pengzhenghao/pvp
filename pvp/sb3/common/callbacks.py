@@ -362,7 +362,7 @@ class EvalCallback(EventCallback):
 
             # Log standard metrics
             for k in ["episode_energy", "route_completion", "total_cost", "arrive_dest", "max_step", "out_of_road",
-                      "crash", "crash_vehicle", "crash_object", "cost"]:
+                      "crash", "crash_vehicle", "crash_object", "crash_building", "crash_sidewalk", "crash_human", "cost"]:
                 if k in info:
                     self.evaluations_info_buffer[k].append(info[k])
             
@@ -385,6 +385,27 @@ class EvalCallback(EventCallback):
             self.evaluations_info_buffer["crash_vehicle_rate"].append(float(crash_vehicle))
             self.evaluations_info_buffer["crash_object_rate"].append(float(crash_object))
             self.evaluations_info_buffer["crash_any_rate"].append(float(crash_vehicle or crash_object))
+            
+            # Track additional failure types
+            crash_building = info.get("crash_building", False)
+            crash_sidewalk = info.get("crash_sidewalk", False)
+            crash_human = info.get("crash_human", False)
+            out_of_road = info.get("out_of_road", False)
+            
+            self.evaluations_info_buffer["crash_building_rate"].append(float(crash_building))
+            self.evaluations_info_buffer["crash_sidewalk_rate"].append(float(crash_sidewalk))
+            self.evaluations_info_buffer["crash_human_rate"].append(float(crash_human))
+            self.evaluations_info_buffer["out_of_road_rate"].append(float(out_of_road))
+            
+            # Track any bad event (comprehensive failure rate)
+            any_crash = crash_vehicle or crash_object or crash_building or crash_sidewalk or crash_human
+            any_bad_event = any_crash or out_of_road
+            self.evaluations_info_buffer["any_crash_rate"].append(float(any_crash))
+            self.evaluations_info_buffer["any_bad_event_rate"].append(float(any_bad_event))
+            
+            # Success without any bad event
+            success_no_bad_event = arrive_dest and not any_bad_event
+            self.evaluations_info_buffer["success_no_bad_event"].append(float(success_no_bad_event))
 
         if "raw_action" in info:
             self.evaluations_info_buffer["raw_action"].append(info["raw_action"])
@@ -481,10 +502,37 @@ class EvalCallback(EventCallback):
                 self.logger.record("eval/crash_vehicle_rate", crash_vehicle_rate)
                 self.logger.record("eval/crash_object_rate", crash_object_rate)
                 self.logger.record("eval/crash_any_rate", crash_any_rate)
+                
+                # Log additional failure rates
+                if "crash_building_rate" in self.evaluations_info_buffer:
+                    crash_building_rate = np.mean(self.evaluations_info_buffer["crash_building_rate"])
+                    crash_sidewalk_rate = np.mean(self.evaluations_info_buffer["crash_sidewalk_rate"])
+                    crash_human_rate = np.mean(self.evaluations_info_buffer["crash_human_rate"])
+                    out_of_road_rate = np.mean(self.evaluations_info_buffer["out_of_road_rate"])
+                    any_crash_rate = np.mean(self.evaluations_info_buffer["any_crash_rate"])
+                    any_bad_event_rate = np.mean(self.evaluations_info_buffer["any_bad_event_rate"])
+                    success_no_bad_event = np.mean(self.evaluations_info_buffer["success_no_bad_event"])
+                    
+                    if self.verbose > 0:
+                        print(f"Crash building rate: {100 * crash_building_rate:.2f}%")
+                        print(f"Crash sidewalk rate: {100 * crash_sidewalk_rate:.2f}%")
+                        print(f"Out of road rate: {100 * out_of_road_rate:.2f}%")
+                        print(f"Any bad event rate: {100 * any_bad_event_rate:.2f}%")
+                        print(f"Success (no bad events): {100 * success_no_bad_event:.2f}%")
+                    
+                    self.logger.record("eval/crash_building_rate", crash_building_rate)
+                    self.logger.record("eval/crash_sidewalk_rate", crash_sidewalk_rate)
+                    self.logger.record("eval/crash_human_rate", crash_human_rate)
+                    self.logger.record("eval/out_of_road_rate", out_of_road_rate)
+                    self.logger.record("eval/any_crash_rate", any_crash_rate)
+                    self.logger.record("eval/any_bad_event_rate", any_bad_event_rate)
+                    self.logger.record("eval/success_no_bad_event", success_no_bad_event)
 
             # Log other metrics (skip the ones we already logged above)
             skip_keys = {"success_no_crash_vehicle", "success_no_crash_any", 
-                        "crash_vehicle_rate", "crash_object_rate", "crash_any_rate"}
+                        "crash_vehicle_rate", "crash_object_rate", "crash_any_rate",
+                        "crash_building_rate", "crash_sidewalk_rate", "crash_human_rate",
+                        "out_of_road_rate", "any_crash_rate", "any_bad_event_rate", "success_no_bad_event"}
             for k, v in self.evaluations_info_buffer.items():
                 if k not in skip_keys and len(v) > 0:
                     self.logger.record("eval/{}".format(k), np.mean(np.asarray(v)))
