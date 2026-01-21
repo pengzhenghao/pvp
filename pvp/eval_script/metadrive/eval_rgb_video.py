@@ -765,6 +765,228 @@ def visualize_attention(model, obs, original_image, attention_save_dir=None, ste
         return original_image
 
 
+def mask_image_region(obs, mask_ratio=0.4, fill_value=128, region='top'):
+    """
+    Mask a region of the image observation with a constant value.
+    
+    Args:
+        obs: dict observation with 'image' key (N, H, W, C) or (N, C, H, W)
+        mask_ratio: ratio of the region to mask (0.4 = 40%)
+        fill_value: value to fill the masked region (128 = gray)
+        region: 'top' (sky), 'bottom' (ground), or 'middle'
+    
+    Returns:
+        masked_obs: observation with region masked
+    """
+    import copy
+    masked_obs = copy.deepcopy(obs)
+    
+    if 'image' in masked_obs:
+        img = masked_obs['image']
+        # Determine image format: (N, H, W, C) or (N, C, H, W)
+        if len(img.shape) == 4:
+            if img.shape[-1] in [1, 3]:  # (N, H, W, C)
+                h = img.shape[1]
+                mask_h = int(h * mask_ratio)
+                if region == 'top':
+                    masked_obs['image'][:, :mask_h, :, :] = fill_value
+                elif region == 'bottom':
+                    masked_obs['image'][:, h-mask_h:, :, :] = fill_value
+                elif region == 'middle':
+                    start = (h - mask_h) // 2
+                    masked_obs['image'][:, start:start+mask_h, :, :] = fill_value
+            else:  # (N, C, H, W)
+                h = img.shape[2]
+                mask_h = int(h * mask_ratio)
+                if region == 'top':
+                    masked_obs['image'][:, :, :mask_h, :] = fill_value
+                elif region == 'bottom':
+                    masked_obs['image'][:, :, h-mask_h:, :] = fill_value
+                elif region == 'middle':
+                    start = (h - mask_h) // 2
+                    masked_obs['image'][:, :, start:start+mask_h, :] = fill_value
+        elif len(img.shape) == 3:  # (H, W, C) or (C, H, W)
+            if img.shape[-1] in [1, 3]:  # (H, W, C)
+                h = img.shape[0]
+                mask_h = int(h * mask_ratio)
+                if region == 'top':
+                    masked_obs['image'][:mask_h, :, :] = fill_value
+                elif region == 'bottom':
+                    masked_obs['image'][h-mask_h:, :, :] = fill_value
+                elif region == 'middle':
+                    start = (h - mask_h) // 2
+                    masked_obs['image'][start:start+mask_h, :, :] = fill_value
+            else:  # (C, H, W)
+                h = img.shape[1]
+                mask_h = int(h * mask_ratio)
+                if region == 'top':
+                    masked_obs['image'][:, :mask_h, :] = fill_value
+                elif region == 'bottom':
+                    masked_obs['image'][:, h-mask_h:, :] = fill_value
+                elif region == 'middle':
+                    start = (h - mask_h) // 2
+                    masked_obs['image'][:, start:start+mask_h, :] = fill_value
+    
+    return masked_obs
+
+
+def mask_sky_region(obs, mask_ratio=0.4, fill_value=128):
+    """Convenience function for masking sky (top) region"""
+    return mask_image_region(obs, mask_ratio, fill_value, region='top')
+
+
+def ablation_region_test(model, env, num_episodes=5, mask_ratio=0.4, max_steps=1500, region='top'):
+    """
+    Perform ablation test by masking a region and comparing action outputs.
+    
+    This test masks a region of the image with gray and compares:
+    1. Action differences (steering and acceleration)
+    2. Q-value differences (if available)
+    
+    Args:
+        model: trained model
+        env: evaluation environment
+        num_episodes: number of episodes to test
+        mask_ratio: ratio of region to mask (0.4 = 40%)
+        max_steps: maximum steps per episode
+        region: 'top' (sky), 'bottom' (ground), or 'middle'
+    
+    Returns:
+        dict with ablation statistics
+    """
+    region_names = {'top': 'SKY (top)', 'bottom': 'GROUND (bottom)', 'middle': 'MIDDLE'}
+    region_name = region_names.get(region, region)
+    
+    print("=" * 70)
+    print(f"{region_name.upper()} ABLATION TEST")
+    print(f"Masking {region} {mask_ratio*100:.0f}% of the image with gray")
+    print("=" * 70)
+    
+    steering_diffs = []
+    accel_diffs = []
+    q_value_diffs = []  # For critic Q-value comparison
+    
+    total_steps = 0
+    
+    for episode in range(num_episodes):
+        obs = env.reset()
+        done = False
+        step = 0
+        
+        ep_steering_diffs = []
+        ep_accel_diffs = []
+        ep_q_diffs = []
+        
+        while not done and step < max_steps:
+            # Get action from original observation
+            action_original, _ = model.predict(obs, deterministic=True)
+            
+            # Create masked observation (region -> gray)
+            masked_obs = mask_image_region(obs, mask_ratio=mask_ratio, fill_value=128, region=region)
+            
+            # Get action from masked observation
+            action_masked, _ = model.predict(masked_obs, deterministic=True)
+            
+            # Calculate action differences
+            steering_diff = abs(action_original[0] - action_masked[0])
+            accel_diff = abs(action_original[1] - action_masked[1])
+            
+            ep_steering_diffs.append(steering_diff)
+            ep_accel_diffs.append(accel_diff)
+            
+            # Try to get Q-value differences (if critic is available)
+            try:
+                obs_tensor, _ = model.policy.obs_to_tensor(obs)
+                masked_obs_tensor, _ = model.policy.obs_to_tensor(masked_obs)
+                
+                action_tensor = torch.tensor(action_original, dtype=torch.float32, device=model.device).unsqueeze(0)
+                
+                with torch.no_grad():
+                    q_original = model.policy.critic.q1_forward(obs_tensor, action_tensor).item()
+                    q_masked = model.policy.critic.q1_forward(masked_obs_tensor, action_tensor).item()
+                    q_diff = abs(q_original - q_masked)
+                    ep_q_diffs.append(q_diff)
+            except Exception as e:
+                pass  # Q-value comparison may not be available for all models
+            
+            # Step environment with original action
+            obs, reward, done, info = env.step(action_original)
+            step += 1
+        
+        # Aggregate episode statistics
+        steering_diffs.extend(ep_steering_diffs)
+        accel_diffs.extend(ep_accel_diffs)
+        q_value_diffs.extend(ep_q_diffs)
+        total_steps += step
+        
+        mean_steer = np.mean(ep_steering_diffs)
+        mean_accel = np.mean(ep_accel_diffs)
+        mean_q = np.mean(ep_q_diffs) if ep_q_diffs else float('nan')
+        
+        print(f"  Episode {episode + 1}/{num_episodes}: {step} steps, "
+              f"ΔSteering={mean_steer:.4f}, ΔAccel={mean_accel:.4f}, ΔQ={mean_q:.4f}")
+    
+    # Calculate overall statistics
+    results = {
+        'mask_ratio': mask_ratio,
+        'total_steps': total_steps,
+        'steering_diff_mean': np.mean(steering_diffs),
+        'steering_diff_std': np.std(steering_diffs),
+        'steering_diff_max': np.max(steering_diffs),
+        'accel_diff_mean': np.mean(accel_diffs),
+        'accel_diff_std': np.std(accel_diffs),
+        'accel_diff_max': np.max(accel_diffs),
+    }
+    
+    if q_value_diffs:
+        results['q_diff_mean'] = np.mean(q_value_diffs)
+        results['q_diff_std'] = np.std(q_value_diffs)
+        results['q_diff_max'] = np.max(q_value_diffs)
+    
+    # Print summary
+    print("\n" + "=" * 70)
+    print(f"{region_name.upper()} ABLATION TEST RESULTS")
+    print("=" * 70)
+    print(f"Total frames analyzed: {total_steps}")
+    print(f"\nAction Differences (Original vs {region_name}-Masked):")
+    print(f"  Steering: mean={results['steering_diff_mean']:.4f} ± {results['steering_diff_std']:.4f}, max={results['steering_diff_max']:.4f}")
+    print(f"  Accel:    mean={results['accel_diff_mean']:.4f} ± {results['accel_diff_std']:.4f}, max={results['accel_diff_max']:.4f}")
+    
+    if q_value_diffs:
+        print(f"\nQ-Value Differences:")
+        print(f"  Q1:       mean={results['q_diff_mean']:.4f} ± {results['q_diff_std']:.4f}, max={results['q_diff_max']:.4f}")
+    
+    # Interpretation
+    print("\n" + "-" * 70)
+    print("INTERPRETATION:")
+    if results['steering_diff_mean'] < 0.05 and results['accel_diff_mean'] < 0.05:
+        print(f"  ✓ {region_name} region has MINIMAL impact on action output")
+        if region == 'top':
+            print("    The attention on sky might be a spurious artifact of Grad-CAM")
+        elif region == 'bottom':
+            print("    Surprising! Ground/road should be important for driving")
+    elif results['steering_diff_mean'] > 0.1 or results['accel_diff_mean'] > 0.1:
+        print(f"  ⚠ {region_name} region has SIGNIFICANT impact on action output!")
+        if region == 'top':
+            print("    This could indicate:")
+            print("    - Spurious correlation learned during training")
+            print("    - Domain shift issues (different sky appearance)")
+            print("    - Consider data augmentation for sky region")
+        elif region == 'bottom':
+            print("    This is EXPECTED - ground/road is critical for driving")
+            print("    The model correctly relies on road information")
+    else:
+        print(f"  ~ {region_name} region has MODERATE impact on action output")
+    print("=" * 70 + "\n")
+    
+    return results
+
+
+def ablation_sky_test(model, env, num_episodes=5, mask_ratio=0.4, max_steps=1500):
+    """Convenience function for sky (top) ablation test"""
+    return ablation_region_test(model, env, num_episodes, mask_ratio, max_steps, region='top')
+
+
 def calibrate_actor_attention_stats(model, env, num_calibration_episodes, max_steps, layer_index, action_dim):
     """
     Run calibration episodes to collect CAM statistics for percentile-based normalization.
@@ -826,7 +1048,8 @@ def calibrate_actor_attention_stats(model, env, num_calibration_episodes, max_st
 
 def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save_dir="eval_videos", 
                         enable_attention_vis=False, attention_save_dir=None,
-                        layer_index=-3, action_dim=0, percentile_stats=None):
+                        layer_index=-3, action_dim=0, percentile_stats=None,
+                        mask_region=None, mask_ratio=0.4):
     """Evaluate model and optionally record videos, collecting all evaluation metrics
     
     Args:
@@ -840,6 +1063,8 @@ def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save
         layer_index: Grad-CAM使用的卷积层索引 (-3=倒数第三层，有更高分辨率)
         action_dim: 要可视化的action维度 (0=steering, 1=acceleration, None=L2 norm)
         percentile_stats: tuple of (percentile_min, percentile_max) for attention normalization
+        mask_region: 遮挡区域 ('top'=sky, 'bottom'=ground, None=不遮挡)
+        mask_ratio: 遮挡比例 (0.4 = 40%)
     """
     if save_video:
         os.makedirs(video_save_dir, exist_ok=True)
@@ -915,8 +1140,14 @@ def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save
                     out.write(rgb_image)
         
         while not done and step_count < 1500:
+            # Optionally mask region before prediction
+            if mask_region is not None:
+                obs_for_prediction = mask_image_region(obs, mask_ratio=mask_ratio, fill_value=128, region=mask_region)
+            else:
+                obs_for_prediction = obs
+            
             # Get action from model
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs_for_prediction, deterministic=True)
             
             # Visualize attention if enabled
             if enable_attention_vis:
@@ -1087,6 +1318,24 @@ if __name__ == "__main__":
                         help="Number of episodes for calibration (collecting percentile stats)")
     parser.add_argument("--max_steps", type=int, default=1500,
                         help="Maximum steps per episode (for calibration)")
+    # Ablation test arguments
+    parser.add_argument("--ablation_sky", action="store_true", 
+                        help="Run sky ablation test (mask top region and compare actions)")
+    parser.add_argument("--ablation_ground", action="store_true", 
+                        help="Run ground ablation test (mask bottom region and compare actions)")
+    parser.add_argument("--ablation_middle", action="store_true", 
+                        help="Run middle ablation test (mask middle region and compare actions)")
+    parser.add_argument("--mask_ratio", type=float, default=0.4,
+                        help="Ratio of region to mask (default: 0.4 = 40%%)")
+    parser.add_argument("--ablation_episodes", type=int, default=5,
+                        help="Number of episodes for ablation test")
+    # Mask region during rollout
+    parser.add_argument("--mask_sky_rollout", action="store_true",
+                        help="Mask sky (top) region during actual rollout")
+    parser.add_argument("--mask_ground_rollout", action="store_true",
+                        help="Mask ground (bottom) region during actual rollout")
+    parser.add_argument("--mask_middle_rollout", action="store_true",
+                        help="Mask middle region during actual rollout")
     args = parser.parse_args()
     
     # Create environment (num_env=1, single environment)
@@ -1117,8 +1366,60 @@ if __name__ == "__main__":
             action_dim=action_dim
         )
     
+    # Run ablation test if requested
+    if args.ablation_sky:
+        ablation_results = ablation_region_test(
+            model, eval_env,
+            num_episodes=args.ablation_episodes,
+            mask_ratio=args.mask_ratio,
+            max_steps=args.max_steps,
+            region='top'
+        )
+    
+    if args.ablation_ground:
+        ablation_results = ablation_region_test(
+            model, eval_env,
+            num_episodes=args.ablation_episodes,
+            mask_ratio=args.mask_ratio,
+            max_steps=args.max_steps,
+            region='bottom'
+        )
+    
+    if args.ablation_middle:
+        ablation_results = ablation_region_test(
+            model, eval_env,
+            num_episodes=args.ablation_episodes,
+            mask_ratio=args.mask_ratio,
+            max_steps=args.max_steps,
+            region='middle'
+        )
+    
     # Evaluate and optionally record videos
     print("\nStarting evaluation...")
+    
+    # Determine mask region for rollout
+    mask_region = None
+    if args.mask_sky_rollout:
+        mask_region = 'top'
+        print("=" * 60)
+        print("SKY-MASKED ROLLOUT MODE")
+        print(f"Masking top {args.mask_ratio*100:.0f}% of the image during policy execution")
+        print("This shows how the policy behaves WITHOUT sky information")
+        print("=" * 60)
+    elif args.mask_ground_rollout:
+        mask_region = 'bottom'
+        print("=" * 60)
+        print("GROUND-MASKED ROLLOUT MODE")
+        print(f"Masking bottom {args.mask_ratio*100:.0f}% of the image during policy execution")
+        print("This shows how the policy behaves WITHOUT ground/road information")
+        print("=" * 60)
+    elif args.mask_middle_rollout:
+        mask_region = 'middle'
+        print("=" * 60)
+        print("MIDDLE-MASKED ROLLOUT MODE")
+        print(f"Masking middle {args.mask_ratio*100:.0f}% of the image during policy execution")
+        print("This shows how the policy behaves WITHOUT horizon/middle region information")
+        print("=" * 60)
     
     evaluate_with_video(
         model, 
@@ -1130,7 +1431,9 @@ if __name__ == "__main__":
         attention_save_dir=args.attention_dir if args.visualize_attention else None,
         layer_index=args.layer_index,
         action_dim=action_dim,
-        percentile_stats=percentile_stats
+        percentile_stats=percentile_stats,
+        mask_region=mask_region,
+        mask_ratio=args.mask_ratio
     )
     
     if args.visualize_attention:
