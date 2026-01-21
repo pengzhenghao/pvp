@@ -360,10 +360,31 @@ class EvalCallback(EventCallback):
 
             assert (maybe_is_success is None) or (maybe_is_success2 is None), "We cannot have two success flags!"
 
+            # Log standard metrics
             for k in ["episode_energy", "route_completion", "total_cost", "arrive_dest", "max_step", "out_of_road",
-                      "crash"]:
+                      "crash", "crash_vehicle", "crash_object", "cost"]:
                 if k in info:
                     self.evaluations_info_buffer[k].append(info[k])
+            
+            # Compute crash-aware success rates
+            # success_no_crash_vehicle: arrive_dest AND NOT crash_vehicle
+            # success_no_crash_any: arrive_dest AND NOT (crash_vehicle OR crash_object)
+            arrive_dest = info.get("arrive_dest", False)
+            crash_vehicle = info.get("crash_vehicle", False)
+            crash_object = info.get("crash_object", False)
+            
+            # Note: crash_vehicle/crash_object can be True even if arrive_dest is True
+            # (vehicle crashed during episode but still reached destination)
+            success_no_crash_vehicle = arrive_dest and not crash_vehicle
+            success_no_crash_any = arrive_dest and not crash_vehicle and not crash_object
+            
+            self.evaluations_info_buffer["success_no_crash_vehicle"].append(float(success_no_crash_vehicle))
+            self.evaluations_info_buffer["success_no_crash_any"].append(float(success_no_crash_any))
+            
+            # Track crash rates separately for analysis
+            self.evaluations_info_buffer["crash_vehicle_rate"].append(float(crash_vehicle))
+            self.evaluations_info_buffer["crash_object_rate"].append(float(crash_object))
+            self.evaluations_info_buffer["crash_any_rate"].append(float(crash_vehicle or crash_object))
 
         if "raw_action" in info:
             self.evaluations_info_buffer["raw_action"].append(info["raw_action"])
@@ -437,11 +458,33 @@ class EvalCallback(EventCallback):
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
                 if self.verbose > 0:
-                    print(f"Success rate: {100 * success_rate:.2f}%")
+                    print(f"Success rate (arrive_dest): {100 * success_rate:.2f}%")
                 self.logger.record("eval/success_rate", success_rate)
 
+            # Log crash-aware success rates with clear names
+            if "success_no_crash_vehicle" in self.evaluations_info_buffer:
+                success_no_crash_vehicle = np.mean(self.evaluations_info_buffer["success_no_crash_vehicle"])
+                success_no_crash_any = np.mean(self.evaluations_info_buffer["success_no_crash_any"])
+                crash_vehicle_rate = np.mean(self.evaluations_info_buffer["crash_vehicle_rate"])
+                crash_any_rate = np.mean(self.evaluations_info_buffer["crash_any_rate"])
+                
+                if self.verbose > 0:
+                    print(f"Success rate (no crash_vehicle): {100 * success_no_crash_vehicle:.2f}%")
+                    print(f"Success rate (no crash_any): {100 * success_no_crash_any:.2f}%")
+                    print(f"Crash vehicle rate: {100 * crash_vehicle_rate:.2f}%")
+                    print(f"Crash any rate: {100 * crash_any_rate:.2f}%")
+                
+                self.logger.record("eval/success_no_crash_vehicle", success_no_crash_vehicle)
+                self.logger.record("eval/success_no_crash_any", success_no_crash_any)
+                self.logger.record("eval/crash_vehicle_rate", crash_vehicle_rate)
+                self.logger.record("eval/crash_any_rate", crash_any_rate)
+
+            # Log other metrics (skip the ones we already logged above)
+            skip_keys = {"success_no_crash_vehicle", "success_no_crash_any", 
+                        "crash_vehicle_rate", "crash_object_rate", "crash_any_rate"}
             for k, v in self.evaluations_info_buffer.items():
-                self.logger.record("eval/{}".format(k), np.mean(np.asarray(v)))
+                if k not in skip_keys and len(v) > 0:
+                    self.logger.record("eval/{}".format(k), np.mean(np.asarray(v)))
 
             # Dump log so the evaluation results are printed with the correct timestep
             self.logger.record("time/total_timesteps", self.num_timesteps)

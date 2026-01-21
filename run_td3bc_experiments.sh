@@ -29,6 +29,11 @@ BC_TRAINING_TIMESTEPS=2000
 SAVE_FREQ=1000
 SEED=0
 
+# Crash penalty parameters (directly affect reward)
+CRASH_VEHICLE_PENALTY=5.0
+CRASH_OBJECT_PENALTY=5.0
+OUT_OF_ROAD_PENALTY=5.0
+
 # Mode-specific parameters
 if [ "$FAST_MODE" == "true" ]; then
     EVAL_FREQ=1000
@@ -63,6 +68,9 @@ run_experiment() {
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \
         --seed ${SEED} \
+        --crash_vehicle_penalty ${CRASH_VEHICLE_PENALTY} \
+        --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
+        --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
         --wandb_project "mainexp0121" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     

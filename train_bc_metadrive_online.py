@@ -64,6 +64,14 @@ if __name__ == '__main__':
     # Data buffer save/load arguments
     parser.add_argument("--load_buffer", type=str, default="", help="Path to load saved data buffer (skip Phase 1 if provided).")
     parser.add_argument("--save_buffer", type=str, default="", help="Path to save data buffer after collection (auto-generated if not provided).")
+    # Penalty parameters (directly affects reward)
+    parser.add_argument("--crash_vehicle_penalty", type=float, default=5.0, help="Penalty for crashing into a vehicle (default: 5.0)")
+    parser.add_argument("--crash_object_penalty", type=float, default=5.0, help="Penalty for crashing into an object (default: 5.0)")
+    parser.add_argument("--out_of_road_penalty", type=float, default=5.0, help="Penalty for going out of road (default: 5.0)")
+    # Cost parameters (for tracking in eval/total_cost, does NOT affect reward)
+    parser.add_argument("--crash_vehicle_cost", type=float, default=1.0, help="Cost for crashing into a vehicle, for tracking only (default: 1.0)")
+    parser.add_argument("--crash_object_cost", type=float, default=1.0, help="Cost for crashing into an object, for tracking only (default: 1.0)")
+    parser.add_argument("--out_of_road_cost", type=float, default=1.0, help="Cost for going out of road, for tracking only (default: 1.0)")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled
@@ -112,7 +120,8 @@ if __name__ == '__main__':
         net_arch=[256,]
     )
     
-    # Environment config
+    # Environment config (for data collection)
+    # IMPORTANT: Keep crash handling consistent with eval env
     env_config = dict(
         free_level=free_level,
         image_observation=True, 
@@ -123,6 +132,18 @@ if __name__ == '__main__':
         daytime="06:10",
         use_render=False,
         disable_expert=False,  # Ensure IDMPolicy is used
+        # Crash handling: consistent with eval env
+        crash_vehicle_done=False,  # Continue episode after crashing into vehicle
+        crash_object_done=False,   # Continue episode after crashing into object
+        cost_to_reward=False,      # Don't double-count: penalty already in reward, cost is for tracking only
+        # Penalty values (directly affect reward)
+        crash_vehicle_penalty=args.crash_vehicle_penalty,
+        crash_object_penalty=args.crash_object_penalty,
+        out_of_road_penalty=args.out_of_road_penalty,
+        # Cost values (for tracking in eval/total_cost)
+        crash_vehicle_cost=args.crash_vehicle_cost,
+        crash_object_cost=args.crash_object_cost,
+        out_of_road_cost=args.out_of_road_cost,
     )
 
     # ===== Setup the training environment =====
@@ -152,6 +173,18 @@ if __name__ == '__main__':
             stack_size=3,
             interface_panel=["rgb_camera", "dashboard"],
             daytime="06:10",
+        # Crash handling: don't end episode on crash, penalty already affects reward
+        crash_vehicle_done=False,  # Continue episode after crashing into vehicle
+        crash_object_done=False,   # Continue episode after crashing into object
+        cost_to_reward=False,      # Don't double-count: penalty already in reward, cost is for tracking only
+            # Penalty values (directly affect reward)
+            crash_vehicle_penalty=args.crash_vehicle_penalty,
+            crash_object_penalty=args.crash_object_penalty,
+            out_of_road_penalty=args.out_of_road_penalty,
+            # Cost values (for tracking in eval/total_cost)
+            crash_vehicle_cost=args.crash_vehicle_cost,
+            crash_object_cost=args.crash_object_cost,
+            out_of_road_cost=args.out_of_road_cost,
         )
         from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
         eval_env = HumanInTheLoopEnv(config=eval_env_config)

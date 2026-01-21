@@ -41,10 +41,11 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
     Human-in-the-loop Env Wrapper for the Safety Env in MetaDrive.
     Add code for computing takeover cost and add information to the interface.
     """
+    # Lifetime counters (for display purposes, not for evaluation metrics)
     total_steps = 0
     total_takeover_cost = 0
     total_takeover_count = 0
-    total_cost = 0
+    lifetime_cost = 0  # Renamed from total_cost to avoid confusion
     takeover = False
     takeover_recorder = deque(maxlen=2000)
     agent_action = None
@@ -59,6 +60,8 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
     def reset(self, *args, **kwargs):
         self.takeover = False
         self.agent_action = None
+        # Reset episode-level cost tracking (episode_cost is reset in SafeMetaDriveEnv.reset())
+        self.episode_takeover_cost = 0
         obs, info = super(HumanInTheLoopEnv, self).reset(*args, **kwargs)
         # The training code is for older version of gym, so we discard the additional info from the reset.
         return obs
@@ -79,13 +82,21 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         else:
             cost = self.get_takeover_cost(engine_info)
             self.total_takeover_cost += cost
+            self.episode_takeover_cost += cost
             engine_info["takeover_cost"] = cost
         engine_info["total_takeover_cost"] = self.total_takeover_cost
+        engine_info["episode_takeover_cost"] = self.episode_takeover_cost
         engine_info["native_cost"] = engine_info["cost"]
         engine_info["episode_native_cost"] = self.episode_cost
-        self.total_cost += engine_info["cost"]
-        engine_info["total_cost"] = self.total_cost
-        # engine_info["total_cost_so_far"] = self.total_cost
+        
+        # Lifetime cost (for display, not for evaluation)
+        self.lifetime_cost += engine_info["cost"]
+        engine_info["lifetime_cost"] = self.lifetime_cost
+        
+        # IMPORTANT: total_cost should be the EPISODE cost for proper evaluation metrics
+        # episode_cost is reset on each reset() in SafeMetaDriveEnv
+        engine_info["total_cost"] = self.episode_cost
+        
         return o, r, d, engine_info
 
     def _is_out_of_road(self, vehicle):
@@ -106,7 +117,8 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             super(HumanInTheLoopEnv, self).render(
                 text={
-                    "Total Cost": round(self.total_cost, 2),
+                    "Lifetime Cost": round(self.lifetime_cost, 2),
+                    "Episode Cost": round(self.episode_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),
                     "Takeover": "TAKEOVER" if self.takeover else "NO",
                     "Total Step": self.total_steps,

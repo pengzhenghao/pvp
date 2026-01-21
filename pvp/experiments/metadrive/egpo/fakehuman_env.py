@@ -168,7 +168,8 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         if self.config["use_render"]:  # and self.config["main_exp"]: #and not self.config["in_replay"]:
             super(HumanInTheLoopEnv, self).render(
                 text={
-                    "Total Cost": round(self.total_cost, 2),
+                    "Lifetime Cost": round(self.lifetime_cost, 2),
+                    "Episode Cost": round(self.episode_cost, 2),
                     "Takeover Cost": round(self.total_takeover_cost, 2),
                     "Takeover": "TAKEOVER" if self.takeover else "NO",
                     "Total Step": self.total_steps,
@@ -199,15 +200,23 @@ class FakeHumanEnv(HumanInTheLoopEnv):
         else:
             cost = self.get_takeover_cost(engine_info)
             self.total_takeover_cost += cost
+            self.episode_takeover_cost += cost
             engine_info["takeover_cost"] = cost
         engine_info["total_takeover_cost"] = self.total_takeover_cost
+        engine_info["episode_takeover_cost"] = self.episode_takeover_cost
         engine_info["native_cost"] = engine_info["cost"]
         engine_info["episode_native_cost"] = self.episode_cost
-        self.total_cost += engine_info["cost"]
+        
+        # Lifetime cost (for display, not for evaluation)
+        self.lifetime_cost += engine_info["cost"]
+        engine_info["lifetime_cost"] = self.lifetime_cost
+        
         self.total_takeover_count += 1 if self.takeover else 0
         engine_info["total_takeover_count"] = self.total_takeover_count
-        engine_info["total_cost"] = self.total_cost
-        # engine_info["total_cost_so_far"] = self.total_cost
+        
+        # IMPORTANT: total_cost should be the EPISODE cost for proper evaluation metrics
+        engine_info["total_cost"] = self.episode_cost
+        
         return o, r, d, engine_info
 
     def _get_reset_return(self, reset_info):

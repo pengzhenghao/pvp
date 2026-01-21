@@ -23,6 +23,11 @@ EVAL_FREQ=5000
 N_EVAL_EPISODES=50
 SAVE_FREQ=5000
 
+# Crash penalty parameters (directly affect reward)
+CRASH_VEHICLE_PENALTY=5.0
+CRASH_OBJECT_PENALTY=5.0
+OUT_OF_ROAD_PENALTY=5.0
+
 # Create descriptive experiment name
 EXP_NAME="td3bc_data${DATA_STEPS}_alpha${TD3_BC_ALPHA}_seed${SEED}"
 
@@ -55,4 +60,7 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
     --n_eval_episodes ${N_EVAL_EPISODES} \
     --save_freq ${SAVE_FREQ} \
     --seed ${SEED} \
+    --crash_vehicle_penalty ${CRASH_VEHICLE_PENALTY} \
+    --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
+    --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
     --wandb_project "domain-adaptation"
