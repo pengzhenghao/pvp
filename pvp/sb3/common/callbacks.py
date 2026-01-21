@@ -348,6 +348,32 @@ class EvalCallback(EventCallback):
         :param globals_:
         """
         info = locals_["info"]
+        
+        # ===== Track crash events at EVERY step (not just when done) =====
+        # Because crash flags are reset each step, we need to accumulate them
+        if not hasattr(self, '_episode_crash_flags'):
+            self._episode_crash_flags = {
+                'crash_vehicle': False,
+                'crash_object': False,
+                'crash_building': False,
+                'crash_sidewalk': False,
+                'crash_human': False,
+                'out_of_road': False,
+            }
+        
+        # Accumulate crash events during this step (OR logic - once True, stays True)
+        if info.get("crash_vehicle", False):
+            self._episode_crash_flags['crash_vehicle'] = True
+        if info.get("crash_object", False):
+            self._episode_crash_flags['crash_object'] = True
+        if info.get("crash_building", False):
+            self._episode_crash_flags['crash_building'] = True
+        if info.get("crash_sidewalk", False):
+            self._episode_crash_flags['crash_sidewalk'] = True
+        if info.get("crash_human", False):
+            self._episode_crash_flags['crash_human'] = True
+        if info.get("out_of_road", False):
+            self._episode_crash_flags['out_of_road'] = True
 
         if locals_["done"]:
             maybe_is_success = info.get("is_success")
@@ -360,21 +386,21 @@ class EvalCallback(EventCallback):
 
             assert (maybe_is_success is None) or (maybe_is_success2 is None), "We cannot have two success flags!"
 
-            # Log standard metrics
-            for k in ["episode_energy", "route_completion", "total_cost", "arrive_dest", "max_step", "out_of_road",
-                      "crash", "crash_vehicle", "crash_object", "crash_building", "crash_sidewalk", "crash_human", "cost"]:
+            # Log standard metrics (these are episode-level metrics from MetaDrive)
+            for k in ["episode_energy", "route_completion", "total_cost", "arrive_dest", "max_step", "cost"]:
                 if k in info:
                     self.evaluations_info_buffer[k].append(info[k])
             
-            # Compute crash-aware success rates
-            # success_no_crash_vehicle: arrive_dest AND NOT crash_vehicle
-            # success_no_crash_any: arrive_dest AND NOT (crash_vehicle OR crash_object)
+            # ===== Use accumulated crash flags (tracked across entire episode) =====
             arrive_dest = info.get("arrive_dest", False)
-            crash_vehicle = info.get("crash_vehicle", False)
-            crash_object = info.get("crash_object", False)
+            crash_vehicle = self._episode_crash_flags['crash_vehicle']
+            crash_object = self._episode_crash_flags['crash_object']
+            crash_building = self._episode_crash_flags['crash_building']
+            crash_sidewalk = self._episode_crash_flags['crash_sidewalk']
+            crash_human = self._episode_crash_flags['crash_human']
+            out_of_road = self._episode_crash_flags['out_of_road']
             
-            # Note: crash_vehicle/crash_object can be True even if arrive_dest is True
-            # (vehicle crashed during episode but still reached destination)
+            # Compute crash-aware success rates using accumulated flags
             success_no_crash_vehicle = arrive_dest and not crash_vehicle
             success_no_crash_any = arrive_dest and not crash_vehicle and not crash_object
             
@@ -387,11 +413,6 @@ class EvalCallback(EventCallback):
             self.evaluations_info_buffer["crash_any_rate"].append(float(crash_vehicle or crash_object))
             
             # Track additional failure types
-            crash_building = info.get("crash_building", False)
-            crash_sidewalk = info.get("crash_sidewalk", False)
-            crash_human = info.get("crash_human", False)
-            out_of_road = info.get("out_of_road", False)
-            
             self.evaluations_info_buffer["crash_building_rate"].append(float(crash_building))
             self.evaluations_info_buffer["crash_sidewalk_rate"].append(float(crash_sidewalk))
             self.evaluations_info_buffer["crash_human_rate"].append(float(crash_human))
@@ -406,6 +427,16 @@ class EvalCallback(EventCallback):
             # Success without any bad event
             success_no_bad_event = arrive_dest and not any_bad_event
             self.evaluations_info_buffer["success_no_bad_event"].append(float(success_no_bad_event))
+            
+            # Reset episode crash flags for next episode
+            self._episode_crash_flags = {
+                'crash_vehicle': False,
+                'crash_object': False,
+                'crash_building': False,
+                'crash_sidewalk': False,
+                'crash_human': False,
+                'out_of_road': False,
+            }
 
         if "raw_action" in info:
             self.evaluations_info_buffer["raw_action"].append(info["raw_action"])
