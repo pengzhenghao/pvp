@@ -4,7 +4,11 @@ killall python -9 2>/dev/null || true
 
 # Pure BC (Behavioral Cloning) Experiment Script
 # This script runs pure BC experiments with different data amounts
-# Each data amount runs on a separate GPU (8 data amounts on 8 GPUs)
+# Each data amount runs on a separate GPU (5 data amounts on 5 GPUs)
+#
+# Usage:
+#   ./run_bc_experiments.sh        # Normal mode (eval_freq=100, 500 episodes)
+#   ./run_bc_experiments.sh fast   # Fast mode (eval_freq=1000, 50 episodes)
 #
 # BC is the simplest baseline - just supervised learning on expert data
 # No hyperparameters to tune, only data amount matters
@@ -14,12 +18,26 @@ BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
 BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
 
-# Common parameters (optimized)
-BC_TRAINING_TIMESTEPS=10000
-EVAL_FREQ=1000
-N_EVAL_EPISODES=200
+# Check for fast mode
+FAST_MODE=false
+if [ "$1" == "fast" ]; then
+    FAST_MODE=true
+fi
+
+# Common parameters
+BC_TRAINING_TIMESTEPS=2000
 SAVE_FREQ=1000
 SEED=0
+
+# Mode-specific parameters
+if [ "$FAST_MODE" == "true" ]; then
+    EVAL_FREQ=1000
+    N_EVAL_EPISODES=50
+    echo "*** FAST MODE ENABLED ***"
+else
+    EVAL_FREQ=100
+    N_EVAL_EPISODES=500
+fi
 
 # Function to run a single experiment
 run_experiment() {
@@ -40,7 +58,7 @@ run_experiment() {
         --n_eval_episodes ${N_EVAL_EPISODES} \
         --save_freq ${SAVE_FREQ} \
         --seed ${SEED} \
-        --wandb_project "adaptation-0120" \
+        --wandb_project "mainexp0121" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     
     echo "Experiment ${EXP_NAME} started with PID $!"
@@ -52,18 +70,20 @@ mkdir -p ${BASE_DIR}/logs
 # ============================================================
 # Experiment Configuration
 # ============================================================
-# 8 data amounts for 8 GPUs (from large to small)
-DATA_STEPS_LIST=(20000 17500 15000 12500 10000 7500 5000 2500)
+# 5 data amounts for 5 GPUs (from large to small)
+DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
 
 # ============================================================
-# Run experiments across 8 GPUs
+# Run experiments across 5 GPUs
 # ============================================================
 
 echo "============================================================"
-echo "Starting Pure BC Experiments (8 data amounts on 8 GPUs)"
+echo "Starting Pure BC Experiments (5 data amounts on 5 GPUs)"
 echo "============================================================"
+echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
 echo "Data steps: ${DATA_STEPS_LIST[@]}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
+echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
 echo "Loading buffer from: ${BUFFER_PATH}"
 echo "============================================================"
@@ -74,7 +94,7 @@ echo "  - No Q-learning, no conservative penalties"
 echo "  - Simplest offline RL baseline"
 echo "============================================================"
 
-# Run all 8 experiments in parallel on 8 GPUs
+# Run all 5 experiments in parallel on 5 GPUs
 for i in "${!DATA_STEPS_LIST[@]}"; do
     GPU_ID=$i
     DATA_STEPS=${DATA_STEPS_LIST[$i]}
@@ -82,7 +102,7 @@ for i in "${!DATA_STEPS_LIST[@]}"; do
 done
 
 # Wait for all experiments to complete
-echo "All 8 experiments started. Waiting for completion..."
+echo "All 5 experiments started. Waiting for completion..."
 wait
 
 echo "============================================================"

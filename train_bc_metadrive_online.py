@@ -42,8 +42,8 @@ if __name__ == '__main__':
     parser.add_argument("--bc_training_timesteps", default=10000, type=int, help="Total timesteps for BC training (can be very large).")
     parser.add_argument("--train_freq", default=1, type=int, help="Train every N steps.")
     parser.add_argument("--gradient_steps", default=1, type=int, help="Number of gradient steps per training update.")
-    parser.add_argument("--eval_freq", default=1000, type=int, help="Evaluate policy every N steps.")
-    parser.add_argument("--n_eval_episodes", default=400, type=int, help="Number of episodes for evaluation.")
+    parser.add_argument("--eval_freq", default=100, type=int, help="Evaluate policy every N steps.")
+    parser.add_argument("--n_eval_episodes", default=500, type=int, help="Number of episodes for evaluation.")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
     parser.add_argument("--use_td3_bc", action="store_true", help="Enable TD3+BC mode (combine Q-learning loss with BC loss).")
     parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="Weight for BC loss in pure BC mode.")
@@ -126,8 +126,8 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    num_envs = 2 if args.toy else 2
-    num_eval_envs = 2 if args.toy else 2
+    num_envs = 2 if args.toy else 10
+    num_eval_envs = 2 if args.toy else 10
     
     # Check if we're loading buffer (skip Phase 1 entirely)
     loading_buffer = args.load_buffer and os.path.exists(args.load_buffer)
@@ -538,26 +538,54 @@ if __name__ == '__main__':
     
     phase2_callback.on_training_start(locals(), globals())
     
-    bc_training_current_timesteps = 0  # Start from 0 (train from scratch)
+    # ===== Evaluate BEFORE training (timestep = 0) =====
+    # This evaluates the pre-trained model's performance before any finetuning
+    print("=" * 80)
+    print("Evaluating pre-trained model BEFORE finetuning (timestep = 0)")
+    print("=" * 80)
+    bc_trainer.num_timesteps = 0
     
-    while bc_training_current_timesteps < bc_training_timesteps:
-        # Only train, no data collection
-        if True:
-            bc_trainer.num_timesteps = bc_training_current_timesteps
-            bc_trainer.train(batch_size=args.batch_size, gradient_steps=args.gradient_steps)
-            bc_training_current_timesteps += args.train_freq
-            
-            # Update num_timesteps AFTER incrementing so callbacks report correct value
-            bc_trainer.num_timesteps = bc_training_current_timesteps
-            
-            # Call callback.on_step() for all callbacks (CheckpointCallback, WandbCallback, EvalCallback)
-            # EvalCallback will trigger automatically when n_calls % eval_freq == 0
-            phase2_callback.on_step()
+    # Find EvalCallback in the callback list and trigger evaluation
+    from pvp.sb3.common.callbacks import EvalCallback
+    for cb in phase2_callback.callbacks:
+        if isinstance(cb, EvalCallback):
+            # Temporarily set n_calls to trigger evaluation
+            cb.n_calls = cb.eval_freq  # This will make n_calls % eval_freq == 0
+            cb._on_step()  # Trigger evaluation
+            cb.n_calls = 0  # Reset n_calls for proper counting during training
+            break
+    
+    print("=" * 80)
+    print("Pre-training evaluation complete! Starting finetuning...")
+    print("=" * 80)
+    
+    # Use explicit iteration counting to ensure exact timestep values
+    train_freq = args.train_freq
+    total_iterations = bc_training_timesteps // train_freq
+    
+    for iteration in range(total_iterations):
+        # Calculate exact timestep value (always multiple of train_freq)
+        current_timestep = iteration * train_freq
+        next_timestep = (iteration + 1) * train_freq
+        
+        # Set num_timesteps BEFORE training (for internal use)
+        bc_trainer.num_timesteps = current_timestep
+        
+        # Train
+        bc_trainer.train(batch_size=args.batch_size, gradient_steps=args.gradient_steps)
+        
+        # Set num_timesteps to EXACT value for callbacks (ensures clean step values like 100, 200, etc.)
+        bc_trainer.num_timesteps = next_timestep
+        
+        # Call callback.on_step() for all callbacks (CheckpointCallback, WandbCallback, EvalCallback)
+        # EvalCallback will trigger automatically when n_calls % eval_freq == 0
+        # The logged step will be exactly next_timestep (100, 200, 300, ...)
+        phase2_callback.on_step()
         
         # Log progress
-        log_interval = 100 if args.toy else 10000
-        if bc_training_current_timesteps % log_interval == 0:
-            print(f"BC Training: {bc_training_current_timesteps}/{bc_training_timesteps}, "
+        log_interval = 100 if args.toy else 1000
+        if next_timestep % log_interval == 0:
+            print(f"BC Training: {next_timestep}/{bc_training_timesteps}, "
                   f"Training updates: {bc_trainer._n_updates}")
     
     # Only call callback.on_training_end() if we collected data (not loaded from file)
