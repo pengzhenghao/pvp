@@ -466,17 +466,20 @@ class EvalCallback(EventCallback):
                 success_no_crash_vehicle = np.mean(self.evaluations_info_buffer["success_no_crash_vehicle"])
                 success_no_crash_any = np.mean(self.evaluations_info_buffer["success_no_crash_any"])
                 crash_vehicle_rate = np.mean(self.evaluations_info_buffer["crash_vehicle_rate"])
+                crash_object_rate = np.mean(self.evaluations_info_buffer["crash_object_rate"])
                 crash_any_rate = np.mean(self.evaluations_info_buffer["crash_any_rate"])
                 
                 if self.verbose > 0:
                     print(f"Success rate (no crash_vehicle): {100 * success_no_crash_vehicle:.2f}%")
                     print(f"Success rate (no crash_any): {100 * success_no_crash_any:.2f}%")
                     print(f"Crash vehicle rate: {100 * crash_vehicle_rate:.2f}%")
+                    print(f"Crash object rate: {100 * crash_object_rate:.2f}%")
                     print(f"Crash any rate: {100 * crash_any_rate:.2f}%")
                 
                 self.logger.record("eval/success_no_crash_vehicle", success_no_crash_vehicle)
                 self.logger.record("eval/success_no_crash_any", success_no_crash_any)
                 self.logger.record("eval/crash_vehicle_rate", crash_vehicle_rate)
+                self.logger.record("eval/crash_object_rate", crash_object_rate)
                 self.logger.record("eval/crash_any_rate", crash_any_rate)
 
             # Log other metrics (skip the ones we already logged above)
