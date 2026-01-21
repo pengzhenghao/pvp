@@ -33,7 +33,7 @@ def make_eval_env():
         sensors={"rgb_camera": (RGBCamera, *sensor_size)},
         stack_size=3,
         interface_panel=["rgb_camera", "dashboard"],
-        daytime="08:30",
+        daytime="06:10",
     )
     eval_env = HumanInTheLoopEnv(config=eval_env_config)
     # Note: Monitor is optional for evaluation, but we can add it if needed
@@ -42,8 +42,14 @@ def make_eval_env():
 
 
 def load_model(ckpt_path, env):
-    """Load trained model from checkpoint"""
+    """Load trained model from checkpoint (supports PVPTD3, TD3+BC, CQL, IQL)"""
     from pvp.sb3.common.save_util import load_from_zip_file
+    
+    # First, load the checkpoint to check what type of model it is
+    data, params, pytorch_variables = load_from_zip_file(ckpt_path, device="auto", print_system_info=False)
+    
+    # Detect model type by checking saved params
+    is_iql = "value_features_extractor" in params or "value_mlp" in params
     
     # Setup algorithm config (should match training config)
     algo_config = dict(
@@ -72,11 +78,42 @@ def load_model(ckpt_path, env):
         device="auto",
     )
     
-    model = PVPTD3(**algo_config)
+    if is_iql:
+        # Load as IQL model
+        print(f"Detected IQL model, loading with IQL class...")
+        from pvp.sb3.td3.iql import IQL
+        # IQL doesn't use q_value_bound, create minimal config
+        iql_valid_params = [
+            'policy', 'env', 'learning_rate', 'buffer_size', 'learning_starts',
+            'batch_size', 'tau', 'gamma', 'train_freq', 'gradient_steps',
+            'action_noise', 'replay_buffer_class', 'replay_buffer_kwargs',
+            'optimize_memory_usage', 'policy_delay', 'target_policy_noise',
+            'target_noise_clip', 'tensorboard_log', 'create_eval_env',
+            'policy_kwargs', 'verbose', 'seed', 'device', 'monitor_wrapper',
+            'bc_loss_weight', 'use_td3_bc', 'td3_bc_alpha',
+            'iql_tau', 'iql_beta', 'clip_score', 'max_grad_norm'
+        ]
+        iql_config = {k: v for k, v in algo_config.items() if k in iql_valid_params}
+        model = IQL(**iql_config)
+    else:
+        # Load as PVPTD3 model
+        model = PVPTD3(**algo_config)
     
     print(f"Loading checkpoint from {ckpt_path}!")
-    data, params, pytorch_variables = load_from_zip_file(ckpt_path, device=model.device, print_system_info=False)
-    model.set_parameters(params, exact_match=False, device=model.device)
+    
+    # Filter params to only include those that exist in the model
+    # This handles cases where saved model has different params than current model
+    filtered_params = {}
+    for name, param in params.items():
+        try:
+            # Check if this parameter exists in the model
+            from pvp.sb3.common.save_util import recursive_getattr
+            recursive_getattr(model, name)
+            filtered_params[name] = param
+        except AttributeError:
+            print(f"  Skipping param '{name}' (not found in model)")
+    
+    model.set_parameters(filtered_params, exact_match=False, device=model.device)
     print(f"Model loaded successfully!")
     
     return model
@@ -345,16 +382,7 @@ def generate_gradcam(model, obs_dict, target_layer, target_output=None, debug=Fa
         if debug:
             print(f"Debug: CAM shape after processing: {cam.shape}")
         
-        # 归一化到0-1
-        cam_range = cam.max() - cam.min()
-        if cam_range > 1e-8:
-            cam = (cam - cam.min()) / cam_range
-        else:
-            # CAM全为相同值或接近零，使用均匀分布
-            if debug:
-                print(f"Debug: CAM has very small range ({cam_range:.6f}), using uniform attention")
-            cam = np.ones_like(cam) * 0.5  # 使用0.5作为均匀注意力
-        
+        # Return raw CAM values (no normalization - will be done later with percentile stats)
         return cam
     except Exception as e:
         print(f"Error in generate_gradcam: {e}")
@@ -543,8 +571,62 @@ def analyze_cnn_contribution(model, obs, debug=True):
         return 0.0
 
 
+def get_raw_actor_cam(model, obs, layer_index=-3, action_dim=0):
+    """
+    Get raw CAM values from actor without normalization (for calibration).
+    
+    Returns:
+        cam: raw CAM values (numpy array) or None
+    """
+    try:
+        actor = model.policy.actor
+        features_extractor = actor.features_extractor
+        target_conv = get_conv_layer_by_index(features_extractor, layer_index=layer_index, verbose=False)
+        
+        if target_conv is None:
+            return None
+        
+        obs_dict, _ = model.policy.obs_to_tensor(obs)
+        
+        if isinstance(obs_dict, dict):
+            if "image" in obs_dict:
+                obs_dict["image"] = obs_dict["image"].requires_grad_(True)
+            if "state" in obs_dict:
+                obs_dict["state"] = obs_dict["state"].requires_grad_(True)
+        else:
+            obs_dict = obs_dict.requires_grad_(True)
+        
+        cam = generate_gradcam(actor, obs_dict, target_conv, None, debug=False, action_dim=action_dim)
+        return cam
+        
+    except Exception as e:
+        return None
+
+
+def normalize_cam_with_percentile(cam, percentile_min, percentile_max):
+    """
+    Normalize CAM using global percentile statistics.
+    
+    Args:
+        cam: raw CAM values
+        percentile_min: minimum percentile value (e.g., 1st percentile)
+        percentile_max: maximum percentile value (e.g., 99th percentile)
+    
+    Returns:
+        normalized CAM in [0, 1]
+    """
+    cam_clipped = np.clip(cam, percentile_min, percentile_max)
+    
+    if percentile_max - percentile_min > 1e-8:
+        cam_normalized = (cam_clipped - percentile_min) / (percentile_max - percentile_min)
+    else:
+        cam_normalized = np.ones_like(cam) * 0.5
+    
+    return cam_normalized
+
+
 def visualize_attention(model, obs, original_image, attention_save_dir=None, step=0, 
-                        layer_index=-3, action_dim=0):
+                        layer_index=-3, action_dim=0, percentile_stats=None):
     """
     可视化CNN的注意力，将attention map叠加到原始图像上
     
@@ -556,6 +638,8 @@ def visualize_attention(model, obs, original_image, attention_save_dir=None, ste
         step: 当前步数
         layer_index: 使用的卷积层索引 (-3=倒数第三层，有更高分辨率)
         action_dim: 要可视化的action维度 (0=steering, 1=acceleration, None=L2 norm)
+        percentile_stats: tuple of (percentile_min, percentile_max) for normalization
+                         If None, uses within-frame normalization (not recommended)
     
     Returns:
         vis_image: 叠加了attention map的可视化图像
@@ -609,14 +693,28 @@ def visualize_attention(model, obs, original_image, attention_save_dir=None, ste
         # 检查CAM尺寸
         if step == 0 or step % 100 == 0:
             print(f"Debug: CAM generated successfully! CAM shape: {cam.shape}, original image shape: {original_image.shape}")
-            print(f"Debug: CAM value range: [{cam.min():.4f}, {cam.max():.4f}]")
+            print(f"Debug: Raw CAM value range: [{cam.min():.4f}, {cam.max():.4f}]")
         
         # 将CAM上采样到原始图像尺寸
         h, w = original_image.shape[:2]
         cam_resized = cv2.resize(cam, (w, h), interpolation=cv2.INTER_LINEAR)
         
+        # Normalize using percentile statistics (cross-frame/cross-episode)
+        if percentile_stats is not None:
+            percentile_min, percentile_max = percentile_stats
+            cam_normalized = normalize_cam_with_percentile(cam_resized, percentile_min, percentile_max)
+            if step == 0:
+                print(f"Debug: Using percentile normalization: min={percentile_min:.4f}, max={percentile_max:.4f}")
+        else:
+            # Fallback to within-frame normalization (not recommended)
+            cam_range = cam_resized.max() - cam_resized.min()
+            if cam_range > 1e-8:
+                cam_normalized = (cam_resized - cam_resized.min()) / cam_range
+            else:
+                cam_normalized = np.ones_like(cam_resized) * 0.5
+        
         # 转换为热力图 (JET colormap: 蓝色=低注意力, 红色=高注意力)
-        cam_uint8 = (cam_resized * 255).astype(np.uint8)
+        cam_uint8 = (cam_normalized * 255).astype(np.uint8)
         cam_heatmap = cv2.applyColorMap(cam_uint8, cv2.COLORMAP_JET)
         
         # 叠加到原始图像上 (原始图像60%, 热力图40%)
@@ -644,10 +742,10 @@ def visualize_attention(model, obs, original_image, attention_save_dir=None, ste
             final_image[colorbar_start_y:colorbar_start_y+colorbar_height, 
                        colorbar_start_x+i, :] = color
         
-        # 添加文字标签
-        cv2.putText(final_image, "Low", (10, display_h + 18), 
+        # 添加文字标签 - show percentile info
+        cv2.putText(final_image, "0%", (10, display_h + 18), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-        cv2.putText(final_image, "High", (display_w - 45, display_h + 18), 
+        cv2.putText(final_image, "100%", (display_w - 50, display_h + 18), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
         cv2.putText(final_image, f"Step: {step}", (display_w - 80, display_h + 35), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
@@ -667,9 +765,68 @@ def visualize_attention(model, obs, original_image, attention_save_dir=None, ste
         return original_image
 
 
+def calibrate_actor_attention_stats(model, env, num_calibration_episodes, max_steps, layer_index, action_dim):
+    """
+    Run calibration episodes to collect CAM statistics for percentile-based normalization.
+    
+    Returns:
+        percentile_stats: tuple of (percentile_1, percentile_99)
+    """
+    print("=" * 60)
+    print("CALIBRATION PHASE: Collecting attention statistics")
+    print(f"Running {num_calibration_episodes} episodes without visualization...")
+    print("=" * 60)
+    
+    all_cam_values = []
+    
+    for episode in range(num_calibration_episodes):
+        obs = env.reset()
+        done = False
+        step = 0
+        
+        while not done and step < max_steps:
+            action, _ = model.predict(obs, deterministic=True)
+            
+            # Get raw CAM values
+            cam = get_raw_actor_cam(model, obs, layer_index=layer_index, action_dim=action_dim)
+            
+            if cam is not None:
+                # Collect all pixel values from CAM
+                all_cam_values.extend(cam.flatten().tolist())
+            
+            # Step environment
+            obs, reward, done, info = env.step(action)
+            step += 1
+        
+        print(f"  Calibration episode {episode + 1}/{num_calibration_episodes}: {step} steps, "
+              f"collected {len(all_cam_values)} values so far")
+    
+    # Calculate percentile statistics
+    all_cam_values = np.array(all_cam_values)
+    percentile_1 = np.percentile(all_cam_values, 1)
+    percentile_99 = np.percentile(all_cam_values, 99)
+    percentile_25 = np.percentile(all_cam_values, 25)
+    percentile_50 = np.percentile(all_cam_values, 50)
+    percentile_75 = np.percentile(all_cam_values, 75)
+    
+    print("=" * 60)
+    print("CALIBRATION COMPLETE!")
+    print(f"  Total CAM values collected: {len(all_cam_values)}")
+    print(f"  Percentile statistics:")
+    print(f"    1st percentile:  {percentile_1:.6f}")
+    print(f"    25th percentile: {percentile_25:.6f}")
+    print(f"    50th percentile: {percentile_50:.6f} (median)")
+    print(f"    75th percentile: {percentile_75:.6f}")
+    print(f"    99th percentile: {percentile_99:.6f}")
+    print(f"  Using [{percentile_1:.6f}, {percentile_99:.6f}] for normalization")
+    print("=" * 60)
+    
+    return (percentile_1, percentile_99)
+
+
 def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save_dir="eval_videos", 
                         enable_attention_vis=False, attention_save_dir=None,
-                        layer_index=-3, action_dim=0):
+                        layer_index=-3, action_dim=0, percentile_stats=None):
     """Evaluate model and optionally record videos, collecting all evaluation metrics
     
     Args:
@@ -682,6 +839,7 @@ def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save
         attention_save_dir: 注意力图像保存目录（如果为None，则只显示不保存）
         layer_index: Grad-CAM使用的卷积层索引 (-3=倒数第三层，有更高分辨率)
         action_dim: 要可视化的action维度 (0=steering, 1=acceleration, None=L2 norm)
+        percentile_stats: tuple of (percentile_min, percentile_max) for attention normalization
     """
     if save_video:
         os.makedirs(video_save_dir, exist_ok=True)
@@ -775,7 +933,8 @@ def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save
                         attention_save_dir=attention_save_dir,
                         step=step_count,
                         layer_index=layer_index,
-                        action_dim=action_dim
+                        action_dim=action_dim,
+                        percentile_stats=percentile_stats
                     )
                     # Display attention visualization with larger window
                     # vis_image 已经在 visualize_attention 中放大了4倍
@@ -914,7 +1073,7 @@ def evaluate_with_video(model, env, num_episodes=5, save_video=False, video_save
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=str, default="/home/caihy/pvp/rl_model_2999_steps.zip", help="Path to model checkpoint")
+    parser.add_argument("--ckpt", type=str, default="/home/caihy/pvp/iqlmodel.zip", help="Path to model checkpoint")
     parser.add_argument("--num_episodes", type=int, default=50, help="Number of episodes to evaluate")
     parser.add_argument("--save_video", action="store_true", help="Save videos (default: False)")
     parser.add_argument("--video_dir", type=str, default="eval_videos", help="Directory to save videos")
@@ -924,6 +1083,10 @@ if __name__ == "__main__":
                         help="Conv layer index for Grad-CAM (-3=third from last, higher resolution; -2=second from last)")
     parser.add_argument("--action_dim", type=int, default=0, 
                         help="Action dimension to visualize (0=steering, 1=acceleration, -1=L2 norm)")
+    parser.add_argument("--calibration_episodes", type=int, default=10,
+                        help="Number of episodes for calibration (collecting percentile stats)")
+    parser.add_argument("--max_steps", type=int, default=1500,
+                        help="Maximum steps per episode (for calibration)")
     args = parser.parse_args()
     
     # Create environment (num_env=1, single environment)
@@ -934,13 +1097,28 @@ if __name__ == "__main__":
     print("Loading model...")
     model = load_model(args.ckpt, eval_env)
     
-    # Evaluate and optionally record videos
-    print("Starting evaluation...")
-    if True:
-        print("CNN Attention visualization enabled")
-        print("Red/yellow regions indicate areas the CNN focuses on")
     # Handle action_dim=-1 as None (for L2 norm)
     action_dim = None if args.action_dim < 0 else args.action_dim
+    
+    # Calibration phase (if attention visualization is enabled)
+    percentile_stats = None
+    if args.visualize_attention:
+        print("CNN Attention visualization enabled")
+        print("  with Cross-Frame/Cross-Episode Percentile Normalization")
+        print("Red/yellow = high attention (high percentile)")
+        print("Blue = low attention (low percentile)")
+        
+        # Run calibration to collect attention statistics
+        percentile_stats = calibrate_actor_attention_stats(
+            model, eval_env,
+            num_calibration_episodes=args.calibration_episodes,
+            max_steps=args.max_steps,
+            layer_index=args.layer_index,
+            action_dim=action_dim
+        )
+    
+    # Evaluate and optionally record videos
+    print("\nStarting evaluation...")
     
     evaluate_with_video(
         model, 
@@ -948,10 +1126,11 @@ if __name__ == "__main__":
         num_episodes=args.num_episodes, 
         save_video=args.save_video,
         video_save_dir=args.video_dir,
-        enable_attention_vis=True,
-        attention_save_dir=args.attention_dir if True else None,
+        enable_attention_vis=args.visualize_attention,
+        attention_save_dir=args.attention_dir if args.visualize_attention else None,
         layer_index=args.layer_index,
-        action_dim=action_dim
+        action_dim=action_dim,
+        percentile_stats=percentile_stats
     )
     
     if args.visualize_attention:
