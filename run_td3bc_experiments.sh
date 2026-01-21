@@ -57,7 +57,7 @@ run_experiment() {
     
     echo "Starting experiment: ${EXP_NAME} on GPU ${GPU_ID}"
     
-    CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
+    PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
         --exp_name "${EXP_NAME}" \
         --use_td3_bc \
         --load_buffer "${BUFFER_PATH}" \

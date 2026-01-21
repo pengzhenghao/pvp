@@ -66,7 +66,7 @@ run_experiment() {
     
     echo "  GPU ${GPU_ID}: ${EXP_NAME}"
     
-    CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
+    PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
         --exp_name "${EXP_NAME}" \
         --use_iql \
         --load_buffer "${BUFFER_PATH}" \

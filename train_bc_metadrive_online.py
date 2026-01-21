@@ -147,8 +147,8 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    num_envs = 2 if args.toy else 10
-    num_eval_envs = 2 if args.toy else 10
+    num_envs = 1 if args.toy else 10
+    num_eval_envs = 1 if args.toy else 10
     
     # Check if we're loading buffer (skip Phase 1 entirely)
     loading_buffer = args.load_buffer and os.path.exists(args.load_buffer)
@@ -573,9 +573,9 @@ if __name__ == '__main__':
     
     # ===== Evaluate BEFORE training (timestep = 0) =====
     # This evaluates the pre-trained model's performance before any finetuning
-    print("=" * 80)
-    print("Evaluating pre-trained model BEFORE finetuning (timestep = 0)")
-    print("=" * 80)
+    print("=" * 80, flush=True)
+    print("Evaluating pre-trained model BEFORE finetuning (timestep = 0)", flush=True)
+    print("=" * 80, flush=True)
     bc_trainer.num_timesteps = 0
     
     # Find EvalCallback in the callback list and trigger evaluation
@@ -588,9 +588,9 @@ if __name__ == '__main__':
             cb.n_calls = 0  # Reset n_calls for proper counting during training
             break
     
-    print("=" * 80)
-    print("Pre-training evaluation complete! Starting finetuning...")
-    print("=" * 80)
+    print("=" * 80, flush=True)
+    print("Pre-training evaluation complete! Starting finetuning...", flush=True)
+    print("=" * 80, flush=True)
     
     # Use explicit iteration counting to ensure exact timestep values
     train_freq = args.train_freq
@@ -619,7 +619,7 @@ if __name__ == '__main__':
         log_interval = 100 if args.toy else 1000
         if next_timestep % log_interval == 0:
             print(f"BC Training: {next_timestep}/{bc_training_timesteps}, "
-                  f"Training updates: {bc_trainer._n_updates}")
+                  f"Training updates: {bc_trainer._n_updates}", flush=True)
     
     # Only call callback.on_training_end() if we collected data (not loaded from file)
     if not loading_buffer:
