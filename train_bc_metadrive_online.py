@@ -44,7 +44,6 @@ if __name__ == '__main__':
     parser.add_argument("--gradient_steps", default=1, type=int, help="Number of gradient steps per training update.")
     parser.add_argument("--eval_freq", default=100, type=int, help="Evaluate policy every N steps.")
     parser.add_argument("--n_eval_episodes", default=500, type=int, help="Number of episodes for evaluation.")
-    parser.add_argument("--skip_pretrain_eval", action="store_true", help="Skip pre-training evaluation at timestep 0 (for fast mode).")
     parser.add_argument("--toy", action="store_true", help="Use toy/debug mode with small numbers.")
     parser.add_argument("--use_td3_bc", action="store_true", help="Enable TD3+BC mode (combine Q-learning loss with BC loss).")
     parser.add_argument("--bc_loss_weight", default=1.0, type=float, help="Weight for BC loss in pure BC mode.")
@@ -155,7 +154,7 @@ if __name__ == '__main__':
     )
 
     # ===== Setup the training environment =====
-    num_envs = 1 if args.toy else 10
+    num_envs = 1 if args.toy else 1
     num_eval_envs = 1 if args.toy else 10
     
     # Check if we're loading buffer (skip Phase 1 entirely)
@@ -671,31 +670,6 @@ if __name__ == '__main__':
     )
     
     phase2_callback.on_training_start(locals(), globals())
-    
-    # ===== Evaluate BEFORE training (timestep = 0) =====
-    # This evaluates the pre-trained model's performance before any finetuning
-    # Skip in fast mode (--skip_pretrain_eval) to save time
-    if not args.skip_pretrain_eval:
-        print("=" * 80, flush=True)
-        print("Evaluating pre-trained model BEFORE finetuning (timestep = 0)", flush=True)
-        print("=" * 80, flush=True)
-        bc_trainer.num_timesteps = 0
-        
-        # Find EvalCallback in the callback list and trigger evaluation
-        from pvp.sb3.common.callbacks import EvalCallback
-        for cb in phase2_callback.callbacks:
-            if isinstance(cb, EvalCallback):
-                # Temporarily set n_calls to trigger evaluation
-                cb.n_calls = cb.eval_freq  # This will make n_calls % eval_freq == 0
-                cb._on_step()  # Trigger evaluation
-                cb.n_calls = 0  # Reset n_calls for proper counting during training
-                break
-        
-        print("=" * 80, flush=True)
-        print("Pre-training evaluation complete! Starting finetuning...", flush=True)
-        print("=" * 80, flush=True)
-    else:
-        print("Skipping pre-training evaluation (--skip_pretrain_eval)", flush=True)
     
     # Use explicit iteration counting to ensure exact timestep values
     train_freq = args.train_freq
