@@ -7,6 +7,7 @@ from metadrive.engine.core.onscreen_message import ScreenMessage
 from metadrive.envs.safe_metadrive_env import SafeMetaDriveEnv
 from metadrive.policy.manual_control_policy import TakeoverPolicyWithoutBrake
 from metadrive.utils.math import safe_clip
+from metadrive.obs.state_obs import LidarStateObservation
 
 ScreenMessage.SCALE = 0.1
 
@@ -63,6 +64,11 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         # Reset episode-level cost tracking (episode_cost is reset in SafeMetaDriveEnv.reset())
         self.episode_takeover_cost = 0
         obs, info = super(HumanInTheLoopEnv, self).reset(*args, **kwargs)
+        
+        # Initialize lidar observation for expert comparison (needed for EvalCallback)
+        if not hasattr(self, '_lidar_obs'):
+            self._lidar_obs = LidarStateObservation(self.config)
+        
         # The training code is for older version of gym, so we discard the additional info from the reset.
         return obs
 
@@ -96,6 +102,12 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         # IMPORTANT: total_cost should be the EPISODE cost for proper evaluation metrics
         # episode_cost is reset on each reset() in SafeMetaDriveEnv
         engine_info["total_cost"] = self.episode_cost
+        
+        # Add lidar observation for expert comparison in EvalCallback
+        if hasattr(self, '_lidar_obs') and self.agent is not None:
+            engine_info["lidar_obs"] = self._lidar_obs.observe(self.agent)
+        else:
+            engine_info["lidar_obs"] = None
         
         return o, r, d, engine_info
 

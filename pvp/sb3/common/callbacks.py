@@ -336,16 +336,15 @@ class EvalCallback(EventCallback):
         if self._expert_loaded:
             return
         
-        try:
-            from pvp.experiments.metadrive.egpo.fakehuman_env import get_expert
-            print("Loading expert model for evaluation comparison...")
-            self.expert = get_expert()
-            self._expert_loaded = True
-            print("Expert model loaded successfully!")
-        except Exception as e:
-            print(f"Warning: Could not load expert model: {e}")
-            self.expert = None
-            self._expert_loaded = True  # Don't try again
+        print("[EvalCallback] Loading expert model for evaluation comparison...", flush=True)
+        # Use the globally loaded expert from fakehuman_env (already loaded at module import)
+        from pvp.experiments.metadrive.egpo.fakehuman_env import _expert
+        self.expert = _expert
+        self._expert_loaded = True
+        if self.expert is not None:
+            print(f"[EvalCallback] Expert model loaded successfully! Type: {type(self.expert)}", flush=True)
+        else:
+            print("[EvalCallback] WARNING: Expert is None!", flush=True)
 
     def _init_callback(self) -> None:
         # Does not work in some corner cases, where the wrapper is not the same
@@ -370,8 +369,37 @@ class EvalCallback(EventCallback):
         :param locals_:
         :param globals_:
         """
+        # Debug: confirm callback is being called
+        if not hasattr(self, '_callback_called_count'):
+            self._callback_called_count = 0
+        self._callback_called_count += 1
+        if self._callback_called_count == 1:
+            print(f"[DEBUG] _log_success_callback called for the first time!", flush=True)
+            print(f"[DEBUG] locals_ keys: {list(locals_.keys())}", flush=True)
+        
         info = locals_["info"]
-        action = locals_.get("action", None)  # Agent's action at this step
+        # Note: evaluate_policy passes 'actions' (plural), not 'action' (singular)
+        # For VecEnv, actions is shape (n_envs, action_dim), we need the current env's action
+        actions = locals_.get("actions", None)
+        i = locals_.get("i", 0)  # Current env index
+        
+        # Extract action for current environment
+        if actions is not None:
+            action = actions[i] if len(actions.shape) > 1 else actions
+        else:
+            # Fallback: try to get from info dict
+            action = info.get("action", None)
+        
+        # Debug: print action info on first call
+        if self._callback_called_count == 1:
+            print(f"[DEBUG] actions shape: {actions.shape if actions is not None else None}", flush=True)
+            print(f"[DEBUG] i (env index): {i}", flush=True)
+            print(f"[DEBUG] action extracted: {action}", flush=True)
+            print(f"[DEBUG] info keys: {list(info.keys())}", flush=True)
+            print(f"[DEBUG] lidar_obs in info: {'lidar_obs' in info}", flush=True)
+            if 'lidar_obs' in info:
+                lidar = info['lidar_obs']
+                print(f"[DEBUG] lidar_obs shape: {lidar.shape if hasattr(lidar, 'shape') else type(lidar)}", flush=True)
         
         # ===== Initialize episode-level tracking =====
         if not hasattr(self, '_episode_crash_flags'):
@@ -400,26 +428,36 @@ class EvalCallback(EventCallback):
                 self._episode_actions.append(action_np)
                 
                 # ===== Expert comparison =====
-                obs = locals_.get("obs", None)
-                if self.expert is not None and obs is not None:
-                    try:
-                        import torch as th
-                        # Get expert action using lidar observation
-                        # Note: expert uses lidar obs, so we need to extract it if available
-                        expert_action, _ = self.expert.predict(obs, deterministic=True)
-                        expert_action_np = np.array(expert_action).flatten()
-                        
-                        # Action difference (L2 norm)
-                        action_diff = np.linalg.norm(action_np - expert_action_np)
-                        self._episode_expert_diffs.append(action_diff)
-                        
-                        # Per-dimension differences
-                        steering_diff = abs(action_np[0] - expert_action_np[0])
-                        accel_diff = abs(action_np[1] - expert_action_np[1])
-                        self._episode_expert_steering_diffs.append(steering_diff)
-                        self._episode_expert_accel_diffs.append(accel_diff)
-                    except Exception as e:
-                        pass  # Silently skip if expert comparison fails
+                # Expert uses lidar observation, not RGB - get it from info dict
+                lidar_obs = info.get("lidar_obs", None)
+                
+                # Debug: print status on first step of first episode
+                if not hasattr(self, '_debug_printed'):
+                    self._debug_printed = True
+                    print("=" * 60, flush=True)
+                    print("[DEBUG EvalCallback] First step debug info:", flush=True)
+                    print(f"  Expert loaded: {self.expert is not None}", flush=True)
+                    print(f"  Expert type: {type(self.expert)}", flush=True)
+                    print(f"  lidar_obs in info: {lidar_obs is not None}", flush=True)
+                    if lidar_obs is not None:
+                        print(f"  lidar_obs shape: {lidar_obs.shape if hasattr(lidar_obs, 'shape') else type(lidar_obs)}", flush=True)
+                    print(f"  info keys: {list(info.keys())}", flush=True)
+                    print("=" * 60, flush=True)
+                
+                if self.expert is not None and lidar_obs is not None:
+                    # Get expert action using lidar observation
+                    expert_action, _ = self.expert.predict(lidar_obs, deterministic=True)
+                    expert_action_np = np.array(expert_action).flatten()
+                    
+                    # Action difference (L2 norm)
+                    action_diff = np.linalg.norm(action_np - expert_action_np)
+                    self._episode_expert_diffs.append(action_diff)
+                    
+                    # Per-dimension differences
+                    steering_diff = abs(action_np[0] - expert_action_np[0])
+                    accel_diff = abs(action_np[1] - expert_action_np[1])
+                    self._episode_expert_steering_diffs.append(steering_diff)
+                    self._episode_expert_accel_diffs.append(accel_diff)
                 
                 # If crash happens this step, record crash-specific data
                 is_crashing = (info.get("crash_vehicle", False) or 
@@ -434,17 +472,14 @@ class EvalCallback(EventCallback):
                         self._episode_crash_expert_diffs.append(self._episode_expert_diffs[-1])
                     
                     # Try to get Q-value from model if available (not for pure BC)
-                    if hasattr(self, 'model') and hasattr(self.model, 'critic'):
-                        try:
-                            if obs is not None:
-                                import torch as th
-                                with th.no_grad():
-                                    obs_tensor = self.model.policy.obs_to_tensor(obs)[0]
-                                    action_tensor = th.tensor(action_np).float().unsqueeze(0).to(self.model.device)
-                                    q_value = self.model.critic.q1_forward(obs_tensor, action_tensor)
-                                    self._episode_crash_q_values.append(q_value.item())
-                        except:
-                            pass  # Silently skip if Q-value extraction fails (e.g., for BC)
+                    obs = locals_.get("obs", None)
+                    if hasattr(self.model, 'critic') and obs is not None:
+                        import torch as th
+                        with th.no_grad():
+                            obs_tensor = self.model.policy.obs_to_tensor(obs)[0]
+                            action_tensor = th.tensor(action_np).float().unsqueeze(0).to(self.model.device)
+                            q_value = self.model.critic.q1_forward(obs_tensor, action_tensor)
+                            self._episode_crash_q_values.append(q_value.item())
         
         # Accumulate crash events during this step (OR logic - once True, stays True)
         if info.get("crash_vehicle", False):
@@ -624,8 +659,20 @@ class EvalCallback(EventCallback):
             # Reset success rate buffer
             self._is_success_buffer = []
             self.evaluations_info_buffer.clear()
-
-            print("Start evaluating policy for {} episodes!".format(self.n_eval_episodes))
+            
+            # Reset debug flags to print debug info for each evaluation
+            if hasattr(self, '_debug_printed'):
+                delattr(self, '_debug_printed')
+            if hasattr(self, '_callback_called_count'):
+                delattr(self, '_callback_called_count')
+            
+            # Ensure expert is loaded (in case _init_callback wasn't called)
+            if not self._expert_loaded:
+                print("[DEBUG] Expert not loaded yet, loading now...", flush=True)
+                self._load_expert()
+            
+            print(f"[DEBUG] Before evaluation - expert loaded: {self.expert is not None}", flush=True)
+            print("Start evaluating policy for {} episodes!".format(self.n_eval_episodes), flush=True)
 
             episode_rewards, episode_lengths = evaluate_policy(
                 self.model,
@@ -817,12 +864,9 @@ class EvalCallback(EventCallback):
             self.logger.dump(self.num_timesteps)
             
             # Explicitly sync to wandb (ensure all eval metrics are logged)
-            try:
-                import wandb
-                if wandb.run is not None:
-                    wandb.log(self.logger.name_to_value, step=self.num_timesteps)
-            except:
-                pass  # wandb not available or not initialized
+            import wandb
+            if wandb.run is not None:
+                wandb.log(self.logger.name_to_value, step=self.num_timesteps)
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:

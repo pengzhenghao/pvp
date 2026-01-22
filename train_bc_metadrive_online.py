@@ -80,7 +80,7 @@ if __name__ == '__main__':
         print("=" * 80)
         print("TOY MODE ENABLED - Using small numbers for debugging")
         print("=" * 80)
-        args.data_collection_timesteps = 2000
+        args.data_collection_timesteps = 10
         args.bc_training_timesteps = 2000
         args.batch_size = 64
         args.eval_freq = 20
@@ -585,7 +585,15 @@ if __name__ == '__main__':
         from pvp.sb3.common.callbacks import EvalCallback
         for cb in phase2_callback.callbacks:
             if isinstance(cb, EvalCallback):
-                # Temporarily set n_calls to trigger evaluation
+                # Initialize callback (loads expert, creates folders, etc.)
+                # This is normally done by learn() but we need it before
+                cb.model = bc_trainer
+                cb.training_env = bc_trainer.get_env()
+                cb.n_calls = 0
+                cb.num_timesteps = 0
+                cb._init_callback()  # Load expert and initialize
+                
+                # Trigger evaluation
                 cb.n_calls = cb.eval_freq  # This will make n_calls % eval_freq == 0
                 cb._on_step()  # Trigger evaluation
                 cb.n_calls = 0  # Reset n_calls for proper counting during training
