@@ -89,15 +89,18 @@ mkdir -p ${BASE_DIR}/logs
 # ============================================================
 # Experiment Configuration
 # ============================================================
-# 5 data amounts for 5 GPUs (from large to small)
-DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+if [ "$FAST_MODE" == "true" ]; then
+    DATA_STEPS_LIST=(2000)
+else
+    DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+fi
 
 # ============================================================
-# Run experiments across 5 GPUs
+# Run experiments
 # ============================================================
 
 echo "============================================================"
-echo "Starting CQL Experiments (5 data amounts on 5 GPUs)"
+echo "Starting CQL Experiments"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
 echo "Data steps: ${DATA_STEPS_LIST[@]}"
@@ -113,7 +116,7 @@ echo ""
 echo "CQL adds conservative penalty to prevent Q-value overestimation"
 echo "============================================================"
 
-# Run all 5 experiments in parallel on 5 GPUs
+# Run experiments in parallel
 for i in "${!DATA_STEPS_LIST[@]}"; do
     GPU_ID=$i
     DATA_STEPS=${DATA_STEPS_LIST[$i]}
@@ -121,7 +124,7 @@ for i in "${!DATA_STEPS_LIST[@]}"; do
 done
 
 # Wait for all experiments to complete
-echo "All 5 experiments started. Waiting for completion..."
+echo "All ${#DATA_STEPS_LIST[@]} experiments started. Waiting for completion..."
 wait
 
 echo "============================================================"

@@ -326,6 +326,26 @@ class EvalCallback(EventCallback):
         self._is_success_buffer = []
         self.evaluations_successes = []
         self.evaluations_info_buffer = defaultdict(list)
+        
+        # ===== Load expert for agent-expert comparison =====
+        self.expert = None
+        self._expert_loaded = False
+
+    def _load_expert(self) -> None:
+        """Load the PPO expert model for agent-expert comparison during evaluation."""
+        if self._expert_loaded:
+            return
+        
+        try:
+            from pvp.experiments.metadrive.egpo.fakehuman_env import get_expert
+            print("Loading expert model for evaluation comparison...")
+            self.expert = get_expert()
+            self._expert_loaded = True
+            print("Expert model loaded successfully!")
+        except Exception as e:
+            print(f"Warning: Could not load expert model: {e}")
+            self.expert = None
+            self._expert_loaded = True  # Don't try again
 
     def _init_callback(self) -> None:
         # Does not work in some corner cases, where the wrapper is not the same
@@ -337,6 +357,9 @@ class EvalCallback(EventCallback):
             os.makedirs(self.best_model_save_path, exist_ok=True)
         if self.log_path is not None:
             os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+        
+        # Load expert model for agent-expert comparison
+        self._load_expert()
 
     def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
         """
@@ -348,9 +371,9 @@ class EvalCallback(EventCallback):
         :param globals_:
         """
         info = locals_["info"]
+        action = locals_.get("action", None)  # Agent's action at this step
         
-        # ===== Track crash events at EVERY step (not just when done) =====
-        # Because crash flags are reset each step, we need to accumulate them
+        # ===== Initialize episode-level tracking =====
         if not hasattr(self, '_episode_crash_flags'):
             self._episode_crash_flags = {
                 'crash_vehicle': False,
@@ -360,6 +383,68 @@ class EvalCallback(EventCallback):
                 'crash_human': False,
                 'out_of_road': False,
             }
+        
+        if not hasattr(self, '_episode_actions'):
+            self._episode_actions = []  # Track all actions in episode
+            self._episode_crash_actions = []  # Actions at crash moments
+            self._episode_crash_q_values = []  # Q-values at crash moments
+            self._episode_expert_diffs = []  # Agent-expert action differences (L2)
+            self._episode_crash_expert_diffs = []  # Agent-expert diffs at crash moments
+            self._episode_expert_steering_diffs = []  # Steering diffs
+            self._episode_expert_accel_diffs = []  # Acceleration diffs
+        
+        # ===== Track actions at every step =====
+        if action is not None:
+            action_np = np.array(action).flatten()
+            if len(action_np) >= 2:
+                self._episode_actions.append(action_np)
+                
+                # ===== Expert comparison =====
+                obs = locals_.get("obs", None)
+                if self.expert is not None and obs is not None:
+                    try:
+                        import torch as th
+                        # Get expert action using lidar observation
+                        # Note: expert uses lidar obs, so we need to extract it if available
+                        expert_action, _ = self.expert.predict(obs, deterministic=True)
+                        expert_action_np = np.array(expert_action).flatten()
+                        
+                        # Action difference (L2 norm)
+                        action_diff = np.linalg.norm(action_np - expert_action_np)
+                        self._episode_expert_diffs.append(action_diff)
+                        
+                        # Per-dimension differences
+                        steering_diff = abs(action_np[0] - expert_action_np[0])
+                        accel_diff = abs(action_np[1] - expert_action_np[1])
+                        self._episode_expert_steering_diffs.append(steering_diff)
+                        self._episode_expert_accel_diffs.append(accel_diff)
+                    except Exception as e:
+                        pass  # Silently skip if expert comparison fails
+                
+                # If crash happens this step, record crash-specific data
+                is_crashing = (info.get("crash_vehicle", False) or 
+                              info.get("crash_object", False) or
+                              info.get("crash_building", False) or
+                              info.get("crash_sidewalk", False))
+                if is_crashing:
+                    self._episode_crash_actions.append(action_np)
+                    
+                    # Record agent-expert diff at crash moment
+                    if len(self._episode_expert_diffs) > 0:
+                        self._episode_crash_expert_diffs.append(self._episode_expert_diffs[-1])
+                    
+                    # Try to get Q-value from model if available (not for pure BC)
+                    if hasattr(self, 'model') and hasattr(self.model, 'critic'):
+                        try:
+                            if obs is not None:
+                                import torch as th
+                                with th.no_grad():
+                                    obs_tensor = self.model.policy.obs_to_tensor(obs)[0]
+                                    action_tensor = th.tensor(action_np).float().unsqueeze(0).to(self.model.device)
+                                    q_value = self.model.critic.q1_forward(obs_tensor, action_tensor)
+                                    self._episode_crash_q_values.append(q_value.item())
+                        except:
+                            pass  # Silently skip if Q-value extraction fails (e.g., for BC)
         
         # Accumulate crash events during this step (OR logic - once True, stays True)
         if info.get("crash_vehicle", False):
@@ -428,7 +513,81 @@ class EvalCallback(EventCallback):
             success_no_bad_event = arrive_dest and not any_bad_event
             self.evaluations_info_buffer["success_no_bad_event"].append(float(success_no_bad_event))
             
-            # Reset episode crash flags for next episode
+            # ===== Compute and store episode action statistics =====
+            if hasattr(self, '_episode_actions') and len(self._episode_actions) > 0:
+                episode_actions = np.array(self._episode_actions)
+                
+                # Mean and abs mean of steering (action dim 0)
+                mean_steering = np.mean(episode_actions[:, 0])
+                mean_steering_abs = np.mean(np.abs(episode_actions[:, 0]))
+                self.evaluations_info_buffer["mean_steering"].append(mean_steering)
+                self.evaluations_info_buffer["mean_steering_abs"].append(mean_steering_abs)
+                
+                # Mean and abs mean of acceleration (action dim 1)
+                mean_accel = np.mean(episode_actions[:, 1])
+                mean_accel_abs = np.mean(np.abs(episode_actions[:, 1]))
+                self.evaluations_info_buffer["mean_accel"].append(mean_accel)
+                self.evaluations_info_buffer["mean_accel_abs"].append(mean_accel_abs)
+                
+                # Steering variance (indicates how erratic the driving is)
+                steering_variance = np.var(episode_actions[:, 0])
+                self.evaluations_info_buffer["steering_variance"].append(steering_variance)
+                
+                # Count of hard braking (accel < -0.5)
+                hard_brake_ratio = np.mean(episode_actions[:, 1] < -0.5)
+                self.evaluations_info_buffer["hard_brake_ratio"].append(hard_brake_ratio)
+                
+                # Count of hard steering (|steering| > 0.5)
+                hard_steer_ratio = np.mean(np.abs(episode_actions[:, 0]) > 0.5)
+                self.evaluations_info_buffer["hard_steer_ratio"].append(hard_steer_ratio)
+            
+            # ===== Crash-specific statistics =====
+            if hasattr(self, '_episode_crash_actions') and len(self._episode_crash_actions) > 0:
+                crash_actions = np.array(self._episode_crash_actions)
+                
+                # Mean steering at crash moments
+                crash_mean_steering = np.mean(crash_actions[:, 0])
+                crash_mean_accel = np.mean(crash_actions[:, 1])
+                self.evaluations_info_buffer["crash_mean_steering"].append(crash_mean_steering)
+                self.evaluations_info_buffer["crash_mean_accel"].append(crash_mean_accel)
+                
+                # Number of crash steps in this episode
+                crash_steps = len(crash_actions)
+                self.evaluations_info_buffer["crash_steps"].append(crash_steps)
+            
+            # ===== Q-value at crash moments (only for algorithms with critic) =====
+            if hasattr(self, '_episode_crash_q_values') and len(self._episode_crash_q_values) > 0:
+                mean_crash_q = np.mean(self._episode_crash_q_values)
+                self.evaluations_info_buffer["crash_q_value"].append(mean_crash_q)
+            
+            # ===== Agent-Expert comparison statistics =====
+            if hasattr(self, '_episode_expert_diffs') and len(self._episode_expert_diffs) > 0:
+                # Overall agent-expert action difference
+                mean_expert_diff = np.mean(self._episode_expert_diffs)
+                self.evaluations_info_buffer["expert_action_diff_l2"].append(mean_expert_diff)
+                
+                # Per-dimension differences
+                if len(self._episode_expert_steering_diffs) > 0:
+                    mean_steering_diff = np.mean(self._episode_expert_steering_diffs)
+                    mean_accel_diff = np.mean(self._episode_expert_accel_diffs)
+                    self.evaluations_info_buffer["expert_steering_diff"].append(mean_steering_diff)
+                    self.evaluations_info_buffer["expert_accel_diff"].append(mean_accel_diff)
+                
+                # Agent-expert agreement ratio (action diff < 0.3 is considered "agree")
+                agreement_ratio = np.mean(np.array(self._episode_expert_diffs) < 0.3)
+                self.evaluations_info_buffer["expert_agreement_ratio"].append(agreement_ratio)
+            
+            # ===== Agent-Expert diff at crash moments =====
+            if hasattr(self, '_episode_crash_expert_diffs') and len(self._episode_crash_expert_diffs) > 0:
+                crash_expert_diff = np.mean(self._episode_crash_expert_diffs)
+                self.evaluations_info_buffer["crash_expert_diff"].append(crash_expert_diff)
+                
+                # Check if agent was following expert when crashing
+                # High crash_expert_diff means agent was NOT following expert when crashing
+                crash_follow_expert = np.mean(np.array(self._episode_crash_expert_diffs) < 0.3)
+                self.evaluations_info_buffer["crash_follow_expert_ratio"].append(crash_follow_expert)
+            
+            # Reset episode tracking for next episode
             self._episode_crash_flags = {
                 'crash_vehicle': False,
                 'crash_object': False,
@@ -437,6 +596,13 @@ class EvalCallback(EventCallback):
                 'crash_human': False,
                 'out_of_road': False,
             }
+            self._episode_actions = []
+            self._episode_crash_actions = []
+            self._episode_crash_q_values = []
+            self._episode_expert_diffs = []
+            self._episode_crash_expert_diffs = []
+            self._episode_expert_steering_diffs = []
+            self._episode_expert_accel_diffs = []
 
         if "raw_action" in info:
             self.evaluations_info_buffer["raw_action"].append(info["raw_action"])
@@ -559,11 +725,89 @@ class EvalCallback(EventCallback):
                     self.logger.record("eval/any_bad_event_rate", any_bad_event_rate)
                     self.logger.record("eval/success_no_bad_event", success_no_bad_event)
 
+            # ===== Log action statistics =====
+            if "mean_steering" in self.evaluations_info_buffer and len(self.evaluations_info_buffer["mean_steering"]) > 0:
+                mean_steering = np.mean(self.evaluations_info_buffer["mean_steering"])
+                mean_steering_abs = np.mean(self.evaluations_info_buffer["mean_steering_abs"])
+                mean_accel = np.mean(self.evaluations_info_buffer["mean_accel"])
+                mean_accel_abs = np.mean(self.evaluations_info_buffer["mean_accel_abs"])
+                steering_variance = np.mean(self.evaluations_info_buffer["steering_variance"])
+                hard_brake_ratio = np.mean(self.evaluations_info_buffer["hard_brake_ratio"])
+                hard_steer_ratio = np.mean(self.evaluations_info_buffer["hard_steer_ratio"])
+                
+                if self.verbose > 0:
+                    print(f"Mean steering: {mean_steering:.4f}, |steering|: {mean_steering_abs:.4f}")
+                    print(f"Mean accel: {mean_accel:.4f}, |accel|: {mean_accel_abs:.4f}")
+                    print(f"Hard brake ratio: {100 * hard_brake_ratio:.2f}%, Hard steer ratio: {100 * hard_steer_ratio:.2f}%")
+                
+                self.logger.record("eval/mean_steering", mean_steering)
+                self.logger.record("eval/mean_steering_abs", mean_steering_abs)
+                self.logger.record("eval/mean_accel", mean_accel)
+                self.logger.record("eval/mean_accel_abs", mean_accel_abs)
+                self.logger.record("eval/steering_variance", steering_variance)
+                self.logger.record("eval/hard_brake_ratio", hard_brake_ratio)
+                self.logger.record("eval/hard_steer_ratio", hard_steer_ratio)
+            
+            # ===== Log crash-specific statistics =====
+            if "crash_mean_steering" in self.evaluations_info_buffer and len(self.evaluations_info_buffer["crash_mean_steering"]) > 0:
+                crash_mean_steering = np.mean(self.evaluations_info_buffer["crash_mean_steering"])
+                crash_mean_accel = np.mean(self.evaluations_info_buffer["crash_mean_accel"])
+                crash_steps = np.mean(self.evaluations_info_buffer["crash_steps"])
+                
+                if self.verbose > 0:
+                    print(f"Crash moments - steering: {crash_mean_steering:.4f}, accel: {crash_mean_accel:.4f}")
+                    print(f"Avg crash steps per episode: {crash_steps:.2f}")
+                
+                self.logger.record("eval/crash_mean_steering", crash_mean_steering)
+                self.logger.record("eval/crash_mean_accel", crash_mean_accel)
+                self.logger.record("eval/crash_steps", crash_steps)
+            
+            # ===== Log Q-value at crash moments (only for algorithms with critic) =====
+            if "crash_q_value" in self.evaluations_info_buffer and len(self.evaluations_info_buffer["crash_q_value"]) > 0:
+                crash_q_value = np.mean(self.evaluations_info_buffer["crash_q_value"])
+                if self.verbose > 0:
+                    print(f"Q-value at crash moments: {crash_q_value:.4f}")
+                self.logger.record("eval/crash_q_value", crash_q_value)
+            
+            # ===== Log agent-expert comparison statistics =====
+            if "expert_action_diff_l2" in self.evaluations_info_buffer and len(self.evaluations_info_buffer["expert_action_diff_l2"]) > 0:
+                expert_diff = np.mean(self.evaluations_info_buffer["expert_action_diff_l2"])
+                expert_steering_diff = np.mean(self.evaluations_info_buffer["expert_steering_diff"])
+                expert_accel_diff = np.mean(self.evaluations_info_buffer["expert_accel_diff"])
+                expert_agreement = np.mean(self.evaluations_info_buffer["expert_agreement_ratio"])
+                
+                if self.verbose > 0:
+                    print(f"Agent-Expert action diff (L2): {expert_diff:.4f}")
+                    print(f"Agent-Expert steering diff: {expert_steering_diff:.4f}, accel diff: {expert_accel_diff:.4f}")
+                    print(f"Agent-Expert agreement ratio: {100 * expert_agreement:.2f}%")
+                
+                self.logger.record("eval/expert_action_diff", expert_diff)
+                self.logger.record("eval/expert_steering_diff", expert_steering_diff)
+                self.logger.record("eval/expert_accel_diff", expert_accel_diff)
+                self.logger.record("eval/expert_agreement", expert_agreement)
+            
+            # ===== Log agent-expert comparison at crash moments =====
+            if "crash_expert_diff" in self.evaluations_info_buffer and len(self.evaluations_info_buffer["crash_expert_diff"]) > 0:
+                crash_expert_diff = np.mean(self.evaluations_info_buffer["crash_expert_diff"])
+                crash_follow_expert = np.mean(self.evaluations_info_buffer["crash_follow_expert_ratio"])
+                
+                if self.verbose > 0:
+                    print(f"Agent-Expert diff at crash: {crash_expert_diff:.4f}")
+                    print(f"Following expert when crash: {100 * crash_follow_expert:.2f}%")
+                
+                self.logger.record("eval/crash_expert_diff", crash_expert_diff)
+                self.logger.record("eval/crash_follow_expert", crash_follow_expert)
+            
             # Log other metrics (skip the ones we already logged above)
             skip_keys = {"success_no_crash_vehicle", "success_no_crash_any", 
                         "crash_vehicle_rate", "crash_object_rate", "crash_any_rate",
                         "crash_building_rate", "crash_sidewalk_rate", "crash_human_rate",
-                        "out_of_road_rate", "any_crash_rate", "any_bad_event_rate", "success_no_bad_event"}
+                        "out_of_road_rate", "any_crash_rate", "any_bad_event_rate", "success_no_bad_event",
+                        "mean_steering", "mean_steering_abs", "mean_accel", "mean_accel_abs",
+                        "steering_variance", "hard_brake_ratio", "hard_steer_ratio",
+                        "crash_mean_steering", "crash_mean_accel", "crash_steps", "crash_q_value",
+                        "expert_action_diff_l2", "expert_steering_diff", "expert_accel_diff",
+                        "expert_agreement_ratio", "crash_expert_diff", "crash_follow_expert_ratio"}
             for k, v in self.evaluations_info_buffer.items():
                 if k not in skip_keys and len(v) > 0:
                     self.logger.record("eval/{}".format(k), np.mean(np.asarray(v)))
@@ -571,6 +815,14 @@ class EvalCallback(EventCallback):
             # Dump log so the evaluation results are printed with the correct timestep
             self.logger.record("time/total_timesteps", self.num_timesteps)
             self.logger.dump(self.num_timesteps)
+            
+            # Explicitly sync to wandb (ensure all eval metrics are logged)
+            try:
+                import wandb
+                if wandb.run is not None:
+                    wandb.log(self.logger.name_to_value, step=self.num_timesteps)
+            except:
+                pass  # wandb not available or not initialized
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:

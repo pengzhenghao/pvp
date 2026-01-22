@@ -81,15 +81,21 @@ mkdir -p ${BASE_DIR}/logs
 # ============================================================
 # Experiment Configuration
 # ============================================================
-# 5 data amounts for 5 GPUs (from large to small)
-DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+# Data amounts depend on mode
+if [ "$FAST_MODE" == "true" ]; then
+    # Fast mode: only 2000 data steps on GPU 0
+    DATA_STEPS_LIST=(2000)
+else
+    # Normal mode: 5 data amounts for 5 GPUs (from large to small)
+    DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+fi
 
 # ============================================================
-# Run experiments across 5 GPUs
+# Run experiments
 # ============================================================
 
 echo "============================================================"
-echo "Starting Pure BC Experiments (5 data amounts on 5 GPUs)"
+echo "Starting Pure BC Experiments"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
 echo "Data steps: ${DATA_STEPS_LIST[@]}"
@@ -105,7 +111,7 @@ echo "  - No Q-learning, no conservative penalties"
 echo "  - Simplest offline RL baseline"
 echo "============================================================"
 
-# Run all 5 experiments in parallel on 5 GPUs
+# Run experiments in parallel
 for i in "${!DATA_STEPS_LIST[@]}"; do
     GPU_ID=$i
     DATA_STEPS=${DATA_STEPS_LIST[$i]}
@@ -113,7 +119,7 @@ for i in "${!DATA_STEPS_LIST[@]}"; do
 done
 
 # Wait for all experiments to complete
-echo "All 5 experiments started. Waiting for completion..."
+echo "All ${#DATA_STEPS_LIST[@]} experiments started. Waiting for completion..."
 wait
 
 echo "============================================================"

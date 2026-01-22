@@ -305,7 +305,7 @@ class IQL(TD3):
                 polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)
         
         # Logging
-        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record("train/n_updates", self._n_updates)
         self.logger.record("train/value_loss", np.mean(value_losses))
         self.logger.record("train/critic_loss", np.mean(critic_losses))
         if len(actor_losses) > 0:
@@ -315,6 +315,38 @@ class IQL(TD3):
             self.logger.record("train/advantage_std", np.mean(advantages_std))
         self.logger.record("train/iql_tau", self.iql_tau)
         self.logger.record("train/iql_beta", self.iql_beta)
+        
+        # ===== Additional training metrics (same as TD3) =====
+        if len(actor_losses) > 0:
+            with th.no_grad():
+                data_actions = replay_data.actions_behavior
+                policy_actions = self.actor(replay_data.observations)
+                
+                # Per-dimension BC loss
+                bc_loss_steering = F.mse_loss(policy_actions[:, 0], data_actions[:, 0])
+                bc_loss_accel = F.mse_loss(policy_actions[:, 1], data_actions[:, 1])
+                self.logger.record("train/bc_loss_steering", bc_loss_steering.item())
+                self.logger.record("train/bc_loss_accel", bc_loss_accel.item())
+                
+                # Mean and absolute mean of DATA actions
+                self.logger.record("train/data_mean_steering", data_actions[:, 0].mean().item())
+                self.logger.record("train/data_mean_steering_abs", th.abs(data_actions[:, 0]).mean().item())
+                self.logger.record("train/data_mean_accel", data_actions[:, 1].mean().item())
+                self.logger.record("train/data_mean_accel_abs", th.abs(data_actions[:, 1]).mean().item())
+                
+                # Mean and absolute mean of POLICY actions
+                self.logger.record("train/policy_mean_steering", policy_actions[:, 0].mean().item())
+                self.logger.record("train/policy_mean_steering_abs", th.abs(policy_actions[:, 0]).mean().item())
+                self.logger.record("train/policy_mean_accel", policy_actions[:, 1].mean().item())
+                self.logger.record("train/policy_mean_accel_abs", th.abs(policy_actions[:, 1]).mean().item())
+                
+                # Action difference (L2 norm)
+                action_diff_l2 = th.norm(policy_actions - data_actions, dim=1).mean().item()
+                self.logger.record("train/action_diff_l2", action_diff_l2)
+                
+                # IQL specific: V-value statistics
+                v_pred = self._get_value(replay_data.observations)
+                self.logger.record("train/v_value_mean", v_pred.mean().item())
         
         import wandb
         wandb.log(self.logger.name_to_value, step=self.num_timesteps)

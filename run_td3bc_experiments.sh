@@ -86,15 +86,18 @@ mkdir -p ${BASE_DIR}/logs
 # ============================================================
 # Experiment Configuration
 # ============================================================
-# 5 data amounts for 5 GPUs (from large to small)
-DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+if [ "$FAST_MODE" == "true" ]; then
+    DATA_STEPS_LIST=(2000)
+else
+    DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+fi
 
 # ============================================================
-# Run experiments across 5 GPUs
+# Run experiments
 # ============================================================
 
 echo "============================================================"
-echo "Starting TD3+BC Experiments (5 data amounts on 5 GPUs)"
+echo "Starting TD3+BC Experiments"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
 echo "Data steps: ${DATA_STEPS_LIST[@]}"
@@ -109,7 +112,7 @@ echo "TD3+BC Actor Loss Formula:"
 echo "  actor_loss = -(α / avg|Q(s,a)|) * Q(s, π(s)) + BC_loss"
 echo "============================================================"
 
-# Run all 5 experiments in parallel on 5 GPUs
+# Run experiments in parallel
 for i in "${!DATA_STEPS_LIST[@]}"; do
     GPU_ID=$i
     DATA_STEPS=${DATA_STEPS_LIST[$i]}

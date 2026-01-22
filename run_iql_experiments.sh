@@ -48,13 +48,19 @@ else
 fi
 
 # ============================================================
-# Hyperparameter combinations (8 total)
+# Hyperparameter combinations
 # ============================================================
-declare -a TAU_LIST=(0.5 0.7 0.7 0.8 0.9 0.7 0.8 0.9)
-declare -a BETA_LIST=(1.0 1.0 3.0 3.0 3.0 10.0 10.0 10.0)
-
-# Data sizes (5 total, from large to small)
-declare -a DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+if [ "$FAST_MODE" == "true" ]; then
+    # Fast mode: single hyperparameter and single data size
+    declare -a TAU_LIST=(0.7)
+    declare -a BETA_LIST=(3.0)
+    declare -a DATA_STEPS_LIST=(2000)
+else
+    # Normal mode: 8 hyperparameter combinations, 5 data sizes
+    declare -a TAU_LIST=(0.5 0.7 0.7 0.8 0.9 0.7 0.8 0.9)
+    declare -a BETA_LIST=(1.0 1.0 3.0 3.0 3.0 10.0 10.0 10.0)
+    declare -a DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+fi
 
 # Function to run a single experiment
 run_experiment() {
@@ -93,13 +99,17 @@ run_experiment() {
 mkdir -p ${BASE_DIR}/logs
 
 # ============================================================
-# Run all 40 experiments in 5 rounds
+# Run experiments
 # ============================================================
 
 echo "============================================================"
-echo "Starting IQL Full Grid Search"
-echo "8 hyperparameter combinations × 5 data sizes = 40 experiments"
-echo "Running in 5 rounds (8 experiments per round on 8 GPUs)"
+if [ "$FAST_MODE" == "true" ]; then
+    echo "Starting IQL Fast Mode (single experiment)"
+else
+    echo "Starting IQL Full Grid Search"
+    echo "8 hyperparameter combinations × 5 data sizes = 40 experiments"
+    echo "Running in 5 rounds (8 experiments per round on 8 GPUs)"
+fi
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
 echo "Data sizes: ${DATA_STEPS_LIST[@]}"
@@ -107,42 +117,53 @@ echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
 echo "============================================================"
-echo ""
-echo "Hyperparameter combinations:"
-echo "  0: tau=0.5, beta=1.0  (baseline)"
-echo "  1: tau=0.7, beta=1.0"
-echo "  2: tau=0.7, beta=3.0  (IQL paper default)"
-echo "  3: tau=0.8, beta=3.0"
-echo "  4: tau=0.9, beta=3.0  (for expert data)"
-echo "  5: tau=0.7, beta=10.0"
-echo "  6: tau=0.8, beta=10.0"
-echo "  7: tau=0.9, beta=10.0 (most aggressive)"
-echo "============================================================"
 
-# Run experiments in 5 rounds (one round per data size)
-for data_idx in "${!DATA_STEPS_LIST[@]}"; do
-    DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
-    ROUND=$((data_idx + 1))
+if [ "$FAST_MODE" == "true" ]; then
+    # Fast mode: single experiment
+    echo "Running single IQL experiment (tau=0.7, beta=3.0, data=2000)..."
+    run_experiment 0 ${TAU_LIST[0]} ${BETA_LIST[0]} ${DATA_STEPS_LIST[0]}
+    wait
+    echo "IQL fast mode experiment completed!"
+else
+    # Normal mode: full grid search
+    echo ""
+    echo "Hyperparameter combinations:"
+    echo "  0: tau=0.5, beta=1.0  (baseline)"
+    echo "  1: tau=0.7, beta=1.0"
+    echo "  2: tau=0.7, beta=3.0  (IQL paper default)"
+    echo "  3: tau=0.8, beta=3.0"
+    echo "  4: tau=0.9, beta=3.0  (for expert data)"
+    echo "  5: tau=0.7, beta=10.0"
+    echo "  6: tau=0.8, beta=10.0"
+    echo "  7: tau=0.9, beta=10.0 (most aggressive)"
+    echo "============================================================"
+
+    # Run experiments in 5 rounds (one round per data size)
+    for data_idx in "${!DATA_STEPS_LIST[@]}"; do
+        DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
+        ROUND=$((data_idx + 1))
+        
+        echo ""
+        echo "============================================================"
+        echo "Round ${ROUND}/5: data_steps=${DATA_STEPS}"
+        echo "============================================================"
+        
+        # Run 8 experiments in parallel (one per GPU)
+        for hp_idx in {0..7}; do
+            TAU=${TAU_LIST[$hp_idx]}
+            BETA=${BETA_LIST[$hp_idx]}
+            run_experiment ${hp_idx} ${TAU} ${BETA} ${DATA_STEPS}
+        done
+        
+        echo "Waiting for round ${ROUND} to complete..."
+        wait
+        echo "Round ${ROUND} completed!"
+    done
     
     echo ""
     echo "============================================================"
-    echo "Round ${ROUND}/5: data_steps=${DATA_STEPS}"
-    echo "============================================================"
-    
-    # Run 8 experiments in parallel (one per GPU)
-    for hp_idx in {0..7}; do
-        TAU=${TAU_LIST[$hp_idx]}
-        BETA=${BETA_LIST[$hp_idx]}
-        run_experiment ${hp_idx} ${TAU} ${BETA} ${DATA_STEPS}
-    done
-    
-    echo "Waiting for round ${ROUND} to complete..."
-    wait
-    echo "Round ${ROUND} completed!"
-done
+    echo "All 40 IQL experiments completed!"
+fi
 
-echo ""
-echo "============================================================"
-echo "All 40 IQL experiments completed!"
 echo "Logs are saved in ${BASE_DIR}/logs/"
 echo "============================================================"

@@ -217,14 +217,47 @@ class TD3(OffPolicyAlgorithm):
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.actor.parameters(), self.actor_target.parameters(), self.tau)
 
-        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        self.logger.record("train/current_q_values_average_values", th.mean(th.abs(q1) + th.abs(q2)).item() * 0.5, exclude="tensorboard")
+        self.logger.record("train/n_updates", self._n_updates)
+        self.logger.record("train/q_values_mean", th.mean(th.abs(q1) + th.abs(q2)).item() * 0.5)
         if len(actor_losses) > 0:
             self.logger.record("train/actor_loss", np.mean(actor_losses))
             self.logger.record("train/bc_loss", bc_loss.item())
             if self.use_td3_bc:
                 self.logger.record("train/td3_bc_lambda", lmbda.item())
         self.logger.record("train/critic_loss", np.mean(critic_losses))
+        
+        # ===== Additional training metrics =====
+        # Per-dimension BC loss (steering=dim0, acceleration=dim1)
+        if len(actor_losses) > 0:
+            with th.no_grad():
+                data_actions = replay_data.actions_behavior
+                policy_actions = self.actor(replay_data.observations)
+                
+                # Per-dimension BC loss
+                bc_loss_steering = F.mse_loss(policy_actions[:, 0], data_actions[:, 0])
+                bc_loss_accel = F.mse_loss(policy_actions[:, 1], data_actions[:, 1])
+                self.logger.record("train/bc_loss_steering", bc_loss_steering.item())
+                self.logger.record("train/bc_loss_accel", bc_loss_accel.item())
+                
+                # Mean and absolute mean of DATA actions (what we're learning from)
+                mean_steering_data = data_actions[:, 0].mean().item()
+                mean_accel_data = data_actions[:, 1].mean().item()
+                self.logger.record("train/data_mean_steering", mean_steering_data)
+                self.logger.record("train/data_mean_steering_abs", th.abs(data_actions[:, 0]).mean().item())
+                self.logger.record("train/data_mean_accel", mean_accel_data)
+                self.logger.record("train/data_mean_accel_abs", th.abs(data_actions[:, 1]).mean().item())
+                
+                # Mean and absolute mean of POLICY actions (what we're outputting)
+                mean_steering_policy = policy_actions[:, 0].mean().item()
+                mean_accel_policy = policy_actions[:, 1].mean().item()
+                self.logger.record("train/policy_mean_steering", mean_steering_policy)
+                self.logger.record("train/policy_mean_steering_abs", th.abs(policy_actions[:, 0]).mean().item())
+                self.logger.record("train/policy_mean_accel", mean_accel_policy)
+                self.logger.record("train/policy_mean_accel_abs", th.abs(policy_actions[:, 1]).mean().item())
+                
+                # Action difference (L2 norm per sample, then mean)
+                action_diff_l2 = th.norm(policy_actions - data_actions, dim=1).mean().item()
+                self.logger.record("train/action_diff_l2", action_diff_l2)
         
         import wandb
         wandb.log(self.logger.name_to_value, step=self.num_timesteps)
