@@ -64,7 +64,7 @@ run_bc() {
         --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
         --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
         --skip_pretrain_eval \
-        --wandb_project "0121mainexpfull" \
+        --wandb_project "0121mainexp" \
         > "${BASE_DIR}/logs/fast_${EXP_NAME}.log" 2>&1 &
 }
 
@@ -89,7 +89,7 @@ run_td3bc() {
         --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
         --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
         --skip_pretrain_eval \
-        --wandb_project "0121mainexpfull" \
+        --wandb_project "0121mainexp" \
         > "${BASE_DIR}/logs/fast_${EXP_NAME}.log" 2>&1 &
 }
 
@@ -116,7 +116,7 @@ run_cql() {
         --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
         --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
         --skip_pretrain_eval \
-        --wandb_project "0121mainexpfull" \
+        --wandb_project "0121mainexp" \
         > "${BASE_DIR}/logs/fast_${EXP_NAME}.log" 2>&1 &
 }
 
@@ -143,7 +143,7 @@ run_iql() {
         --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
         --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
         --skip_pretrain_eval \
-        --wandb_project "0121mainexpfull" \
+        --wandb_project "0121mainexp" \
         > "${BASE_DIR}/logs/fast_${EXP_NAME}.log" 2>&1 &
 }
 

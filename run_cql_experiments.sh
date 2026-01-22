@@ -38,11 +38,13 @@ if [ "$FAST_MODE" == "true" ]; then
     EVAL_FREQ=100
     N_EVAL_EPISODES=25
     SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
+    WANDB_PROJECT="0121mainexp"
     echo "*** FAST MODE ENABLED ***"
 else
     EVAL_FREQ=100
     N_EVAL_EPISODES=500
     SKIP_PRETRAIN_EVAL=""
+    WANDB_PROJECT="0121mainexpfull"
 fi
 
 # CQL optimal hyperparameters
@@ -77,7 +79,7 @@ run_experiment() {
         --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
         --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
         ${SKIP_PRETRAIN_EVAL} \
-        --wandb_project "0121mainexpfull" \
+        --wandb_project "${WANDB_PROJECT}" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     
     echo "Experiment ${EXP_NAME} started with PID $!"
