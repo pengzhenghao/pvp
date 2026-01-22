@@ -310,7 +310,7 @@ if __name__ == '__main__':
             print(f"Using pure BC trainer with bc_loss_weight={args.bc_loss_weight}")
     
     # Load initial policy from checkpoint
-    initial_ckpt = Path("/home/caihy/pvp/bestppomodeldomainA.zip")
+    initial_ckpt = Path("/home/caihy/pvp/pretrained.zip")
     if initial_ckpt.exists():
         print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
