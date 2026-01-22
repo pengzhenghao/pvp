@@ -63,4 +63,4 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
     --crash_vehicle_penalty ${CRASH_VEHICLE_PENALTY} \
     --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
     --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
-    --wandb_project "domain-adaptation"
+    --wandb_project "0121mainexpfull"

@@ -77,7 +77,7 @@ run_experiment() {
         --crash_object_penalty ${CRASH_OBJECT_PENALTY} \
         --out_of_road_penalty ${OUT_OF_ROAD_PENALTY} \
         ${SKIP_PRETRAIN_EVAL} \
-        --wandb_project "mainexp0121" \
+        --wandb_project "0121mainexpfull" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
     
     echo "Experiment ${EXP_NAME} started with PID $!"
