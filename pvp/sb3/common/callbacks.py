@@ -412,6 +412,17 @@ class EvalCallback(EventCallback):
                 'out_of_road': False,
             }
         
+        # Track crash COUNTS per episode (not just binary flags)
+        if not hasattr(self, '_episode_crash_counts'):
+            self._episode_crash_counts = {
+                'crash_vehicle': 0,
+                'crash_object': 0,
+                'crash_building': 0,
+                'crash_sidewalk': 0,
+                'crash_human': 0,
+                'out_of_road': 0,
+            }
+        
         if not hasattr(self, '_episode_actions'):
             self._episode_actions = []  # Track all actions in episode
             self._episode_crash_actions = []  # Actions at crash moments
@@ -481,19 +492,27 @@ class EvalCallback(EventCallback):
                             q_value = self.model.critic.q1_forward(obs_tensor, action_tensor)
                             self._episode_crash_q_values.append(q_value.item())
         
-        # Accumulate crash events during this step (OR logic - once True, stays True)
+        # Accumulate crash events during this step
+        # Flags: OR logic - once True, stays True (for "did it happen at all")
+        # Counts: increment each time crash happens (for "how many times")
         if info.get("crash_vehicle", False):
             self._episode_crash_flags['crash_vehicle'] = True
+            self._episode_crash_counts['crash_vehicle'] += 1
         if info.get("crash_object", False):
             self._episode_crash_flags['crash_object'] = True
+            self._episode_crash_counts['crash_object'] += 1
         if info.get("crash_building", False):
             self._episode_crash_flags['crash_building'] = True
+            self._episode_crash_counts['crash_building'] += 1
         if info.get("crash_sidewalk", False):
             self._episode_crash_flags['crash_sidewalk'] = True
+            self._episode_crash_counts['crash_sidewalk'] += 1
         if info.get("crash_human", False):
             self._episode_crash_flags['crash_human'] = True
+            self._episode_crash_counts['crash_human'] += 1
         if info.get("out_of_road", False):
             self._episode_crash_flags['out_of_road'] = True
+            self._episode_crash_counts['out_of_road'] += 1
 
         if locals_["done"]:
             maybe_is_success = info.get("is_success")
@@ -530,7 +549,8 @@ class EvalCallback(EventCallback):
             # Track crash rates separately for analysis
             self.evaluations_info_buffer["crash_vehicle_rate"].append(float(crash_vehicle))
             self.evaluations_info_buffer["crash_object_rate"].append(float(crash_object))
-            self.evaluations_info_buffer["crash_any_rate"].append(float(crash_vehicle or crash_object))
+            # crash_vehicle_or_object: only movable obstacles (vehicle + traffic cone/object)
+            self.evaluations_info_buffer["crash_vehicle_or_object_rate"].append(float(crash_vehicle or crash_object))
             
             # Track additional failure types
             self.evaluations_info_buffer["crash_building_rate"].append(float(crash_building))
@@ -539,14 +559,27 @@ class EvalCallback(EventCallback):
             self.evaluations_info_buffer["out_of_road_rate"].append(float(out_of_road))
             
             # Track any bad event (comprehensive failure rate)
-            any_crash = crash_vehicle or crash_object or crash_building or crash_sidewalk or crash_human
-            any_bad_event = any_crash or out_of_road
-            self.evaluations_info_buffer["any_crash_rate"].append(float(any_crash))
+            # crash_total: ANY type of crash (vehicle + object + building + sidewalk + human)
+            crash_total = crash_vehicle or crash_object or crash_building or crash_sidewalk or crash_human
+            any_bad_event = crash_total or out_of_road
+            self.evaluations_info_buffer["crash_total_rate"].append(float(crash_total))
             self.evaluations_info_buffer["any_bad_event_rate"].append(float(any_bad_event))
             
             # Success without any bad event
             success_no_bad_event = arrive_dest and not any_bad_event
             self.evaluations_info_buffer["success_no_bad_event"].append(float(success_no_bad_event))
+            
+            # ===== Track crash COUNTS per episode (how many times, not just if happened) =====
+            if hasattr(self, '_episode_crash_counts'):
+                # Total crashes in this episode (sum of all types)
+                total_crash_count = sum(self._episode_crash_counts.values())
+                self.evaluations_info_buffer["crash_count_total"].append(total_crash_count)
+                
+                # Individual crash type counts
+                self.evaluations_info_buffer["crash_count_vehicle"].append(self._episode_crash_counts['crash_vehicle'])
+                self.evaluations_info_buffer["crash_count_object"].append(self._episode_crash_counts['crash_object'])
+                self.evaluations_info_buffer["crash_count_building"].append(self._episode_crash_counts['crash_building'])
+                self.evaluations_info_buffer["crash_count_sidewalk"].append(self._episode_crash_counts['crash_sidewalk'])
             
             # ===== Compute and store episode action statistics =====
             if hasattr(self, '_episode_actions') and len(self._episode_actions) > 0:
@@ -630,6 +663,14 @@ class EvalCallback(EventCallback):
                 'crash_sidewalk': False,
                 'crash_human': False,
                 'out_of_road': False,
+            }
+            self._episode_crash_counts = {
+                'crash_vehicle': 0,
+                'crash_object': 0,
+                'crash_building': 0,
+                'crash_sidewalk': 0,
+                'crash_human': 0,
+                'out_of_road': 0,
             }
             self._episode_actions = []
             self._episode_crash_actions = []
@@ -732,20 +773,20 @@ class EvalCallback(EventCallback):
                 success_no_crash_any = np.mean(self.evaluations_info_buffer["success_no_crash_any"])
                 crash_vehicle_rate = np.mean(self.evaluations_info_buffer["crash_vehicle_rate"])
                 crash_object_rate = np.mean(self.evaluations_info_buffer["crash_object_rate"])
-                crash_any_rate = np.mean(self.evaluations_info_buffer["crash_any_rate"])
+                crash_vehicle_or_object_rate = np.mean(self.evaluations_info_buffer["crash_vehicle_or_object_rate"])
                 
                 if self.verbose > 0:
                     print(f"Success rate (no crash_vehicle): {100 * success_no_crash_vehicle:.2f}%")
                     print(f"Success rate (no crash_any): {100 * success_no_crash_any:.2f}%")
                     print(f"Crash vehicle rate: {100 * crash_vehicle_rate:.2f}%")
                     print(f"Crash object rate: {100 * crash_object_rate:.2f}%")
-                    print(f"Crash any rate: {100 * crash_any_rate:.2f}%")
+                    print(f"Crash vehicle/object rate: {100 * crash_vehicle_or_object_rate:.2f}%")
                 
                 self.logger.record("eval/success_no_crash_vehicle", success_no_crash_vehicle)
                 self.logger.record("eval/success_no_crash_any", success_no_crash_any)
                 self.logger.record("eval/crash_vehicle_rate", crash_vehicle_rate)
                 self.logger.record("eval/crash_object_rate", crash_object_rate)
-                self.logger.record("eval/crash_any_rate", crash_any_rate)
+                self.logger.record("eval/crash_vehicle_or_object_rate", crash_vehicle_or_object_rate)
                 
                 # Log additional failure rates
                 if "crash_building_rate" in self.evaluations_info_buffer:
@@ -753,7 +794,7 @@ class EvalCallback(EventCallback):
                     crash_sidewalk_rate = np.mean(self.evaluations_info_buffer["crash_sidewalk_rate"])
                     crash_human_rate = np.mean(self.evaluations_info_buffer["crash_human_rate"])
                     out_of_road_rate = np.mean(self.evaluations_info_buffer["out_of_road_rate"])
-                    any_crash_rate = np.mean(self.evaluations_info_buffer["any_crash_rate"])
+                    crash_total_rate = np.mean(self.evaluations_info_buffer["crash_total_rate"])
                     any_bad_event_rate = np.mean(self.evaluations_info_buffer["any_bad_event_rate"])
                     success_no_bad_event = np.mean(self.evaluations_info_buffer["success_no_bad_event"])
                     
@@ -761,6 +802,7 @@ class EvalCallback(EventCallback):
                         print(f"Crash building rate: {100 * crash_building_rate:.2f}%")
                         print(f"Crash sidewalk rate: {100 * crash_sidewalk_rate:.2f}%")
                         print(f"Out of road rate: {100 * out_of_road_rate:.2f}%")
+                        print(f"Crash total rate: {100 * crash_total_rate:.2f}%")
                         print(f"Any bad event rate: {100 * any_bad_event_rate:.2f}%")
                         print(f"Success (no bad events): {100 * success_no_bad_event:.2f}%")
                     
@@ -768,8 +810,25 @@ class EvalCallback(EventCallback):
                     self.logger.record("eval/crash_sidewalk_rate", crash_sidewalk_rate)
                     self.logger.record("eval/crash_human_rate", crash_human_rate)
                     self.logger.record("eval/out_of_road_rate", out_of_road_rate)
-                    self.logger.record("eval/any_crash_rate", any_crash_rate)
+                    self.logger.record("eval/crash_total_rate", crash_total_rate)
                     self.logger.record("eval/any_bad_event_rate", any_bad_event_rate)
+                
+                # Log average crash COUNTS per episode
+                if "crash_count_total" in self.evaluations_info_buffer:
+                    avg_crash_count = np.mean(self.evaluations_info_buffer["crash_count_total"])
+                    avg_crash_count_vehicle = np.mean(self.evaluations_info_buffer["crash_count_vehicle"])
+                    avg_crash_count_object = np.mean(self.evaluations_info_buffer["crash_count_object"])
+                    avg_crash_count_building = np.mean(self.evaluations_info_buffer["crash_count_building"])
+                    avg_crash_count_sidewalk = np.mean(self.evaluations_info_buffer["crash_count_sidewalk"])
+                    
+                    if self.verbose > 0:
+                        print(f"Avg crashes per episode: {avg_crash_count:.2f} (vehicle: {avg_crash_count_vehicle:.2f}, object: {avg_crash_count_object:.2f}, building: {avg_crash_count_building:.2f}, sidewalk: {avg_crash_count_sidewalk:.2f})")
+                    
+                    self.logger.record("eval/crash_count_total", avg_crash_count)
+                    self.logger.record("eval/crash_count_vehicle", avg_crash_count_vehicle)
+                    self.logger.record("eval/crash_count_object", avg_crash_count_object)
+                    self.logger.record("eval/crash_count_building", avg_crash_count_building)
+                    self.logger.record("eval/crash_count_sidewalk", avg_crash_count_sidewalk)
                     self.logger.record("eval/success_no_bad_event", success_no_bad_event)
 
             # ===== Log action statistics =====
@@ -847,9 +906,11 @@ class EvalCallback(EventCallback):
             
             # Log other metrics (skip the ones we already logged above)
             skip_keys = {"success_no_crash_vehicle", "success_no_crash_any", 
-                        "crash_vehicle_rate", "crash_object_rate", "crash_any_rate",
+                        "crash_vehicle_rate", "crash_object_rate", "crash_vehicle_or_object_rate",
                         "crash_building_rate", "crash_sidewalk_rate", "crash_human_rate",
-                        "out_of_road_rate", "any_crash_rate", "any_bad_event_rate", "success_no_bad_event",
+                        "out_of_road_rate", "crash_total_rate", "any_bad_event_rate", "success_no_bad_event",
+                        "crash_count_total", "crash_count_vehicle", "crash_count_object", 
+                        "crash_count_building", "crash_count_sidewalk",
                         "mean_steering", "mean_steering_abs", "mean_accel", "mean_accel_abs",
                         "steering_variance", "hard_brake_ratio", "hard_steer_ratio",
                         "crash_mean_steering", "crash_mean_accel", "crash_steps", "crash_q_value",
