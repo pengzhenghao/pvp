@@ -75,7 +75,7 @@ declare -a BETA_LIST=(1.0 3.0 1.0 1.0)
 TOTAL_HP_COMBINATIONS=4
 
 # Data sizes (每个 GPU 一个)
-declare -a DATA_STEPS_LIST=(15000 12500 10000 7500)
+declare -a DATA_STEPS_LIST=(7500 12500 10000 15000)
 TOTAL_DATA_SIZES=4
 
 # Function to run a single experiment
