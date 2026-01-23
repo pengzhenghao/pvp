@@ -14,7 +14,11 @@ import uuid
 import numpy as np
 import sys
 import gymnasium
+import gymnasium.spaces
 sys.modules['gym'] = gymnasium
+sys.modules['gym.spaces'] = gymnasium.spaces
+# Fix for metadrive compatibility
+gymnasium.spaces.space = gymnasium.spaces
 
 from pathlib import Path
 
@@ -166,10 +170,39 @@ def main():
             data, params, pytorch_variables = load_from_zip_file(pretrained_ckpt, device=model.device, print_system_info=False)
             model.set_parameters(params, exact_match=False, device=model.device)
         
-        # Load expert and override predict method
-        from pvp.experiments.metadrive.egpo.fakehuman_env import get_expert
+        # Load full PPO expert model (not just the policy)
         print("Loading expert model (PPO with lidar observations)...")
-        expert = get_expert()
+        from pvp.sb3.common.save_util import load_from_zip_file
+        from pvp.sb3.ppo import PPO
+        from pvp.sb3.ppo.policies import ActorCriticPolicy
+        from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv as HILEnv
+        import pathlib
+        
+        # Create a temporary env for PPO initialization
+        temp_ppo_env = HILEnv(config={'manual_control': False, "use_render": False})
+        ppo_config = dict(
+            policy=ActorCriticPolicy,
+            n_steps=1024,
+            n_epochs=20,
+            learning_rate=5e-5,
+            batch_size=256,
+            clip_range=0.1,
+            vf_coef=0.5,
+            ent_coef=0.0,
+            max_grad_norm=10.0,
+            create_eval_env=False,
+            verbose=2,
+            device="auto",
+            env=temp_ppo_env
+        )
+        expert = PPO(**ppo_config)
+        
+        # Load expert checkpoint
+        ckpt = pathlib.Path("/home/caihy/pvp/pvp/experiments/metadrive/egpo/metadrive_pvp_20m_steps")
+        print(f"Loading checkpoint from {ckpt}!")
+        data, params, pytorch_variables = load_from_zip_file(ckpt, device=expert.device, print_system_info=False)
+        expert.set_parameters(params, exact_match=True, device=expert.device)
+        temp_ppo_env.close()
         print("Expert model loaded!")
         
         # Create a wrapper class that uses expert for prediction
@@ -282,7 +315,7 @@ def main():
     print(f"Setting up evaluation with {args.n_eval_episodes} episodes...")
     
     # Use _setup_learn to create EvalCallback with all the metrics
-    total_timesteps = 1  # We only need one evaluation
+    total_timesteps = 5  # We only need one evaluation
     eval_freq = 1  # Evaluate immediately
     
     _, callback = model._setup_learn(
@@ -291,7 +324,7 @@ def main():
         callback=callbacks,
         eval_freq=eval_freq,
         n_eval_episodes=args.n_eval_episodes,
-        eval_log_path=str(trial_dir),
+        log_path=str(trial_dir),
         reset_num_timesteps=True,
         tb_log_name=experiment_batch_name,
     )
