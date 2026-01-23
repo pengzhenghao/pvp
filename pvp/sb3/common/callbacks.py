@@ -459,8 +459,14 @@ class EvalCallback(EventCallback):
                 # prev_obs is the observation that was used to generate the action
                 prev_obs = locals_.get("prev_obs", None)
                 
-                # Fall back to lidar_obs if prev_obs not available (for backwards compatibility)
-                expert_input_obs = prev_obs if prev_obs is not None else lidar_obs
+                # Expert uses lidar observation, so:
+                # - If prev_obs is a dict (e.g., RGB image obs), use lidar_obs from info
+                # - If prev_obs is a numpy array (lidar obs), use it directly
+                # - Fall back to lidar_obs if prev_obs not available
+                if prev_obs is not None and not isinstance(prev_obs, dict):
+                    expert_input_obs = prev_obs
+                else:
+                    expert_input_obs = lidar_obs
                 
                 if self.expert is not None and expert_input_obs is not None:
                     # Get expert action using the same observation that agent used
@@ -929,12 +935,16 @@ class EvalCallback(EventCallback):
 
             # Dump log so the evaluation results are printed with the correct timestep
             self.logger.record("time/total_timesteps", self.num_timesteps)
+            
+            # Save metrics BEFORE dump (dump clears name_to_value)
+            import wandb
+            metrics_to_log = dict(self.logger.name_to_value) if hasattr(self.logger, 'name_to_value') else {}
+            
             self.logger.dump(self.num_timesteps)
             
             # Explicitly sync to wandb (ensure all eval metrics are logged)
-            import wandb
-            if wandb.run is not None:
-                wandb.log(self.logger.name_to_value, step=self.num_timesteps)
+            if wandb.run is not None and metrics_to_log:
+                wandb.log(metrics_to_log, step=self.num_timesteps)
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:
