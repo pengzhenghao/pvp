@@ -38,7 +38,7 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate baseline models")
     parser.add_argument("--model", type=str, required=True, choices=["pretrained", "expert"],
                         help="Which model to evaluate: 'pretrained' (RGB) or 'expert' (lidar)")
-    parser.add_argument("--n_eval_episodes", type=int, default=200,
+    parser.add_argument("--n_eval_episodes", type=int, default=1000,
                         help="Number of evaluation episodes")
     parser.add_argument("--seed", type=int, default=1000,
                         help="Environment seed for evaluation")
@@ -73,7 +73,7 @@ def main():
     
     # ===== Environment config =====
     sensor_size = (84, 84)
-    num_eval_envs = 10
+    num_eval_envs = 1
     
     def _make_eval_env():
         eval_env_config = dict(
@@ -86,7 +86,7 @@ def main():
             sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
             interface_panel=["rgb_camera", "dashboard"],
-            daytime="06:10",
+            daytime="08:30",
             crash_vehicle_done=False,
             crash_object_done=False,
             cost_to_reward=False,
