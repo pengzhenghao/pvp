@@ -455,9 +455,16 @@ class EvalCallback(EventCallback):
                     print(f"  info keys: {list(info.keys())}", flush=True)
                     print("=" * 60, flush=True)
                 
-                if self.expert is not None and lidar_obs is not None:
-                    # Get expert action using lidar observation
-                    expert_action, _ = self.expert.predict(lidar_obs, deterministic=True)
+                # Use prev_obs (observation BEFORE step) for correct comparison
+                # prev_obs is the observation that was used to generate the action
+                prev_obs = locals_.get("prev_obs", None)
+                
+                # Fall back to lidar_obs if prev_obs not available (for backwards compatibility)
+                expert_input_obs = prev_obs if prev_obs is not None else lidar_obs
+                
+                if self.expert is not None and expert_input_obs is not None:
+                    # Get expert action using the same observation that agent used
+                    expert_action, _ = self.expert.predict(expert_input_obs, deterministic=True)
                     expert_action_np = np.array(expert_action).flatten()
                     
                     # Action difference (L2 norm)

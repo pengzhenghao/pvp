@@ -34,7 +34,7 @@ CRASH_OBJECT_PENALTY=5.0
 OUT_OF_ROAD_PENALTY=5.0
 
 # Wandb project
-WANDB_PROJECT="0121mainexpfull"
+WANDB_PROJECT="0123mainexp"
 
 # Create experiment name
 EXP_NAME="lora_data${DATA_STEPS}_r${LORA_RANK}_a${LORA_ALPHA}_d${LORA_DROPOUT}_${LORA_TARGET}_seed${SEED}"

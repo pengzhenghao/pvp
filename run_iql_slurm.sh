@@ -9,11 +9,12 @@
 
 # ============================================================
 # SLURM Script for IQL Experiments
+# 需要 4 个 GPU，每个 GPU 上运行 4 个实验（同一超参数，不同 data size）
 # ============================================================
 # 用法:
 #   sbatch run_iql_slurm.sh                    # 默认 4 GPU
-#   sbatch --gres=gpu:8 run_iql_slurm.sh       # 8 GPU
-#   sbatch --gres=gpu:1 run_iql_slurm.sh fast  # 快速测试
+#   sbatch --gres=gpu:2 run_iql_slurm.sh       # 2 GPU (分 2 轮)
+#   sbatch --gres=gpu:1 run_iql_slurm.sh       # 1 GPU (分 4 轮)
 # ============================================================
 
 if [ -n "$SLURM_GPUS_ON_NODE" ]; then
@@ -29,6 +30,7 @@ echo "SLURM Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "Partition: $SLURM_JOB_PARTITION"
 echo "Allocated GPUs: $NUM_GPUS"
+echo "Each GPU runs 4 experiments (same HP, different data sizes)"
 echo "============================================================"
 
 mkdir -p /p0/user/caihy/pvp/logs

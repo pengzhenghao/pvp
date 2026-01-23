@@ -83,6 +83,9 @@ def evaluate_policy(
     states = None
     episode_starts = np.ones((env.num_envs, ), dtype=bool)
     while (episode_counts < episode_count_targets).any():
+        # Save observations BEFORE step for correct agent-expert comparison
+        prev_observations = observations.copy()
+        
         actions, states = model.predict(
             observations, state=states, episode_start=episode_starts, deterministic=deterministic
         )
@@ -97,6 +100,8 @@ def evaluate_policy(
                 done = dones[i]
                 info = infos[i]
                 episode_starts[i] = done
+                # Add the observation that was used for this action (before step)
+                prev_obs = prev_observations[i]
 
                 if callback is not None:
                     callback(locals(), globals())

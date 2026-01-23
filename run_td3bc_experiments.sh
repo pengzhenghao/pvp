@@ -1,7 +1,9 @@
 #!/bin/bash
 # ============================================================
-# TD3+BC Experiments - Adaptive GPU Version
-# 自动适应可用的 GPU 数量
+# TD3+BC Experiments
+# 2 个 GPU，分两轮运行
+# 第一轮: 15000, 10000
+# 第二轮: 12500, 7500
 # ============================================================
 
 # ============================================================
@@ -16,7 +18,7 @@ elif [ -n "$CUDA_VISIBLE_DEVICES" ]; then
 else
     AVAILABLE_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
     if [ "$AVAILABLE_GPUS" -eq 0 ]; then
-        AVAILABLE_GPUS=4
+        AVAILABLE_GPUS=2
     fi
 fi
 
@@ -50,23 +52,12 @@ if [ "$1" == "fast" ]; then
     EVAL_FREQ=100
     N_EVAL_EPISODES=25
     SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
-    WANDB_PROJECT="0121mainexp"
+    WANDB_PROJECT="0123mainexp"
 else
     EVAL_FREQ=500
     N_EVAL_EPISODES=200
     SKIP_PRETRAIN_EVAL=""
-    WANDB_PROJECT="0122mainexpfull"
-fi
-
-# ============================================================
-# Data sizes (from large to small, large first)
-# ============================================================
-if [ "$FAST_MODE" == "true" ]; then
-    declare -a DATA_STEPS_LIST=(15000)
-    TOTAL_DATA_SIZES=1
-else
-    declare -a DATA_STEPS_LIST=(15000 12500 10000 7500)
-    TOTAL_DATA_SIZES=4
+    WANDB_PROJECT="0123mainexp"
 fi
 
 # Function to run a single experiment
@@ -101,50 +92,42 @@ run_experiment() {
 mkdir -p ${BASE_DIR}/logs
 
 # ============================================================
-# Run experiments
+# Run experiments - 分两轮
 # ============================================================
 
 echo "============================================================"
-echo "Starting TD3+BC Experiments (Adaptive GPU Mode)"
+echo "Starting TD3+BC Experiments"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
 echo "Available GPUs: ${AVAILABLE_GPUS}"
-echo "Data sizes: ${DATA_STEPS_LIST[@]}"
 echo "TD3+BC alpha: ${TD3_BC_ALPHA}"
+echo "Round 1: 15000, 10000"
+echo "Round 2: 12500, 7500"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
 echo "============================================================"
 
-if [ "$FAST_MODE" == "true" ]; then
-    run_experiment 0 ${DATA_STEPS_LIST[0]}
-    wait
-    echo "TD3+BC fast mode experiment completed!"
-else
-    # Adaptive batching based on available GPUs
-    data_idx=0
-    while [ $data_idx -lt $TOTAL_DATA_SIZES ]; do
-        REMAINING=$((TOTAL_DATA_SIZES - data_idx))
-        BATCH_SIZE=$((REMAINING < AVAILABLE_GPUS ? REMAINING : AVAILABLE_GPUS))
-        
-        echo ""
-        echo "Batch: Running ${BATCH_SIZE} experiments in parallel"
-        
-        for ((gpu=0; gpu<BATCH_SIZE; gpu++)); do
-            DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
-            run_experiment ${gpu} ${DATA_STEPS}
-            data_idx=$((data_idx + 1))
-        done
-        
-        echo "Waiting for batch to complete..."
-        wait
-        echo "Batch completed! (${data_idx}/${TOTAL_DATA_SIZES} done)"
-    done
-    
-    echo ""
-    echo "============================================================"
-    echo "All ${TOTAL_DATA_SIZES} TD3+BC experiments completed!"
-fi
+# Round 1: 15000, 10000
+echo ""
+echo "Round 1: data sizes 15000, 10000"
+run_experiment 0 15000
+run_experiment 1 10000
+echo "Waiting for Round 1 to complete..."
+wait
+echo "Round 1 completed!"
 
+# Round 2: 12500, 7500
+echo ""
+echo "Round 2: data sizes 12500, 7500"
+run_experiment 0 12500
+run_experiment 1 7500
+echo "Waiting for Round 2 to complete..."
+wait
+echo "Round 2 completed!"
+
+echo ""
+echo "============================================================"
+echo "All TD3+BC experiments completed!"
 echo "Logs are saved in ${BASE_DIR}/logs/"
 echo "============================================================"

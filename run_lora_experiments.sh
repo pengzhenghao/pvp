@@ -1,7 +1,23 @@
 #!/bin/bash
 # ============================================================
-# LoRA (Low-Rank Adaptation) Experiments - Adaptive GPU Version
-# 超参数为外循环，数据量为内循环
+# LoRA (Low-Rank Adaptation) Experiments
+# ============================================================
+#
+# 运行策略：
+#   - 每个 GPU 跑 1 个程序
+#   - 每轮运行同一超参数配置的 4 个 data size
+#   - 先看 data size 影响，再看超参数影响
+#
+# 超参数配置（8种）:
+#   1. rank=16, alpha=1.0
+#   2. rank=8,  alpha=1.0
+#   3. rank=4,  alpha=1.0
+#   4. rank=2,  alpha=1.0
+#   5. rank=16, alpha=4.0
+#   6. rank=8,  alpha=4.0
+#   7. rank=4,  alpha=4.0
+#   8. rank=2,  alpha=4.0
+#
 # ============================================================
 
 # ============================================================
@@ -47,36 +63,26 @@ if [ "$1" == "fast" ]; then
     EVAL_FREQ=100
     N_EVAL_EPISODES=25
     SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
-    WANDB_PROJECT="0121mainexp"
+    WANDB_PROJECT="0123mainexp"
 else
     EVAL_FREQ=500
     N_EVAL_EPISODES=200
     SKIP_PRETRAIN_EVAL=""
-    WANDB_PROJECT="0122mainexpfull"
+    WANDB_PROJECT="0123mainexp"
 fi
 
 # ============================================================
-# LoRA Hyperparameter configurations (外循环)
+# LoRA Hyperparameter configurations (8 种配置)
 # ============================================================
-if [ "$FAST_MODE" == "true" ]; then
-    declare -a RANK_LIST=(4)
-    declare -a ALPHA_LIST=(1.0)
-    declare -a DROPOUT_LIST=(0.0)
-    declare -a TARGET_LIST=("actor")
-    declare -a DATA_STEPS_LIST=(15000)
-    TOTAL_HP_COMBINATIONS=1
-    TOTAL_DATA_SIZES=1
-else
-    # 8 hyperparameter combinations (外循环)
-    declare -a RANK_LIST=(16 8 4 2 16 8 4 2)
-    declare -a ALPHA_LIST=(1.0 1.0 1.0 1.0 4.0 4.0 4.0 4.0)
-    declare -a DROPOUT_LIST=(0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
-    declare -a TARGET_LIST=("actor" "actor" "actor" "actor" "actor" "actor" "actor" "actor")
-    # Data sizes (内循环, from large to small)
-    declare -a DATA_STEPS_LIST=(15000 12500 10000 7500)
-    TOTAL_HP_COMBINATIONS=8
-    TOTAL_DATA_SIZES=4
-fi
+declare -a RANK_LIST=(16 8 4 2 16 8 4 2)
+declare -a ALPHA_LIST=(1.0 1.0 1.0 1.0 4.0 4.0 4.0 4.0)
+declare -a DROPOUT_LIST=(0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+declare -a TARGET_LIST=("actor" "actor" "actor" "actor" "actor" "actor" "actor" "actor")
+TOTAL_HP_COMBINATIONS=8
+
+# Data sizes
+declare -a DATA_STEPS_LIST=(15000 12500 10000 7500)
+TOTAL_DATA_SIZES=4
 
 # Function to run a single experiment
 run_experiment() {
@@ -120,23 +126,20 @@ mkdir -p ${BASE_DIR}/logs
 # Run experiments
 # ============================================================
 
+TOTAL_EXPERIMENTS=$((TOTAL_HP_COMBINATIONS * TOTAL_DATA_SIZES))
+
 echo "============================================================"
-echo "Starting LoRA Experiments (Adaptive GPU Mode)"
+echo "Starting LoRA Experiments"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
 echo "Available GPUs: ${AVAILABLE_GPUS}"
+echo "Total experiments: ${TOTAL_EXPERIMENTS} (8 HP configs × 4 data sizes)"
 echo ""
-echo "Hyperparameters (outer loop):"
-echo "  0: rank=2, alpha=1.0"
-echo "  1: rank=4, alpha=1.0 (default)"
-echo "  2: rank=8, alpha=1.0"
-echo "  3: rank=16, alpha=1.0"
-echo "  4: rank=2, alpha=4.0"
-echo "  5: rank=4, alpha=4.0"
-echo "  6: rank=8, alpha=4.0"
-echo "  7: rank=16, alpha=4.0"
+echo "Strategy: 每轮运行 1 个超参数配置的 4 个 data size"
+echo "  - 先看 data size 影响，再看超参数影响"
+echo "  - 每个 GPU 跑 1 个程序"
 echo ""
-echo "Data sizes (inner loop): ${DATA_STEPS_LIST[@]}"
+echo "Data sizes: ${DATA_STEPS_LIST[@]}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
@@ -147,44 +150,41 @@ if [ "$FAST_MODE" == "true" ]; then
     wait
     echo "LoRA fast mode experiment completed!"
 else
-    TOTAL_EXPERIMENTS=$((TOTAL_HP_COMBINATIONS * TOTAL_DATA_SIZES))
-    EXPERIMENTS_DONE=0
-    
-    # 外循环：超参数
+    # 外循环：超参数配置
     for hp_idx in $(seq 0 $((TOTAL_HP_COMBINATIONS - 1))); do
         RANK=${RANK_LIST[$hp_idx]}
         ALPHA=${ALPHA_LIST[$hp_idx]}
         DROPOUT=${DROPOUT_LIST[$hp_idx]}
         TARGET=${TARGET_LIST[$hp_idx]}
-        HP_ROUND=$((hp_idx + 1))
         
         echo ""
         echo "============================================================"
-        echo "Hyperparameter Round ${HP_ROUND}/${TOTAL_HP_COMBINATIONS}: rank=${RANK}, alpha=${ALPHA}"
+        echo "Round $((hp_idx + 1))/${TOTAL_HP_COMBINATIONS}: rank=${RANK}, alpha=${ALPHA}"
         echo "============================================================"
         
-        # 内循环：数据量
+        # 内循环：data sizes，分批次运行
         data_idx=0
         while [ $data_idx -lt $TOTAL_DATA_SIZES ]; do
             REMAINING=$((TOTAL_DATA_SIZES - data_idx))
             BATCH_SIZE=$((REMAINING < AVAILABLE_GPUS ? REMAINING : AVAILABLE_GPUS))
             
             echo ""
-            echo "  Batch: Running ${BATCH_SIZE} data size experiments in parallel"
+            echo "Starting batch: data_idx=${data_idx}, batch_size=${BATCH_SIZE}"
             
             for ((gpu=0; gpu<BATCH_SIZE; gpu++)); do
-                DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
+                DATA_STEPS=${DATA_STEPS_LIST[$((data_idx + gpu))]}
                 run_experiment ${gpu} ${RANK} ${ALPHA} ${DROPOUT} ${TARGET} ${DATA_STEPS}
-                data_idx=$((data_idx + 1))
-                EXPERIMENTS_DONE=$((EXPERIMENTS_DONE + 1))
             done
             
-            echo "  Waiting for batch to complete... (${EXPERIMENTS_DONE}/${TOTAL_EXPERIMENTS} done)"
+            echo "Waiting for batch to complete..."
             wait
-            echo "  Batch completed!"
+            echo "Batch completed!"
+            
+            data_idx=$((data_idx + BATCH_SIZE))
         done
         
-        echo "Hyperparameter Round ${HP_ROUND} (rank=${RANK}, alpha=${ALPHA}) completed!"
+        echo ""
+        echo "Round $((hp_idx + 1)) (rank=${RANK}, alpha=${ALPHA}) completed!"
     done
     
     echo ""

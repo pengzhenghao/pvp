@@ -15,7 +15,7 @@ SCRIPT="eval_baseline.py"
 # Evaluation parameters
 N_EVAL_EPISODES=200
 SEED=1000
-WANDB_PROJECT="0122mainexpfull"
+WANDB_PROJECT="0123mainexp"
 WANDB_TEAM="victorique"
 
 # Penalty parameters (same as other experiments)
@@ -53,9 +53,9 @@ PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=0 python ${BASE_DIR}/${SCRIPT} \
 PRETRAINED_PID=$!
 echo "  PID: ${PRETRAINED_PID}"
 
-# Run expert model evaluation on GPU 1
-echo "Starting EXPERT model evaluation on GPU 1..."
-PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=1 python ${BASE_DIR}/${SCRIPT} \
+# Run expert model evaluation on GPU 0 (same GPU, parallel)
+echo "Starting EXPERT model evaluation on GPU 0..."
+PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=0 python ${BASE_DIR}/${SCRIPT} \
     --model expert \
     --n_eval_episodes ${N_EVAL_EPISODES} \
     --seed ${SEED} \
