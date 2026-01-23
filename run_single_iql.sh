@@ -35,9 +35,10 @@ if [ "$GPU_ID" -lt 0 ] || [ "$GPU_ID" -gt 7 ]; then
 fi
 
 # Base directory
-BASE_DIR="/home/caihy/pvp"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
 SCRIPT="train_bc_metadrive_online.py"
-BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
+BUFFER_PATH="${BASE_DIR}/data_buffer_20000.npz"
 
 # Common parameters (matching run_iql_experiments.sh)
 BC_TRAINING_TIMESTEPS=2000

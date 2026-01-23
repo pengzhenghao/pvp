@@ -14,7 +14,8 @@ TD3_BC_ALPHA=${3:-2.5}
 SEED=${4:-0}
 
 # Base directory
-BASE_DIR="/home/caihy/pvp"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
 SCRIPT="train_bc_metadrive_online.py"
 
 # Training parameters

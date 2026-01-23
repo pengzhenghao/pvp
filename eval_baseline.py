@@ -46,7 +46,9 @@ def main():
                         help="Wandb project name")
     parser.add_argument("--wandb_team", type=str, default="victorique",
                         help="Wandb team name")
-    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp",
+    # 自动检测脚本所在目录作为默认 log_dir
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    parser.add_argument("--log_dir", type=str, default=script_dir,
                         help="Log directory")
     # Penalty parameters (same as train_bc_metadrive_online.py)
     parser.add_argument("--crash_vehicle_penalty", type=float, default=5.0)
@@ -145,7 +147,8 @@ def main():
         print("Evaluating PRETRAINED model (RGB observations)")
         print("=" * 80)
         
-        pretrained_ckpt = Path("/home/caihy/pvp/pretrained.zip")
+        script_dir_path = Path(os.path.dirname(os.path.abspath(__file__)))
+        pretrained_ckpt = script_dir_path / "pretrained.zip"
         if pretrained_ckpt.exists():
             print(f"Loading pretrained model from {pretrained_ckpt}...")
             from pvp.sb3.common.save_util import load_from_zip_file
@@ -164,7 +167,8 @@ def main():
         # For expert evaluation, we'll use a custom wrapper that internally uses the expert
         # but the evaluation framework expects RGB observations
         # We load a dummy pretrained model but override predict() to use expert
-        pretrained_ckpt = Path("/home/caihy/pvp/pretrained.zip")
+        script_dir_path = Path(os.path.dirname(os.path.abspath(__file__)))
+        pretrained_ckpt = script_dir_path / "pretrained.zip"
         if pretrained_ckpt.exists():
             from pvp.sb3.common.save_util import load_from_zip_file
             data, params, pytorch_variables = load_from_zip_file(pretrained_ckpt, device=model.device, print_system_info=False)
@@ -198,7 +202,7 @@ def main():
         expert = PPO(**ppo_config)
         
         # Load expert checkpoint
-        ckpt = pathlib.Path("/home/caihy/pvp/pvp/experiments/metadrive/egpo/metadrive_pvp_20m_steps")
+        ckpt = script_dir_path / "pvp" / "experiments" / "metadrive" / "egpo" / "metadrive_pvp_20m_steps"
         print(f"Loading checkpoint from {ckpt}!")
         data, params, pytorch_variables = load_from_zip_file(ckpt, device=expert.device, print_system_info=False)
         expert.set_parameters(params, exact_match=True, device=expert.device)
