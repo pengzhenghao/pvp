@@ -459,8 +459,14 @@ class EvalCallback(EventCallback):
                 # prev_obs is the observation that was used to generate the action
                 prev_obs = locals_.get("prev_obs", None)
                 
-                # Fall back to lidar_obs if prev_obs not available (for backwards compatibility)
-                expert_input_obs = prev_obs if prev_obs is not None else lidar_obs
+                # Expert uses lidar observation, so:
+                # - If prev_obs is a dict (e.g., RGB image obs), use lidar_obs from info
+                # - If prev_obs is a numpy array (lidar obs), use it directly
+                # - Fall back to lidar_obs if prev_obs not available
+                if prev_obs is not None and not isinstance(prev_obs, dict):
+                    expert_input_obs = prev_obs
+                else:
+                    expert_input_obs = lidar_obs
                 
                 if self.expert is not None and expert_input_obs is not None:
                     # Get expert action using the same observation that agent used

@@ -157,7 +157,7 @@ if __name__ == '__main__':
 
     # ===== Setup the training environment =====
     num_envs = 1 if args.toy else 1
-    num_eval_envs = 1 if args.toy else 10
+    num_eval_envs = 1 if args.toy else 5
     
     # Check if we're loading buffer (skip Phase 1 entirely)
     loading_buffer = args.load_buffer and os.path.exists(args.load_buffer)
