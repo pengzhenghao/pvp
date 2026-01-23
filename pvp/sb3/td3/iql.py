@@ -347,6 +347,114 @@ class IQL(TD3):
                 # IQL specific: V-value statistics
                 v_pred = self._get_value(replay_data.observations)
                 self.logger.record("train/v_value_mean", v_pred.mean().item())
+                
+                # ================================================================
+                # IQL Diagnostic Metrics: Is IQL != BC?
+                # ================================================================
+                # Re-compute advantages and weights for detailed logging
+                v_s = self._get_value(replay_data.observations)
+                q1, q2 = self.critic(replay_data.observations, replay_data.actions_behavior)
+                q_s_a = th.min(q1, q2)
+                advantage_raw = q_s_a - v_s
+                
+                # 1. Raw advantage statistics (before normalization)
+                adv_std_raw = advantage_raw.std().item()
+                adv_min = advantage_raw.min().item()
+                adv_max = advantage_raw.max().item()
+                adv_range = adv_max - adv_min
+                self.logger.record("train/iql_advantage_std_raw", adv_std_raw)
+                self.logger.record("train/iql_advantage_min", adv_min)
+                self.logger.record("train/iql_advantage_max", adv_max)
+                self.logger.record("train/iql_advantage_range", adv_range)
+                
+                # Advantage percentiles
+                adv_flat = advantage_raw.flatten()
+                self.logger.record("train/iql_advantage_p10", th.quantile(adv_flat, 0.1).item())
+                self.logger.record("train/iql_advantage_p25", th.quantile(adv_flat, 0.25).item())
+                self.logger.record("train/iql_advantage_p50", th.quantile(adv_flat, 0.5).item())
+                self.logger.record("train/iql_advantage_p75", th.quantile(adv_flat, 0.75).item())
+                self.logger.record("train/iql_advantage_p90", th.quantile(adv_flat, 0.9).item())
+                
+                # 2. exp(beta * advantage) statistics - BEFORE normalization
+                # This shows the raw variation that beta*advantage produces
+                if adv_std_raw > 1e-8:
+                    advantage_normalized = advantage_raw / adv_std_raw
+                else:
+                    advantage_normalized = advantage_raw
+                
+                exp_weights_raw = th.exp(self.iql_beta * advantage_normalized)
+                exp_weights_clipped = th.clamp(exp_weights_raw, max=self.clip_score)
+                
+                self.logger.record("train/iql_exp_weight_mean", exp_weights_clipped.mean().item())
+                self.logger.record("train/iql_exp_weight_std", exp_weights_clipped.std().item())
+                self.logger.record("train/iql_exp_weight_min", exp_weights_clipped.min().item())
+                self.logger.record("train/iql_exp_weight_max", exp_weights_clipped.max().item())
+                self.logger.record("train/iql_exp_weight_ratio_max_min", 
+                                   (exp_weights_clipped.max() / (exp_weights_clipped.min() + 1e-8)).item())
+                
+                # 3. Effective Sample Size (ESS): measures how much weighting differs from uniform
+                # ESS = (sum(w))^2 / sum(w^2), normalized by n gives ESS_ratio in [0, 1]
+                # ESS_ratio = 1.0 means uniform weights (IQL = BC)
+                # ESS_ratio << 1.0 means weights are concentrated (IQL != BC)
+                weights_normalized = exp_weights_clipped / exp_weights_clipped.sum()
+                ess = 1.0 / (weights_normalized ** 2).sum()
+                ess_ratio = ess.item() / len(weights_normalized)  # normalized to [0, 1]
+                self.logger.record("train/iql_effective_sample_size", ess.item())
+                self.logger.record("train/iql_ess_ratio", ess_ratio)  # 1.0 = uniform = BC, <1.0 = selective = IQL
+                
+                # 4. Weight entropy: another measure of uniformity
+                # High entropy = uniform = BC, Low entropy = selective = IQL
+                weight_entropy = -(weights_normalized * th.log(weights_normalized + 1e-10)).sum()
+                max_entropy = np.log(len(weights_normalized))  # entropy of uniform distribution
+                entropy_ratio = weight_entropy.item() / max_entropy  # normalized to [0, 1]
+                self.logger.record("train/iql_weight_entropy", weight_entropy.item())
+                self.logger.record("train/iql_entropy_ratio", entropy_ratio)  # 1.0 = uniform = BC
+                
+                # 5. Correlation between reward and advantage: "Do high-reward samples get higher advantage?"
+                # This validates that IQL is correctly identifying good actions
+                rewards_flat = replay_data.rewards.flatten()
+                adv_flat = advantage_raw.flatten()
+                
+                # Pearson correlation
+                rewards_centered = rewards_flat - rewards_flat.mean()
+                adv_centered = adv_flat - adv_flat.mean()
+                corr_num = (rewards_centered * adv_centered).sum()
+                corr_denom = (th.sqrt((rewards_centered ** 2).sum()) * th.sqrt((adv_centered ** 2).sum()) + 1e-8)
+                reward_advantage_corr = (corr_num / corr_denom).item()
+                self.logger.record("train/iql_reward_advantage_corr", reward_advantage_corr)
+                
+                # 6. Advantage for high-reward vs low-reward samples
+                # Split by median reward
+                reward_median = th.median(rewards_flat)
+                high_reward_mask = rewards_flat >= reward_median
+                low_reward_mask = rewards_flat < reward_median
+                
+                if high_reward_mask.sum() > 0 and low_reward_mask.sum() > 0:
+                    adv_high_reward = adv_flat[high_reward_mask].mean().item()
+                    adv_low_reward = adv_flat[low_reward_mask].mean().item()
+                    self.logger.record("train/iql_advantage_high_reward", adv_high_reward)
+                    self.logger.record("train/iql_advantage_low_reward", adv_low_reward)
+                    self.logger.record("train/iql_advantage_gap", adv_high_reward - adv_low_reward)
+                    
+                    # Weight for high-reward vs low-reward samples
+                    weight_high_reward = exp_weights_clipped.flatten()[high_reward_mask].mean().item()
+                    weight_low_reward = exp_weights_clipped.flatten()[low_reward_mask].mean().item()
+                    self.logger.record("train/iql_weight_high_reward", weight_high_reward)
+                    self.logger.record("train/iql_weight_low_reward", weight_low_reward)
+                    self.logger.record("train/iql_weight_ratio_high_low", 
+                                       weight_high_reward / (weight_low_reward + 1e-8))
+                
+                # 7. Q-value and V-value statistics
+                self.logger.record("train/iql_q_mean", q_s_a.mean().item())
+                self.logger.record("train/iql_q_std", q_s_a.std().item())
+                self.logger.record("train/iql_v_mean", v_s.mean().item())
+                self.logger.record("train/iql_v_std", v_s.std().item())
+                
+                # 8. Summary: Is IQL effectively different from BC?
+                # IQL_BC_divergence: higher = more different from BC
+                # Combines ESS ratio (inverted) and weight variance
+                iql_bc_divergence = (1.0 - ess_ratio) + exp_weights_clipped.std().item()
+                self.logger.record("train/iql_bc_divergence", iql_bc_divergence)
         
         import wandb
         wandb.log(self.logger.name_to_value, step=self.num_timesteps)

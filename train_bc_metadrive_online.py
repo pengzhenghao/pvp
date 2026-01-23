@@ -35,7 +35,9 @@ if __name__ == '__main__':
     parser.add_argument("--wandb", action="store_true", help="Set to True to upload stats to wandb.")
     parser.add_argument("--wandb_project", type=str, default="domain-adaptation-0120", help="The project name for wandb.")
     parser.add_argument("--wandb_team", type=str, default="victorique", help="The team name for wandb.")
-    parser.add_argument("--log_dir", type=str, default="/home/caihy/pvp", help="Folder to store the logs.")
+    # 自动检测脚本所在目录作为默认 log_dir
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    parser.add_argument("--log_dir", type=str, default=script_dir, help="Folder to store the logs.")
     parser.add_argument("--free_level", type=float, default=0.95)
     parser.add_argument("--ckpt", default="", type=str)
     parser.add_argument("--data_collection_timesteps", default=20000, type=int, help="Total timesteps for data collection.")
@@ -315,8 +317,9 @@ if __name__ == '__main__':
         else:
             print(f"Using pure BC trainer with bc_loss_weight={args.bc_loss_weight}")
     
-    # Load initial policy from checkpoint
-    initial_ckpt = Path("/home/caihy/pvp/pretrained.zip")
+    # Load initial policy from checkpoint (使用脚本所在目录)
+    script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+    initial_ckpt = script_dir / "pretrained.zip"
     if initial_ckpt.exists():
         print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file

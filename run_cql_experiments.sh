@@ -1,66 +1,84 @@
 #!/bin/bash
+# ============================================================
+# CQL (Conservative Q-Learning) Experiments - Adaptive GPU Version
+# 自动适应可用的 GPU 数量
+# ============================================================
 
-killall python -9 2>/dev/null || true
-
-# CQL (Conservative Q-Learning) Experiment Script
-# This script runs CQL experiments with different data amounts
-# Each data amount runs on a separate GPU (5 data amounts on 5 GPUs)
-#
-# Usage:
-#   ./run_cql_experiments.sh        # Normal mode (eval_freq=100, 500 episodes)
-#   ./run_cql_experiments.sh fast   # Fast mode (eval_freq=1000, 50 episodes)
-#
-# Using optimal hyperparameters found: alpha=10.0, temp=1.0, num_random=10 (defaults)
-
-# Base directory
-BASE_DIR="/home/caihy/pvp"
-SCRIPT="train_bc_metadrive_online.py"
-BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
-
-# Check for fast mode
-FAST_MODE=false
-if [ "$1" == "fast" ]; then
-    FAST_MODE=true
+# ============================================================
+# GPU Detection
+# ============================================================
+if [ -n "$SLURM_NUM_GPUS" ]; then
+    AVAILABLE_GPUS=$SLURM_NUM_GPUS
+elif [ -n "$SLURM_GPUS_ON_NODE" ]; then
+    AVAILABLE_GPUS=$SLURM_GPUS_ON_NODE
+elif [ -n "$CUDA_VISIBLE_DEVICES" ]; then
+    AVAILABLE_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
+else
+    AVAILABLE_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
+    if [ "$AVAILABLE_GPUS" -eq 0 ]; then
+        AVAILABLE_GPUS=4
+    fi
 fi
 
-# Common parameters
+echo "Detected $AVAILABLE_GPUS available GPU(s)"
+
+# ============================================================
+# Configuration
+# ============================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
+SCRIPT="train_bc_metadrive_online.py"
+BUFFER_PATH="${BASE_DIR}/data_buffer_20000.npz"
+
+# Training parameters
 BC_TRAINING_TIMESTEPS=2000
 SAVE_FREQ=1000
 SEED=0
 
-# Crash penalty parameters (directly affect reward)
+# Crash penalty parameters
 CRASH_VEHICLE_PENALTY=5.0
 CRASH_OBJECT_PENALTY=5.0
 OUT_OF_ROAD_PENALTY=5.0
-
-# Mode-specific parameters
-if [ "$FAST_MODE" == "true" ]; then
-    EVAL_FREQ=100
-    N_EVAL_EPISODES=25
-    SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
-    WANDB_PROJECT="0121mainexp"
-    echo "*** FAST MODE ENABLED ***"
-else
-    EVAL_FREQ=100
-    N_EVAL_EPISODES=500
-    SKIP_PRETRAIN_EVAL=""
-    WANDB_PROJECT="0121mainexpfull"
-fi
 
 # CQL optimal hyperparameters
 CQL_ALPHA=10.0
 CQL_TEMP=1.0
 NUM_RANDOM_ACTIONS=10
 
+# Check for fast mode
+FAST_MODE="false"
+if [ "$1" == "fast" ]; then
+    FAST_MODE="true"
+    EVAL_FREQ=100
+    N_EVAL_EPISODES=25
+    SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
+    WANDB_PROJECT="0121mainexp"
+else
+    EVAL_FREQ=500
+    N_EVAL_EPISODES=200
+    SKIP_PRETRAIN_EVAL=""
+    WANDB_PROJECT="0122mainexpfull"
+fi
+
+# ============================================================
+# Data sizes (from large to small, large first)
+# ============================================================
+if [ "$FAST_MODE" == "true" ]; then
+    declare -a DATA_STEPS_LIST=(15000)
+    TOTAL_DATA_SIZES=1
+else
+    declare -a DATA_STEPS_LIST=(15000 12500 10000 7500)
+    TOTAL_DATA_SIZES=4
+fi
+
 # Function to run a single experiment
 run_experiment() {
     local GPU_ID=$1
     local DATA_STEPS=$2
     
-    # Create descriptive experiment name
     local EXP_NAME="cql_data${DATA_STEPS}_alpha${CQL_ALPHA}_seed${SEED}"
     
-    echo "Starting experiment: ${EXP_NAME} on GPU ${GPU_ID}"
+    echo "  GPU ${GPU_ID}: ${EXP_NAME}"
     
     PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
         --exp_name "${EXP_NAME}" \
@@ -81,55 +99,56 @@ run_experiment() {
         ${SKIP_PRETRAIN_EVAL} \
         --wandb_project "${WANDB_PROJECT}" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
-    
-    echo "Experiment ${EXP_NAME} started with PID $!"
 }
 
 # Create logs directory
 mkdir -p ${BASE_DIR}/logs
 
 # ============================================================
-# Experiment Configuration
-# ============================================================
-if [ "$FAST_MODE" == "true" ]; then
-    DATA_STEPS_LIST=(2000)
-else
-    DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
-fi
-
-# ============================================================
 # Run experiments
 # ============================================================
 
 echo "============================================================"
-echo "Starting CQL Experiments"
+echo "Starting CQL Experiments (Adaptive GPU Mode)"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
-echo "Data steps: ${DATA_STEPS_LIST[@]}"
-echo "CQL alpha: ${CQL_ALPHA}"
-echo "CQL temp: ${CQL_TEMP}"
-echo "Num random actions: ${NUM_RANDOM_ACTIONS}"
+echo "Available GPUs: ${AVAILABLE_GPUS}"
+echo "Data sizes: ${DATA_STEPS_LIST[@]}"
+echo "CQL alpha: ${CQL_ALPHA}, temp: ${CQL_TEMP}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
-echo "Loading buffer from: ${BUFFER_PATH}"
-echo "============================================================"
-echo ""
-echo "CQL adds conservative penalty to prevent Q-value overestimation"
 echo "============================================================"
 
-# Run experiments in parallel
-for i in "${!DATA_STEPS_LIST[@]}"; do
-    GPU_ID=$i
-    DATA_STEPS=${DATA_STEPS_LIST[$i]}
-    run_experiment ${GPU_ID} ${DATA_STEPS}
-done
+if [ "$FAST_MODE" == "true" ]; then
+    run_experiment 0 ${DATA_STEPS_LIST[0]}
+    wait
+    echo "CQL fast mode experiment completed!"
+else
+    # Adaptive batching based on available GPUs
+    data_idx=0
+    while [ $data_idx -lt $TOTAL_DATA_SIZES ]; do
+        REMAINING=$((TOTAL_DATA_SIZES - data_idx))
+        BATCH_SIZE=$((REMAINING < AVAILABLE_GPUS ? REMAINING : AVAILABLE_GPUS))
+        
+        echo ""
+        echo "Batch: Running ${BATCH_SIZE} experiments in parallel"
+        
+        for ((gpu=0; gpu<BATCH_SIZE; gpu++)); do
+            DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
+            run_experiment ${gpu} ${DATA_STEPS}
+            data_idx=$((data_idx + 1))
+        done
+        
+        echo "Waiting for batch to complete..."
+        wait
+        echo "Batch completed! (${data_idx}/${TOTAL_DATA_SIZES} done)"
+    done
+    
+    echo ""
+    echo "============================================================"
+    echo "All ${TOTAL_DATA_SIZES} CQL experiments completed!"
+fi
 
-# Wait for all experiments to complete
-echo "All ${#DATA_STEPS_LIST[@]} experiments started. Waiting for completion..."
-wait
-
-echo "============================================================"
-echo "All CQL experiments completed!"
 echo "Logs are saved in ${BASE_DIR}/logs/"
 echo "============================================================"

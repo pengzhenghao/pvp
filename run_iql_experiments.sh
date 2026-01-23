@@ -1,67 +1,78 @@
 #!/bin/bash
+# ============================================================
+# IQL (Implicit Q-Learning) Experiments - Adaptive GPU Version
+# 超参数为外循环，数据量为内循环
+# ============================================================
 
-killall python -9 2>/dev/null || true
-
-# IQL (Implicit Q-Learning) Experiment Script
-# This script runs IQL experiments with ALL combinations of hyperparameters and data sizes
-# 8 hyperparameter combinations × 5 data sizes = 40 experiments
-# Runs in 5 rounds (8 experiments per round on 8 GPUs)
-#
-# Usage:
-#   ./run_iql_experiments.sh        # Normal mode (eval_freq=100, 500 episodes)
-#   ./run_iql_experiments.sh fast   # Fast mode (eval_freq=1000, 50 episodes)
-#
-# IQL paper: "Offline Reinforcement Learning with Implicit Q-Learning"
-
-# Base directory
-BASE_DIR="/home/caihy/pvp"
-SCRIPT="train_bc_metadrive_online.py"
-BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
-
-# Check for fast mode
-FAST_MODE=false
-if [ "$1" == "fast" ]; then
-    FAST_MODE=true
+# ============================================================
+# GPU Detection
+# ============================================================
+if [ -n "$SLURM_NUM_GPUS" ]; then
+    AVAILABLE_GPUS=$SLURM_NUM_GPUS
+elif [ -n "$SLURM_GPUS_ON_NODE" ]; then
+    AVAILABLE_GPUS=$SLURM_GPUS_ON_NODE
+elif [ -n "$CUDA_VISIBLE_DEVICES" ]; then
+    AVAILABLE_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
+else
+    AVAILABLE_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
+    if [ "$AVAILABLE_GPUS" -eq 0 ]; then
+        AVAILABLE_GPUS=4
+    fi
 fi
 
-# Common parameters
+echo "Detected $AVAILABLE_GPUS available GPU(s)"
+
+# ============================================================
+# Configuration
+# ============================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
+SCRIPT="train_bc_metadrive_online.py"
+BUFFER_PATH="${BASE_DIR}/data_buffer_20000.npz"
+
+# Training parameters
 BC_TRAINING_TIMESTEPS=2000
 SAVE_FREQ=1000
 SEED=0
 MAX_GRAD_NORM=1.0
 
-# Crash penalty parameters (directly affect reward)
+# Crash penalty parameters
 CRASH_VEHICLE_PENALTY=5.0
 CRASH_OBJECT_PENALTY=5.0
 OUT_OF_ROAD_PENALTY=5.0
 
-# Mode-specific parameters
-if [ "$FAST_MODE" == "true" ]; then
+# Check for fast mode
+FAST_MODE="false"
+if [ "$1" == "fast" ]; then
+    FAST_MODE="true"
     EVAL_FREQ=100
     N_EVAL_EPISODES=25
     SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
     WANDB_PROJECT="0121mainexp"
-    echo "*** FAST MODE ENABLED ***"
 else
-    EVAL_FREQ=100
-    N_EVAL_EPISODES=500
+    EVAL_FREQ=500
+    N_EVAL_EPISODES=200
     SKIP_PRETRAIN_EVAL=""
-    WANDB_PROJECT="0121mainexpfull"
+    WANDB_PROJECT="0122mainexpfull"
 fi
 
 # ============================================================
-# Hyperparameter combinations
+# Hyperparameter configurations (外循环)
+# 优先级：tau0.7_beta1.0 > tau0.7_beta3.0 > tau0.9_beta1.0 > tau0.5_beta1.0
 # ============================================================
 if [ "$FAST_MODE" == "true" ]; then
-    # Fast mode: single hyperparameter and single data size
     declare -a TAU_LIST=(0.7)
-    declare -a BETA_LIST=(3.0)
-    declare -a DATA_STEPS_LIST=(2000)
+    declare -a BETA_LIST=(1.0)
+    declare -a DATA_STEPS_LIST=(15000)
+    TOTAL_HP_COMBINATIONS=1
+    TOTAL_DATA_SIZES=1
 else
-    # Normal mode: 8 hyperparameter combinations, 5 data sizes
-    declare -a TAU_LIST=(0.5 0.7 0.7 0.8 0.9 0.7 0.8 0.9)
-    declare -a BETA_LIST=(1.0 1.0 3.0 3.0 3.0 10.0 10.0 10.0)
-    declare -a DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+    declare -a TAU_LIST=(0.7 0.7 0.9 0.5)
+    declare -a BETA_LIST=(1.0 3.0 1.0 1.0)
+    # Data sizes (内循环, from large to small)
+    declare -a DATA_STEPS_LIST=(15000 12500 10000 7500)
+    TOTAL_HP_COMBINATIONS=4
+    TOTAL_DATA_SIZES=4
 fi
 
 # Function to run a single experiment
@@ -71,7 +82,6 @@ run_experiment() {
     local IQL_BETA=$3
     local DATA_STEPS=$4
     
-    # Create descriptive experiment name
     local EXP_NAME="iql_data${DATA_STEPS}_tau${IQL_TAU}_beta${IQL_BETA}_seed${SEED}"
     
     echo "  GPU ${GPU_ID}: ${EXP_NAME}"
@@ -105,66 +115,66 @@ mkdir -p ${BASE_DIR}/logs
 # ============================================================
 
 echo "============================================================"
-if [ "$FAST_MODE" == "true" ]; then
-    echo "Starting IQL Fast Mode (single experiment)"
-else
-    echo "Starting IQL Full Grid Search"
-    echo "8 hyperparameter combinations × 5 data sizes = 40 experiments"
-    echo "Running in 5 rounds (8 experiments per round on 8 GPUs)"
-fi
+echo "Starting IQL Experiments (Adaptive GPU Mode)"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
-echo "Data sizes: ${DATA_STEPS_LIST[@]}"
+echo "Available GPUs: ${AVAILABLE_GPUS}"
+echo "Hyperparameters (outer loop, priority order):"
+for hp_idx in $(seq 0 $((TOTAL_HP_COMBINATIONS - 1))); do
+    echo "  $((hp_idx + 1)). tau=${TAU_LIST[$hp_idx]}, beta=${BETA_LIST[$hp_idx]}"
+done
+echo "Data sizes (inner loop): ${DATA_STEPS_LIST[@]}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
 echo "============================================================"
 
 if [ "$FAST_MODE" == "true" ]; then
-    # Fast mode: single experiment
-    echo "Running single IQL experiment (tau=0.7, beta=3.0, data=2000)..."
     run_experiment 0 ${TAU_LIST[0]} ${BETA_LIST[0]} ${DATA_STEPS_LIST[0]}
     wait
     echo "IQL fast mode experiment completed!"
 else
-    # Normal mode: full grid search
-    echo ""
-    echo "Hyperparameter combinations:"
-    echo "  0: tau=0.5, beta=1.0  (baseline)"
-    echo "  1: tau=0.7, beta=1.0"
-    echo "  2: tau=0.7, beta=3.0  (IQL paper default)"
-    echo "  3: tau=0.8, beta=3.0"
-    echo "  4: tau=0.9, beta=3.0  (for expert data)"
-    echo "  5: tau=0.7, beta=10.0"
-    echo "  6: tau=0.8, beta=10.0"
-    echo "  7: tau=0.9, beta=10.0 (most aggressive)"
-    echo "============================================================"
-
-    # Run experiments in 5 rounds (one round per data size)
-    for data_idx in "${!DATA_STEPS_LIST[@]}"; do
-        DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
-        ROUND=$((data_idx + 1))
+    TOTAL_EXPERIMENTS=$((TOTAL_HP_COMBINATIONS * TOTAL_DATA_SIZES))
+    EXPERIMENTS_DONE=0
+    
+    # 外循环：超参数
+    for hp_idx in $(seq 0 $((TOTAL_HP_COMBINATIONS - 1))); do
+        TAU=${TAU_LIST[$hp_idx]}
+        BETA=${BETA_LIST[$hp_idx]}
+        HP_ROUND=$((hp_idx + 1))
         
         echo ""
         echo "============================================================"
-        echo "Round ${ROUND}/5: data_steps=${DATA_STEPS}"
+        echo "Hyperparameter Round ${HP_ROUND}/${TOTAL_HP_COMBINATIONS}: tau=${TAU}, beta=${BETA}"
         echo "============================================================"
         
-        # Run 8 experiments in parallel (one per GPU)
-        for hp_idx in {0..7}; do
-            TAU=${TAU_LIST[$hp_idx]}
-            BETA=${BETA_LIST[$hp_idx]}
-            run_experiment ${hp_idx} ${TAU} ${BETA} ${DATA_STEPS}
+        # 内循环：数据量
+        data_idx=0
+        while [ $data_idx -lt $TOTAL_DATA_SIZES ]; do
+            REMAINING=$((TOTAL_DATA_SIZES - data_idx))
+            BATCH_SIZE=$((REMAINING < AVAILABLE_GPUS ? REMAINING : AVAILABLE_GPUS))
+            
+            echo ""
+            echo "  Batch: Running ${BATCH_SIZE} data size experiments in parallel"
+            
+            for ((gpu=0; gpu<BATCH_SIZE; gpu++)); do
+                DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
+                run_experiment ${gpu} ${TAU} ${BETA} ${DATA_STEPS}
+                data_idx=$((data_idx + 1))
+                EXPERIMENTS_DONE=$((EXPERIMENTS_DONE + 1))
+            done
+            
+            echo "  Waiting for batch to complete... (${EXPERIMENTS_DONE}/${TOTAL_EXPERIMENTS} done)"
+            wait
+            echo "  Batch completed!"
         done
         
-        echo "Waiting for round ${ROUND} to complete..."
-        wait
-        echo "Round ${ROUND} completed!"
+        echo "Hyperparameter Round ${HP_ROUND} (tau=${TAU}, beta=${BETA}) completed!"
     done
     
     echo ""
     echo "============================================================"
-    echo "All 40 IQL experiments completed!"
+    echo "All ${TOTAL_EXPERIMENTS} IQL experiments completed!"
 fi
 
 echo "Logs are saved in ${BASE_DIR}/logs/"

@@ -1,26 +1,41 @@
 #!/bin/bash
 # ============================================================
-# LoRA (Low-Rank Adaptation) Experiments
-# Tests different LoRA hyperparameters: rank, alpha, dropout
+# LoRA (Low-Rank Adaptation) Experiments - Adaptive GPU Version
+# 超参数为外循环，数据量为内循环
 # ============================================================
 
-# Kill any existing python processes
-killall python -9 2>/dev/null || true
-sleep 2
+# ============================================================
+# GPU Detection
+# ============================================================
+if [ -n "$SLURM_NUM_GPUS" ]; then
+    AVAILABLE_GPUS=$SLURM_NUM_GPUS
+elif [ -n "$SLURM_GPUS_ON_NODE" ]; then
+    AVAILABLE_GPUS=$SLURM_GPUS_ON_NODE
+elif [ -n "$CUDA_VISIBLE_DEVICES" ]; then
+    AVAILABLE_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
+else
+    AVAILABLE_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
+    if [ "$AVAILABLE_GPUS" -eq 0 ]; then
+        AVAILABLE_GPUS=4
+    fi
+fi
+
+echo "Detected $AVAILABLE_GPUS available GPU(s)"
 
 # ============================================================
 # Configuration
 # ============================================================
-BASE_DIR="/home/caihy/pvp"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
 SCRIPT="train_bc_metadrive_online.py"
-BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
+BUFFER_PATH="${BASE_DIR}/data_buffer_20000.npz"
 
 # Training parameters
 BC_TRAINING_TIMESTEPS=2000
 SAVE_FREQ=1000
 SEED=0
 
-# Penalty parameters (same as other scripts)
+# Crash penalty parameters
 CRASH_VEHICLE_PENALTY=5.0
 CRASH_OBJECT_PENALTY=5.0
 OUT_OF_ROAD_PENALTY=5.0
@@ -34,30 +49,33 @@ if [ "$1" == "fast" ]; then
     SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
     WANDB_PROJECT="0121mainexp"
 else
-    EVAL_FREQ=100
-    N_EVAL_EPISODES=500
+    EVAL_FREQ=500
+    N_EVAL_EPISODES=200
     SKIP_PRETRAIN_EVAL=""
-    WANDB_PROJECT="0121mainexpfull"
+    WANDB_PROJECT="0122mainexpfull"
 fi
 
 # ============================================================
-# LoRA Hyperparameter combinations
+# LoRA Hyperparameter configurations (外循环)
 # ============================================================
 if [ "$FAST_MODE" == "true" ]; then
-    # Fast mode: single configuration for quick testing
     declare -a RANK_LIST=(4)
     declare -a ALPHA_LIST=(1.0)
     declare -a DROPOUT_LIST=(0.0)
     declare -a TARGET_LIST=("actor")
-    declare -a DATA_STEPS_LIST=(2000)
+    declare -a DATA_STEPS_LIST=(15000)
+    TOTAL_HP_COMBINATIONS=1
+    TOTAL_DATA_SIZES=1
 else
-    # Normal mode: grid search over hyperparameters
-    # 8 combinations on 8 GPUs, then iterate over data sizes
-    declare -a RANK_LIST=(2 4 8 16 2 4 8 16)
+    # 8 hyperparameter combinations (外循环)
+    declare -a RANK_LIST=(16 8 4 2 16 8 4 2)
     declare -a ALPHA_LIST=(1.0 1.0 1.0 1.0 4.0 4.0 4.0 4.0)
     declare -a DROPOUT_LIST=(0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
     declare -a TARGET_LIST=("actor" "actor" "actor" "actor" "actor" "actor" "actor" "actor")
-    declare -a DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+    # Data sizes (内循环, from large to small)
+    declare -a DATA_STEPS_LIST=(15000 12500 10000 7500)
+    TOTAL_HP_COMBINATIONS=8
+    TOTAL_DATA_SIZES=4
 fi
 
 # Function to run a single experiment
@@ -69,7 +87,6 @@ run_experiment() {
     local LORA_TARGET=$5
     local DATA_STEPS=$6
     
-    # Create descriptive experiment name
     local EXP_NAME="lora_data${DATA_STEPS}_r${LORA_RANK}_a${LORA_ALPHA}_d${LORA_DROPOUT}_${LORA_TARGET}_seed${SEED}"
     
     echo "  GPU ${GPU_ID}: ${EXP_NAME}"
@@ -104,68 +121,75 @@ mkdir -p ${BASE_DIR}/logs
 # ============================================================
 
 echo "============================================================"
-if [ "$FAST_MODE" == "true" ]; then
-    echo "Starting LoRA Fast Mode (single experiment)"
-else
-    echo "Starting LoRA Full Grid Search"
-    echo "8 hyperparameter combinations × ${#DATA_STEPS_LIST[@]} data sizes"
-    echo "Running in ${#DATA_STEPS_LIST[@]} rounds (8 experiments per round on 8 GPUs)"
-fi
+echo "Starting LoRA Experiments (Adaptive GPU Mode)"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
-echo "Data sizes: ${DATA_STEPS_LIST[@]}"
+echo "Available GPUs: ${AVAILABLE_GPUS}"
+echo ""
+echo "Hyperparameters (outer loop):"
+echo "  0: rank=2, alpha=1.0"
+echo "  1: rank=4, alpha=1.0 (default)"
+echo "  2: rank=8, alpha=1.0"
+echo "  3: rank=16, alpha=1.0"
+echo "  4: rank=2, alpha=4.0"
+echo "  5: rank=4, alpha=4.0"
+echo "  6: rank=8, alpha=4.0"
+echo "  7: rank=16, alpha=4.0"
+echo ""
+echo "Data sizes (inner loop): ${DATA_STEPS_LIST[@]}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
 echo "============================================================"
 
 if [ "$FAST_MODE" == "true" ]; then
-    # Fast mode: single experiment
-    echo "Running single LoRA experiment (rank=4, alpha=1.0, dropout=0.0, target=actor)..."
     run_experiment 0 ${RANK_LIST[0]} ${ALPHA_LIST[0]} ${DROPOUT_LIST[0]} ${TARGET_LIST[0]} ${DATA_STEPS_LIST[0]}
     wait
     echo "LoRA fast mode experiment completed!"
 else
-    # Normal mode: full grid search
-    echo ""
-    echo "Hyperparameter combinations:"
-    echo "  0: rank=2, alpha=1.0 (smallest)"
-    echo "  1: rank=4, alpha=1.0 (default)"
-    echo "  2: rank=8, alpha=1.0"
-    echo "  3: rank=16, alpha=1.0 (largest rank)"
-    echo "  4: rank=2, alpha=4.0"
-    echo "  5: rank=4, alpha=4.0"
-    echo "  6: rank=8, alpha=4.0"
-    echo "  7: rank=16, alpha=4.0 (largest)"
-    echo "============================================================"
-
-    # Run experiments in rounds (one round per data size)
-    for data_idx in "${!DATA_STEPS_LIST[@]}"; do
-        DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
-        ROUND=$((data_idx + 1))
+    TOTAL_EXPERIMENTS=$((TOTAL_HP_COMBINATIONS * TOTAL_DATA_SIZES))
+    EXPERIMENTS_DONE=0
+    
+    # 外循环：超参数
+    for hp_idx in $(seq 0 $((TOTAL_HP_COMBINATIONS - 1))); do
+        RANK=${RANK_LIST[$hp_idx]}
+        ALPHA=${ALPHA_LIST[$hp_idx]}
+        DROPOUT=${DROPOUT_LIST[$hp_idx]}
+        TARGET=${TARGET_LIST[$hp_idx]}
+        HP_ROUND=$((hp_idx + 1))
         
         echo ""
         echo "============================================================"
-        echo "Round ${ROUND}/${#DATA_STEPS_LIST[@]}: data_steps=${DATA_STEPS}"
+        echo "Hyperparameter Round ${HP_ROUND}/${TOTAL_HP_COMBINATIONS}: rank=${RANK}, alpha=${ALPHA}"
         echo "============================================================"
         
-        # Run 8 experiments in parallel (one per GPU)
-        for hp_idx in {0..7}; do
-            RANK=${RANK_LIST[$hp_idx]}
-            ALPHA=${ALPHA_LIST[$hp_idx]}
-            DROPOUT=${DROPOUT_LIST[$hp_idx]}
-            TARGET=${TARGET_LIST[$hp_idx]}
-            run_experiment ${hp_idx} ${RANK} ${ALPHA} ${DROPOUT} ${TARGET} ${DATA_STEPS}
+        # 内循环：数据量
+        data_idx=0
+        while [ $data_idx -lt $TOTAL_DATA_SIZES ]; do
+            REMAINING=$((TOTAL_DATA_SIZES - data_idx))
+            BATCH_SIZE=$((REMAINING < AVAILABLE_GPUS ? REMAINING : AVAILABLE_GPUS))
+            
+            echo ""
+            echo "  Batch: Running ${BATCH_SIZE} data size experiments in parallel"
+            
+            for ((gpu=0; gpu<BATCH_SIZE; gpu++)); do
+                DATA_STEPS=${DATA_STEPS_LIST[$data_idx]}
+                run_experiment ${gpu} ${RANK} ${ALPHA} ${DROPOUT} ${TARGET} ${DATA_STEPS}
+                data_idx=$((data_idx + 1))
+                EXPERIMENTS_DONE=$((EXPERIMENTS_DONE + 1))
+            done
+            
+            echo "  Waiting for batch to complete... (${EXPERIMENTS_DONE}/${TOTAL_EXPERIMENTS} done)"
+            wait
+            echo "  Batch completed!"
         done
         
-        echo "Waiting for round ${ROUND} to complete..."
-        wait
-        echo "Round ${ROUND} completed!"
+        echo "Hyperparameter Round ${HP_ROUND} (rank=${RANK}, alpha=${ALPHA}) completed!"
     done
     
     echo ""
     echo "============================================================"
-    echo "All LoRA experiments completed!"
+    echo "All ${TOTAL_EXPERIMENTS} LoRA experiments completed!"
 fi
 
 echo "Logs are saved in ${BASE_DIR}/logs/"
