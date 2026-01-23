@@ -351,6 +351,11 @@ def main():
     # ===== Cleanup =====
     eval_env.close()
     
+    # Finish wandb run to ensure data is synced
+    import wandb
+    if wandb.run is not None:
+        wandb.finish()
+    
     print("=" * 80)
     print("Evaluation completed!")
     print(f"Results uploaded to wandb project: {args.wandb_project}")

@@ -929,12 +929,16 @@ class EvalCallback(EventCallback):
 
             # Dump log so the evaluation results are printed with the correct timestep
             self.logger.record("time/total_timesteps", self.num_timesteps)
+            
+            # Save metrics BEFORE dump (dump clears name_to_value)
+            import wandb
+            metrics_to_log = dict(self.logger.name_to_value) if hasattr(self.logger, 'name_to_value') else {}
+            
             self.logger.dump(self.num_timesteps)
             
             # Explicitly sync to wandb (ensure all eval metrics are logged)
-            import wandb
-            if wandb.run is not None:
-                wandb.log(self.logger.name_to_value, step=self.num_timesteps)
+            if wandb.run is not None and metrics_to_log:
+                wandb.log(metrics_to_log, step=self.num_timesteps)
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:
