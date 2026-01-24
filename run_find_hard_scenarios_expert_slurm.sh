@@ -1,17 +1,16 @@
 #!/bin/bash
-#SBATCH --job-name=find_hard_scenarios
-#SBATCH --output=./logs/find_hard_scenarios_%j.out
-#SBATCH --error=./logs/find_hard_scenarios_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --job-name=find_hard_expert
+#SBATCH --output=./logs/find_hard_expert_%j.out
+#SBATCH --error=./logs/find_hard_expert_%j.err
+#SBATCH --time=6:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=64G
-#SBATCH --gres=gpu:4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=32G
 
-# Create logs directory if not exists
+# Create directories
 mkdir -p ./logs
-mkdir -p ./results
+mkdir -p ./results/expert_difficulty
 
 # Change to the pvp directory
 cd "${SLURM_SUBMIT_DIR:-$(dirname $0)}"
@@ -23,24 +22,22 @@ echo "Start time: $(date)"
 echo "Working directory: $(pwd)"
 echo "=============================================="
 
-# Activate conda environment (adjust path as needed)
+# Activate conda environment
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate pvp
 
-# Set environment variables for parallel processing
+# Set environment variables
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
-# Run the parallel script
-# Note: num_envs reduced from 25 to 10 to avoid CUDA OOM
-python find_hard_scenarios_parallel.py \
+# Run with parallel mode (no debug output, use behavioral metrics)
+python find_hard_scenarios_expert.py \
     --start_seed 1000 \
     --num_scenarios 1000 \
-    --num_trials 5 \
+    --parallel \
     --num_envs 10 \
     --save_interval 50 \
-    --checkpoint ./pretrained.zip \
-    --output ./results/hard_scenarios.json
+    --output ./results/expert_difficulty
 
 echo "=============================================="
 echo "End time: $(date)"
