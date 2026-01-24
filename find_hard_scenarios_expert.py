@@ -277,21 +277,35 @@ def run_single_trial(model, scenario_seed, args, deterministic=False):
 def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
     """
     Evaluate multiple scenarios in parallel using SubprocVecEnv.
-    Collects behavioral metrics (steering, braking, etc.) same as sequential version.
+    Supports multiple trials per scenario for averaging.
+    
+    With num_envs=25 and num_trials=5:
+    - Process 5 scenarios per batch, each with 5 parallel trials
+    - Total 25 environments running simultaneously
     """
     from pvp.sb3.common.vec_env import SubprocVecEnv
     from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
     
     all_results = []
     num_envs = args.num_envs
+    num_trials = getattr(args, 'num_trials', 1)
+    deterministic = not getattr(args, 'stochastic', False)
     
-    # Only process eps=0 for behavioral analysis (noise is disabled)
-    eps = 0
+    # Calculate how many scenarios we can process per batch
+    scenarios_per_batch = max(1, num_envs // num_trials)
     
     # Process scenarios in batches
-    for batch_start in range(0, len(scenario_seeds), num_envs):
-        batch_seeds = scenario_seeds[batch_start:batch_start + num_envs]
-        batch_size = len(batch_seeds)
+    for batch_start in range(0, len(scenario_seeds), scenarios_per_batch):
+        batch_seeds = scenario_seeds[batch_start:batch_start + scenarios_per_batch]
+        
+        # Create env list: each scenario repeated num_trials times
+        env_seeds = []
+        for seed in batch_seeds:
+            env_seeds.extend([seed] * num_trials)
+        
+        # Limit to num_envs
+        env_seeds = env_seeds[:num_envs]
+        batch_size = len(env_seeds)
         
         # Create parallel envs (always disable rendering in parallel mode)
         def make_env(seed):
@@ -305,7 +319,7 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
                 ))
             return _init
         
-        env_fns = [make_env(seed) for seed in batch_seeds]
+        env_fns = [make_env(seed) for seed in env_seeds]
         vec_env = SubprocVecEnv(env_fns)
         
         obs = vec_env.reset()
@@ -328,7 +342,7 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
         close_encounter_counts = [0] * batch_size  # Track total close encounters
         
         while not np.all(dones):
-            actions, _ = model.predict(obs, deterministic=True)
+            actions, _ = model.predict(obs, deterministic=deterministic)
             
             # Track actions for behavioral analysis
             for i in range(batch_size):
@@ -373,8 +387,10 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
         
         vec_env.close()
         
-        # Store results with behavioral metrics
-        for i, seed in enumerate(batch_seeds):
+        # Collect per-trial results and group by seed
+        trial_results = {seed: [] for seed in batch_seeds}
+        
+        for i, seed in enumerate(env_seeds):
             result = {
                 'reward': float(episode_rewards[i]),
                 'length': int(episode_lengths[i]),
@@ -409,9 +425,48 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
                     'avg_vehicle_distance': -1,  # Not tracked per-step in parallel mode
                 }
             
+            trial_results[seed].append(result)
+        
+        # Average results across trials for each seed
+        eps = 0
+        for seed in batch_seeds:
+            trials = trial_results[seed]
+            if not trials:
+                continue
+            
+            # Average numeric fields
+            avg_result = {
+                'reward': float(np.mean([t['reward'] for t in trials])),
+                'length': int(np.mean([t['length'] for t in trials])),
+                'route_completion': float(np.mean([t['route_completion'] for t in trials])),
+                'crash_vehicle': any(t['crash_vehicle'] for t in trials),
+                'crash_object': any(t['crash_object'] for t in trials),
+                'out_of_road': any(t['out_of_road'] for t in trials),
+                'arrive_dest': any(t['arrive_dest'] for t in trials),
+                'num_trials': len(trials),
+                'reward_std': float(np.std([t['reward'] for t in trials])),
+            }
+            
+            # Average behavioral metrics
+            behavior_trials = [t.get('behavior', {}) for t in trials if 'behavior' in t]
+            if behavior_trials:
+                avg_behavior = {}
+                for key in behavior_trials[0].keys():
+                    values = [b[key] for b in behavior_trials if key in b]
+                    if values:
+                        if key in ['min_vehicle_distance']:
+                            # Take minimum across trials
+                            avg_behavior[key] = float(min(v for v in values if v > 0)) if any(v > 0 for v in values) else -1
+                        elif key in ['total_close_encounters']:
+                            # Sum across trials, then divide by num_trials for average
+                            avg_behavior[key] = int(np.mean(values))
+                        else:
+                            avg_behavior[key] = float(np.mean(values))
+                avg_result['behavior'] = avg_behavior
+            
             all_results.append({
                 'scenario_seed': seed,
-                'eps_results': {eps: result}
+                'eps_results': {eps: avg_result}
             })
     
     return all_results
