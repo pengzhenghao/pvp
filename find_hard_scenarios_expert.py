@@ -560,6 +560,7 @@ def compute_difficulty_metrics(results_list, noise_levels):
         # Speed patterns
         speed_std = behavior.get('speed_std', 0)
         speed_min = behavior.get('speed_min', 0)
+        speed_mean = behavior.get('speed_mean', 0)
         
         # Traffic interaction metrics (NEW)
         min_vehicle_distance = behavior.get('min_vehicle_distance', -1)
@@ -567,7 +568,7 @@ def compute_difficulty_metrics(results_list, noise_levels):
         avg_vehicle_distance = behavior.get('avg_vehicle_distance', -1)
         total_close_encounters = behavior.get('total_close_encounters', 0)
         
-        # === Traffic Interaction Score (NEW) ===
+        # === Traffic Interaction Score ===
         # Higher = more traffic interaction = harder scenario
         traffic_score = 0
         if close_encounter_rate > 0:
@@ -576,6 +577,24 @@ def compute_difficulty_metrics(results_list, noise_levels):
             traffic_score += min(total_close_encounters / 100, 1.0)  # Cap at 100 encounters
         if min_vehicle_distance > 0 and min_vehicle_distance < 10:
             traffic_score += (10 - min_vehicle_distance) / 10  # Very close = bonus
+        
+        # === Blocking Score (NEW) ===
+        # Measures how much the ego car is being blocked/slowed down
+        # High blocking = forced to drive slowly + brake frequently + close to other cars
+        max_speed = 12.0  # Approximate max speed in MetaDrive (m/s)
+        speed_reduction = max(0, 1 - speed_mean / max_speed) if speed_mean > 0 else 1.0
+        
+        blocking_score = 0
+        if min_vehicle_distance > 0:
+            # Core: speed reduction * braking * proximity
+            proximity_factor = max(0, 1 - min_vehicle_distance / 15)  # 15m threshold
+            blocking_score = (
+                speed_reduction * 2 +           # Forced to slow down
+                brake_ratio * 3 +               # Frequent braking
+                hard_brake_ratio * 5 +          # Hard braking = really stuck
+                proximity_factor * 2 +          # Close to blocking vehicle
+                close_encounter_rate * 10       # Sustained close encounters
+            )
         
         # === Behavioral Stress Score ===
         # Higher = more stressful driving behavior
@@ -594,7 +613,7 @@ def compute_difficulty_metrics(results_list, noise_levels):
         else:
             proximity_danger = 0
         
-        # === Combined Difficulty Score ===
+        # === Combined Difficulty Score (v1 - without blocking) ===
         # Combines reward-based, robustness, traffic interaction, and behavioral metrics
         max_eps = max(noise_levels) if max(noise_levels) > 0 else 1.0  # Avoid division by zero
         combined_difficulty = (
@@ -603,8 +622,21 @@ def compute_difficulty_metrics(results_list, noise_levels):
             0.05 * (1 - robustness) +
             0.05 * (1 - failure_threshold / max_eps) +
             0.20 * behavioral_stress +       # Driving behavior
-            0.30 * traffic_score +           # Traffic interaction (NEW - highest weight)
+            0.30 * traffic_score +           # Traffic interaction
             0.30 * proximity_danger          # How close to other vehicles
+        )
+        
+        # === Combined Difficulty Score v2 (with blocking) ===
+        # Adds blocking score to better capture "stuck behind slow cars" scenarios
+        combined_difficulty_v2 = (
+            0.05 * reward_cv +
+            0.05 * (decay_rate / 100 if decay_rate > 0 else 0) +
+            0.05 * (1 - robustness) +
+            0.05 * (1 - failure_threshold / max_eps) +
+            0.15 * behavioral_stress +       # Driving behavior (reduced)
+            0.25 * traffic_score +           # Traffic interaction
+            0.20 * proximity_danger +        # How close to other vehicles
+            0.20 * blocking_score            # NEW: blocked/slowed down
         )
         
         # Check for any bad events
@@ -638,17 +670,21 @@ def compute_difficulty_metrics(results_list, noise_levels):
             'hard_brake_ratio': hard_brake_ratio,
             'accel_changes': accel_changes,
             'speed_std': speed_std,
-            # Traffic interaction metrics (NEW)
+            # Traffic interaction metrics
             'min_vehicle_distance': min_vehicle_distance,
             'close_encounter_rate': close_encounter_rate,
             'avg_vehicle_distance': avg_vehicle_distance,
             'total_close_encounters': total_close_encounters,
             'traffic_score': traffic_score,
+            # Speed metrics
+            'speed_mean': speed_mean,
             # Scores
             'behavioral_stress': behavioral_stress,
             'proximity_danger': proximity_danger,
-            # Combined
-            'combined_difficulty': combined_difficulty,
+            'blocking_score': blocking_score,  # NEW
+            # Combined (two versions)
+            'combined_difficulty': combined_difficulty,      # v1 without blocking
+            'combined_difficulty_v2': combined_difficulty_v2,  # v2 with blocking
             'any_bad_event': any_bad_event,
             # Raw data
             'eps_results': eps_results,
@@ -696,8 +732,14 @@ def save_results(processed_results, output_dir, noise_levels):
     # 11. By close encounters (descending = more times near other vehicles)
     by_encounters = sorted(processed_results, key=lambda x: x.get('total_close_encounters', 0), reverse=True)
     
-    # 12. By combined difficulty (descending)
+    # 12. By combined difficulty v1 (descending)
     by_combined = sorted(processed_results, key=lambda x: x['combined_difficulty'], reverse=True)
+    
+    # 13. By blocking score (descending = more blocked/slowed)
+    by_blocking = sorted(processed_results, key=lambda x: x.get('blocking_score', 0), reverse=True)
+    
+    # 14. By combined difficulty v2 with blocking (descending)
+    by_combined_v2 = sorted(processed_results, key=lambda x: x.get('combined_difficulty_v2', 0), reverse=True)
     
     # Save full results
     full_results = {
@@ -716,6 +758,8 @@ def save_results(processed_results, output_dir, noise_levels):
             'by_traffic_score_descending': [r['scenario_seed'] for r in by_traffic],
             'by_close_encounters_descending': [r['scenario_seed'] for r in by_encounters],
             'by_combined_difficulty_descending': [r['scenario_seed'] for r in by_combined],
+            'by_blocking_score_descending': [r['scenario_seed'] for r in by_blocking],
+            'by_combined_difficulty_v2_descending': [r['scenario_seed'] for r in by_combined_v2],
         },
         'all_scenarios': processed_results,
     }
@@ -727,10 +771,11 @@ def save_results(processed_results, output_dir, noise_levels):
     def save_summary(sorted_list, filename, sort_desc):
         with open(output_path / filename, 'w') as f:
             f.write(f"Hard Scenarios Summary (sorted by {sort_desc})\n")
-            f.write("=" * 170 + "\n")
+            f.write("=" * 190 + "\n")
             f.write(f"{'Rank':<5}{'Seed':<7}{'Reward':<9}{'Stress':<8}{'Brake%':<8}"
-                    f"{'SteerChg':<9}{'MinDist':<8}{'Traffic':<9}{'Encntrs':<9}{'Combined':<10}{'BadEvt':<8}\n")
-            f.write("-" * 170 + "\n")
+                    f"{'SteerChg':<9}{'MinDist':<8}{'Traffic':<9}{'Encntrs':<9}"
+                    f"{'Block':<8}{'Comb':<9}{'CombV2':<9}{'BadEvt':<8}\n")
+            f.write("-" * 190 + "\n")
             for i, r in enumerate(sorted_list[:100]):
                 min_dist = r.get('min_vehicle_distance', -1)
                 min_dist_str = f"{min_dist:.1f}" if min_dist >= 0 else "N/A"
@@ -742,7 +787,9 @@ def save_results(processed_results, output_dir, noise_levels):
                         f"{min_dist_str:<8}"
                         f"{r.get('traffic_score', 0):<9.3f}"
                         f"{r.get('total_close_encounters', 0):<9}"
-                        f"{r['combined_difficulty']:<10.3f}"
+                        f"{r.get('blocking_score', 0):<8.3f}"
+                        f"{r['combined_difficulty']:<9.3f}"
+                        f"{r.get('combined_difficulty_v2', 0):<9.3f}"
                         f"{'Y' if r['any_bad_event'] else 'N':<8}\n")
     
     save_summary(by_reward, 'sorted_by_reward.txt', 'baseline reward (low to high)')
@@ -752,7 +799,9 @@ def save_results(processed_results, output_dir, noise_levels):
     save_summary(by_traffic, 'sorted_by_traffic.txt', 'traffic score (high to low = more traffic)')
     save_summary(by_encounters, 'sorted_by_encounters.txt', 'close encounters (high to low)')
     save_summary(by_robustness, 'sorted_by_robustness.txt', 'robustness (low to high)')
-    save_summary(by_combined, 'sorted_by_combined.txt', 'combined difficulty (high to low)')
+    save_summary(by_combined, 'sorted_by_combined.txt', 'combined difficulty v1 (high to low)')
+    save_summary(by_blocking, 'sorted_by_blocking.txt', 'blocking score (high to low = more blocked)')
+    save_summary(by_combined_v2, 'sorted_by_combined_v2.txt', 'combined difficulty v2 with blocking (high to low)')
     
     print(f"\nResults saved to {output_path}/")
     print(f"  - hard_scenarios_expert.json (full results)")
@@ -763,7 +812,9 @@ def save_results(processed_results, output_dir, noise_levels):
     print(f"  - sorted_by_traffic.txt (high traffic interaction)")
     print(f"  - sorted_by_encounters.txt (many close vehicle encounters)")
     print(f"  - sorted_by_robustness.txt (low robustness = often fails)")
-    print(f"  - sorted_by_combined.txt (combined difficulty)")
+    print(f"  - sorted_by_combined.txt (combined difficulty v1)")
+    print(f"  - sorted_by_blocking.txt (blocking score = stuck behind cars)")
+    print(f"  - sorted_by_combined_v2.txt (combined difficulty v2 with blocking)")
     
     # Print top 10 from different criteria
     print("\n" + "=" * 80)
@@ -792,6 +843,25 @@ def save_results(processed_results, output_dir, noise_levels):
               f"Stress={r['behavioral_stress']:.2f}, "
               f"SteerChg={r['steering_changes']:.3f}, "
               f"HardBrake={r['hard_brake_ratio']*100:.0f}%")
+    
+    print("\n" + "=" * 80)
+    print("Top 10 Most Blocking (by Blocking Score):")
+    print("-" * 80)
+    for i, r in enumerate(by_blocking[:10]):
+        print(f"  {i+1}. Seed {r['scenario_seed']}: "
+              f"Blocking={r.get('blocking_score', 0):.2f}, "
+              f"SpeedMean={r.get('speed_mean', 0):.1f}m/s, "
+              f"Brake={r.get('brake_ratio', 0)*100:.1f}%")
+    
+    print("\n" + "=" * 80)
+    print("Top 10 Hardest Scenarios (by Combined Difficulty V2 with Blocking):")
+    print("-" * 80)
+    for i, r in enumerate(by_combined_v2[:10]):
+        print(f"  {i+1}. Seed {r['scenario_seed']}: "
+              f"Reward={r['baseline_reward']:.0f}, "
+              f"Traffic={r.get('traffic_score', 0):.2f}, "
+              f"Block={r.get('blocking_score', 0):.2f}, "
+              f"CombinedV2={r.get('combined_difficulty_v2', 0):.2f}")
     
     return by_combined
 

@@ -86,7 +86,7 @@ def main():
             sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
             interface_panel=["rgb_camera", "dashboard"],
-            daytime="08:30",
+            daytime="06:10",
             crash_vehicle_done=False,
             crash_object_done=False,
             cost_to_reward=False,
