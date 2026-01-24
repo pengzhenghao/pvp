@@ -109,6 +109,27 @@ class HumanInTheLoopEnv(SafeMetaDriveEnv):
         else:
             engine_info["lidar_obs"] = None
         
+        # Add vehicle distance info for difficulty assessment
+        try:
+            if self.agent is not None and hasattr(self.engine, 'traffic_manager'):
+                traffic_mgr = self.engine.traffic_manager
+                if hasattr(traffic_mgr, 'vehicles'):
+                    ego_pos = self.agent.position
+                    min_dist = float('inf')
+                    close_count = 0
+                    for v in traffic_mgr.vehicles:
+                        if v != self.agent:
+                            import numpy as np
+                            dist = np.linalg.norm(np.array(v.position) - np.array(ego_pos))
+                            if dist < min_dist:
+                                min_dist = dist
+                            if dist < 15:  # Within 15 meters
+                                close_count += 1
+                    engine_info["min_vehicle_distance"] = min_dist if min_dist != float('inf') else -1
+                    engine_info["close_vehicle_count"] = close_count
+        except Exception:
+            pass
+        
         return o, r, d, engine_info
 
     def _is_out_of_road(self, vehicle):

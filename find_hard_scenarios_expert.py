@@ -21,12 +21,15 @@ import time
 import numpy as np
 from pathlib import Path
 from collections import defaultdict
-
+import logging
 import gymnasium
 import gymnasium.spaces
 sys.modules['gym'] = gymnasium
 sys.modules['gym.spaces'] = gymnasium.spaces
 gymnasium.spaces.space = gymnasium.spaces
+# Suppress MetaDrive INFO logs to reduce noise in parallel mode
+logging.getLogger('metadrive').setLevel(logging.WARNING)
+logging.getLogger('panda3d').setLevel(logging.WARNING)
 
 
 def load_expert():
@@ -92,145 +95,183 @@ def make_env_config(scenario_seed, crash_vehicle_penalty=5.0, crash_object_penal
 
 def evaluate_scenario_single(model, scenario_seed, noise_levels, args):
     """
-    Evaluate a single scenario with different noise levels.
-    Returns statistics for each noise level, including behavioral stress indicators.
+    Evaluate a single scenario with multiple trials.
+    Returns averaged statistics across trials, including behavioral stress indicators.
     """
     from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
     
-    results = {}
+    num_trials = getattr(args, 'num_trials', 1)
+    deterministic = not getattr(args, 'stochastic', False)  # Default is deterministic
     
-    for eps in noise_levels:
-        env = HumanInTheLoopEnv(config=make_env_config(
-            scenario_seed, 
-            args.crash_vehicle_penalty,
-            args.crash_object_penalty,
-            args.out_of_road_penalty,
-            use_render=getattr(args, 'render', False)
-        ))
-        
-        obs = env.reset()
-        done = False
-        episode_reward = 0
-        episode_length = 0
-        route_completion = 0
-        crash_vehicle = False
-        crash_object = False
-        out_of_road = False
-        arrive_dest = False
-        
-        # Behavioral tracking (only for eps=0 baseline to analyze expert behavior)
-        steering_actions = []
-        accel_actions = []
-        speeds = []
-        min_vehicle_distance = float('inf')
-        close_vehicle_count = 0  # Count how often we're near other vehicles
-        vehicle_distances = []   # Track all vehicle distances for analysis
-        
-        while not done:
-            # Get expert action
-            action, _ = model.predict(obs, deterministic=True)
-            
-            # Track expert's original actions (before noise)
-            if eps == 0:
-                steering_actions.append(float(action[0]))
-                accel_actions.append(float(action[1]))
-            
-            # NOTE: Noise temporarily disabled - relying on behavioral metrics instead
-            # if eps > 0:
-            #     action = action.copy()
-            #     accel_noise = np.random.normal(eps * 0.3, eps * 0.5)
-            #     action[1] = np.clip(action[1] + accel_noise, -1, 1)
-            
-            obs, reward, done, info = env.step(action)
-            episode_reward += reward
-            episode_length += 1
-            
-            if isinstance(info, dict):
-                route_completion = info.get('route_completion', route_completion)
-                if info.get('crash_vehicle', False):
-                    crash_vehicle = True
-                if info.get('crash_object', False):
-                    crash_object = True
-                if info.get('out_of_road', False):
-                    out_of_road = True
-                if info.get('arrive_dest', False):
-                    arrive_dest = True
-                
-                # Track speed and distances (eps=0 only)
-                if eps == 0:
-                    # Get speed from info or observation
-                    speed = info.get('velocity', info.get('speed', 0))
-                    if isinstance(speed, (list, np.ndarray)):
-                        speed = np.linalg.norm(speed)
-                    speeds.append(speed)
-                    
-                    # Try to get vehicle distance from environment directly
-                    try:
-                        if hasattr(env, 'agent') and env.agent is not None:
-                            # Get surrounding vehicles from traffic manager
-                            if hasattr(env, 'engine') and hasattr(env.engine, 'traffic_manager'):
-                                traffic_mgr = env.engine.traffic_manager
-                                if hasattr(traffic_mgr, 'vehicles'):
-                                    ego_pos = env.agent.position
-                                    for v in traffic_mgr.vehicles:
-                                        if v != env.agent:
-                                            dist = np.linalg.norm(np.array(v.position) - np.array(ego_pos))
-                                            vehicle_distances.append(dist)
-                                            if dist < min_vehicle_distance:
-                                                min_vehicle_distance = dist
-                                            if dist < 15:  # Within 15 meters = close encounter
-                                                close_vehicle_count += 1
-                    except Exception:
-                        pass  # Silently ignore if we can't access vehicle info
-        
-        env.close()
-        
-        result = {
-            'reward': episode_reward,
-            'length': episode_length,
-            'route_completion': route_completion,
-            'crash_vehicle': crash_vehicle,
-            'crash_object': crash_object,
-            'out_of_road': out_of_road,
-            'arrive_dest': arrive_dest,
+    # Collect results from all trials
+    all_trial_results = []
+    
+    for trial in range(num_trials):
+        trial_result = run_single_trial(model, scenario_seed, args, deterministic)
+        all_trial_results.append(trial_result)
+    
+    # Average results across trials
+    results = {}
+    eps = 0  # We only use eps=0 now
+    
+    if num_trials == 1:
+        results[eps] = all_trial_results[0]
+    else:
+        # Average numeric fields (convert to native Python types for JSON serialization)
+        avg_result = {
+            'reward': float(np.mean([r['reward'] for r in all_trial_results])),
+            'length': float(np.mean([r['length'] for r in all_trial_results])),
+            'route_completion': float(np.mean([r['route_completion'] for r in all_trial_results])),
+            'crash_vehicle': bool(any(r['crash_vehicle'] for r in all_trial_results)),
+            'crash_object': bool(any(r['crash_object'] for r in all_trial_results)),
+            'out_of_road': bool(any(r['out_of_road'] for r in all_trial_results)),
+            'arrive_dest': bool(np.mean([r['arrive_dest'] for r in all_trial_results]) > 0.5),
+            # Store individual trial data for analysis
+            'trial_rewards': [float(r['reward']) for r in all_trial_results],
+            'trial_routes': [float(r['route_completion']) for r in all_trial_results],
+            'reward_std': float(np.std([r['reward'] for r in all_trial_results])),
         }
         
-        # Add behavioral metrics for baseline (eps=0)
-        if eps == 0 and len(steering_actions) > 1:
-            steering_arr = np.array(steering_actions)
-            accel_arr = np.array(accel_actions)
-            
-            # Calculate traffic interaction metrics
-            close_encounter_rate = close_vehicle_count / max(episode_length, 1)
-            avg_vehicle_dist = np.mean(vehicle_distances) if vehicle_distances else -1
-            
-            result['behavior'] = {
-                # Steering behavior
-                'steering_std': float(np.std(steering_arr)),
-                'steering_abs_mean': float(np.mean(np.abs(steering_arr))),
-                'steering_changes': float(np.mean(np.abs(np.diff(steering_arr)))),  # How jerky
-                
-                # Braking behavior
-                'brake_ratio': float(np.mean(accel_arr < -0.1)),  # Fraction of time braking
-                'hard_brake_ratio': float(np.mean(accel_arr < -0.5)),  # Hard braking
-                'accel_std': float(np.std(accel_arr)),
-                'accel_changes': float(np.mean(np.abs(np.diff(accel_arr)))),
-                
-                # Speed behavior
-                'speed_mean': float(np.mean(speeds)) if speeds else 0,
-                'speed_std': float(np.std(speeds)) if len(speeds) > 1 else 0,
-                'speed_min': float(np.min(speeds)) if speeds else 0,
-                
-                # Traffic interaction metrics (NEW)
-                'min_vehicle_distance': float(min_vehicle_distance) if min_vehicle_distance != float('inf') else -1,
-                'close_encounter_rate': float(close_encounter_rate),  # How often near other vehicles
-                'avg_vehicle_distance': float(avg_vehicle_dist),  # Average distance to other vehicles
-                'total_close_encounters': int(close_vehicle_count),  # Total close passes
-            }
+        # Average behavioral metrics
+        behaviors = [r.get('behavior', {}) for r in all_trial_results if 'behavior' in r]
+        if behaviors:
+            avg_behavior = {}
+            for key in behaviors[0].keys():
+                values = [b.get(key, 0) for b in behaviors]
+                if key == 'total_close_encounters':
+                    avg_behavior[key] = int(np.mean(values))
+                else:
+                    avg_behavior[key] = float(np.mean(values))
+            avg_result['behavior'] = avg_behavior
         
-        results[eps] = result
+        results[eps] = avg_result
     
     return results
+
+
+def run_single_trial(model, scenario_seed, args, deterministic=False):
+    """Run a single trial for a scenario."""
+    from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+    
+    env = HumanInTheLoopEnv(config=make_env_config(
+        scenario_seed, 
+        args.crash_vehicle_penalty,
+        args.crash_object_penalty,
+        args.out_of_road_penalty,
+        use_render=getattr(args, 'render', False)
+    ))
+    
+    obs = env.reset()
+    done = False
+    episode_reward = 0
+    episode_length = 0
+    route_completion = 0
+    crash_vehicle = False
+    crash_object = False
+    out_of_road = False
+    arrive_dest = False
+    
+    # Behavioral tracking
+    steering_actions = []
+    accel_actions = []
+    speeds = []
+    min_vehicle_distance = float('inf')
+    close_vehicle_count = 0
+    vehicle_distances = []
+    
+    while not done:
+        # Get expert action (deterministic=False for stochastic policy)
+        action, _ = model.predict(obs, deterministic=deterministic)
+        
+        # Track expert's actions
+        steering_actions.append(float(action[0]))
+        accel_actions.append(float(action[1]))
+        
+        obs, reward, done, info = env.step(action)
+        episode_reward += reward
+        episode_length += 1
+        
+        if isinstance(info, dict):
+            route_completion = info.get('route_completion', route_completion)
+            if info.get('crash_vehicle', False):
+                crash_vehicle = True
+            if info.get('crash_object', False):
+                crash_object = True
+            if info.get('out_of_road', False):
+                out_of_road = True
+            if info.get('arrive_dest', False):
+                arrive_dest = True
+            
+            # Track speed
+            speed = info.get('velocity', info.get('speed', 0))
+            if isinstance(speed, (list, np.ndarray)):
+                speed = np.linalg.norm(speed)
+            speeds.append(speed)
+            
+            # Try to get vehicle distance from environment directly
+            try:
+                if hasattr(env, 'agent') and env.agent is not None:
+                    if hasattr(env, 'engine') and hasattr(env.engine, 'traffic_manager'):
+                        traffic_mgr = env.engine.traffic_manager
+                        if hasattr(traffic_mgr, 'vehicles'):
+                            ego_pos = env.agent.position
+                            for v in traffic_mgr.vehicles:
+                                if v != env.agent:
+                                    dist = np.linalg.norm(np.array(v.position) - np.array(ego_pos))
+                                    vehicle_distances.append(dist)
+                                    if dist < min_vehicle_distance:
+                                        min_vehicle_distance = dist
+                                    if dist < 15:  # Within 15 meters = close encounter
+                                        close_vehicle_count += 1
+            except Exception:
+                pass
+    
+    env.close()
+    
+    result = {
+        'reward': episode_reward,
+        'length': episode_length,
+        'route_completion': route_completion,
+        'crash_vehicle': crash_vehicle,
+        'crash_object': crash_object,
+        'out_of_road': out_of_road,
+        'arrive_dest': arrive_dest,
+    }
+    
+    # Add behavioral metrics
+    if len(steering_actions) > 1:
+        steering_arr = np.array(steering_actions)
+        accel_arr = np.array(accel_actions)
+        
+        # Calculate traffic interaction metrics
+        close_encounter_rate = close_vehicle_count / max(episode_length, 1)
+        avg_vehicle_dist = np.mean(vehicle_distances) if vehicle_distances else -1
+        
+        result['behavior'] = {
+            # Steering behavior
+            'steering_std': float(np.std(steering_arr)),
+            'steering_abs_mean': float(np.mean(np.abs(steering_arr))),
+            'steering_changes': float(np.mean(np.abs(np.diff(steering_arr)))),
+            
+            # Braking behavior
+            'brake_ratio': float(np.mean(accel_arr < -0.1)),
+            'hard_brake_ratio': float(np.mean(accel_arr < -0.5)),
+            'accel_std': float(np.std(accel_arr)),
+            'accel_changes': float(np.mean(np.abs(np.diff(accel_arr)))),
+            
+            # Speed behavior
+            'speed_mean': float(np.mean(speeds)) if speeds else 0,
+            'speed_std': float(np.std(speeds)) if len(speeds) > 1 else 0,
+            'speed_min': float(np.min(speeds)) if speeds else 0,
+            
+            # Traffic interaction metrics
+            'min_vehicle_distance': float(min_vehicle_distance) if min_vehicle_distance != float('inf') else -1,
+            'close_encounter_rate': float(close_encounter_rate),
+            'avg_vehicle_distance': float(avg_vehicle_dist),
+            'total_close_encounters': int(close_vehicle_count),
+        }
+    
+    return result
 
 
 def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
@@ -284,6 +325,7 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
         accel_history = [[] for _ in range(batch_size)]
         speed_history = [[] for _ in range(batch_size)]
         min_vehicle_distances = [float('inf')] * batch_size
+        close_encounter_counts = [0] * batch_size  # Track total close encounters
         
         while not np.all(dones):
             actions, _ = model.predict(obs, deterministic=True)
@@ -318,10 +360,14 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
                             speed = np.linalg.norm(speed)
                         speed_history[i].append(speed)
                         
-                        # Track min distance to vehicles
-                        vehicle_dist = infos[i].get('distance_to_vehicles', infos[i].get('min_distance', float('inf')))
-                        if vehicle_dist is not None and vehicle_dist < min_vehicle_distances[i]:
+                        # Track min distance to vehicles (now from HumanInTheLoopEnv info)
+                        vehicle_dist = infos[i].get('min_vehicle_distance', -1)
+                        if vehicle_dist > 0 and vehicle_dist < min_vehicle_distances[i]:
                             min_vehicle_distances[i] = vehicle_dist
+                        
+                        # Track close encounters (from HumanInTheLoopEnv info)
+                        close_count = infos[i].get('close_vehicle_count', 0)
+                        close_encounter_counts[i] += close_count
             
             dones = dones | new_dones
         
@@ -344,6 +390,7 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
                 steering_arr = np.array(steering_history[i])
                 accel_arr = np.array(accel_history[i])
                 speeds = speed_history[i]
+                ep_len = int(episode_lengths[i])
                 
                 result['behavior'] = {
                     'steering_std': float(np.std(steering_arr)),
@@ -357,6 +404,9 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
                     'speed_std': float(np.std(speeds)) if len(speeds) > 1 else 0,
                     'speed_min': float(np.min(speeds)) if speeds else 0,
                     'min_vehicle_distance': float(min_vehicle_distances[i]) if min_vehicle_distances[i] != float('inf') else -1,
+                    'close_encounter_rate': float(close_encounter_counts[i]) / max(ep_len, 1),
+                    'total_close_encounters': int(close_encounter_counts[i]),
+                    'avg_vehicle_distance': -1,  # Not tracked per-step in parallel mode
                 }
             
             all_results.append({
@@ -697,6 +747,8 @@ def main():
     parser.add_argument("--num_scenarios", type=int, default=1000, help="Number of scenarios to test")
     parser.add_argument("--parallel", action="store_true", help="Use parallel evaluation")
     parser.add_argument("--num_envs", type=int, default=10, help="Number of parallel environments")
+    parser.add_argument("--num_trials", type=int, default=1, help="Number of trials per scenario (for averaging)")
+    parser.add_argument("--stochastic", action="store_true", help="Use stochastic policy (deterministic=False)")
     parser.add_argument("--output", type=str, default="./results/expert_difficulty", help="Output directory")
     parser.add_argument("--save_interval", type=int, default=50, help="Save results every N scenarios")
     parser.add_argument("--noise_levels", type=str, default="0",
@@ -729,6 +781,8 @@ def main():
     
     print(f"\nEvaluating {len(scenario_seeds)} scenarios")
     print(f"Mode: {'Parallel' if args.parallel else 'Sequential'}")
+    print(f"Trials per scenario: {args.num_trials}")
+    print(f"Policy: {'Stochastic' if args.stochastic else 'Deterministic'}")
     if args.parallel:
         print(f"Parallel environments: {args.num_envs}")
     print("=" * 60)
@@ -768,7 +822,8 @@ def main():
             
             # Print current scenario's metrics
             behavior = eps_results.get(0, {}).get('behavior', {})
-            print(f"\n[{i+1}/{len(scenario_seeds)}] Seed {seed}:")
+            trial_info = f" ({args.num_trials} trials avg)" if args.num_trials > 1 else ""
+            print(f"\n[{i+1}/{len(scenario_seeds)}] Seed {seed}{trial_info}:")
             print(f"  Reward={current['baseline_reward']:.0f}, Route={current['baseline_route_completion']*100:.0f}%")
             print(f"  SteerSTD={behavior.get('steering_std', 0):.3f}, SteerChg={behavior.get('steering_changes', 0):.3f}")
             print(f"  Brake={behavior.get('brake_ratio', 0)*100:.1f}%, HardBrake={behavior.get('hard_brake_ratio', 0)*100:.1f}%")
@@ -807,11 +862,11 @@ def main():
     # Statistics
     rewards = [r['baseline_reward'] for r in processed]
     routes = [r['baseline_route_completion'] for r in processed]
-    sensitivities = [r['noise_sensitivity'] for r in processed]
+    traffic_scores = [r.get('traffic_score', 0) for r in processed]
     
     print(f"\n  Reward stats: min={min(rewards):.1f}, max={max(rewards):.1f}, mean={np.mean(rewards):.1f}")
     print(f"  Route completion stats: min={min(routes)*100:.0f}%, max={max(routes)*100:.0f}%, mean={np.mean(routes)*100:.0f}%")
-    print(f"  Sensitivity stats: min={min(sensitivities):.3f}, max={max(sensitivities):.3f}, mean={np.mean(sensitivities):.3f}")
+    print(f"  Traffic score stats: min={min(traffic_scores):.2f}, max={max(traffic_scores):.2f}, mean={np.mean(traffic_scores):.2f}")
 
 
 if __name__ == "__main__":
