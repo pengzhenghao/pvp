@@ -71,10 +71,11 @@ def load_expert():
     return model
 
 
-def make_env_config(scenario_seed, crash_vehicle_penalty=5.0, crash_object_penalty=5.0, out_of_road_penalty=5.0):
+def make_env_config(scenario_seed, crash_vehicle_penalty=5.0, crash_object_penalty=5.0, 
+                     out_of_road_penalty=5.0, use_render=False):
     """Create lidar-based environment config (no image observation)."""
     return dict(
-        use_render=True,
+        use_render=use_render,
         manual_control=False,
         start_seed=scenario_seed,
         num_scenarios=1,
@@ -103,7 +104,8 @@ def evaluate_scenario_single(model, scenario_seed, noise_levels, args):
             scenario_seed, 
             args.crash_vehicle_penalty,
             args.crash_object_penalty,
-            args.out_of_road_penalty
+            args.out_of_road_penalty,
+            use_render=getattr(args, 'render', False)
         ))
         
         obs = env.reset()
@@ -250,14 +252,15 @@ def evaluate_scenarios_parallel(model, scenario_seeds, noise_levels, args):
         batch_seeds = scenario_seeds[batch_start:batch_start + num_envs]
         batch_size = len(batch_seeds)
         
-        # Create parallel envs
+        # Create parallel envs (always disable rendering in parallel mode)
         def make_env(seed):
             def _init():
                 return HumanInTheLoopEnv(config=make_env_config(
                     seed,
                     args.crash_vehicle_penalty,
                     args.crash_object_penalty, 
-                    args.out_of_road_penalty
+                    args.out_of_road_penalty,
+                    use_render=False  # Must be False for parallel/headless
                 ))
             return _init
         
@@ -702,7 +705,13 @@ def main():
     parser.add_argument("--crash_vehicle_penalty", type=float, default=5.0)
     parser.add_argument("--crash_object_penalty", type=float, default=5.0)
     parser.add_argument("--out_of_road_penalty", type=float, default=5.0)
+    parser.add_argument("--render", action="store_true", help="Enable rendering (only works in sequential mode)")
     args = parser.parse_args()
+    
+    # Force render=False in parallel mode (no display on headless servers)
+    if args.parallel and args.render:
+        print("WARNING: --render is not supported in parallel mode. Disabling rendering.")
+        args.render = False
     
     start_time = time.time()
     
