@@ -432,6 +432,14 @@ class EvalCallback(EventCallback):
             self._episode_expert_steering_diffs = []  # Steering diffs
             self._episode_expert_accel_diffs = []  # Acceleration diffs
         
+        # ===== Traffic proximity tracking (NEW) =====
+        if not hasattr(self, '_episode_min_vehicle_distance'):
+            self._episode_min_vehicle_distance = float('inf')
+            self._episode_close_encounters = 0  # Total times within 15m of another vehicle
+            self._episode_safe_passes = 0  # Close (<15m) but no crash this step
+            self._episode_dangerous_close = 0  # Close (<15m) AND crashed this step
+            self._episode_length = 0
+        
         # ===== Track actions at every step =====
         if action is not None:
             action_np = np.array(action).flatten()
@@ -526,6 +534,25 @@ class EvalCallback(EventCallback):
         if info.get("out_of_road", False):
             self._episode_crash_flags['out_of_road'] = True
             self._episode_crash_counts['out_of_road'] += 1
+        
+        # ===== Track traffic proximity (NEW) =====
+        self._episode_length += 1
+        
+        # Track minimum vehicle distance
+        vehicle_dist = info.get('min_vehicle_distance', -1)
+        if vehicle_dist > 0 and vehicle_dist < self._episode_min_vehicle_distance:
+            self._episode_min_vehicle_distance = vehicle_dist
+        
+        # Track close encounters and safety
+        close_count = info.get('close_vehicle_count', 0)
+        if close_count > 0:
+            self._episode_close_encounters += close_count
+            # Check if crashed this step
+            step_crash = (info.get("crash_vehicle", False) or info.get("crash_object", False))
+            if step_crash:
+                self._episode_dangerous_close += 1  # Close + crashed
+            else:
+                self._episode_safe_passes += 1  # Close but safe
 
         if locals_["done"]:
             maybe_is_success = info.get("is_success")
@@ -593,6 +620,32 @@ class EvalCallback(EventCallback):
                 self.evaluations_info_buffer["crash_count_object"].append(self._episode_crash_counts['crash_object'])
                 self.evaluations_info_buffer["crash_count_building"].append(self._episode_crash_counts['crash_building'])
                 self.evaluations_info_buffer["crash_count_sidewalk"].append(self._episode_crash_counts['crash_sidewalk'])
+            
+            # ===== Traffic proximity metrics (NEW) =====
+            if hasattr(self, '_episode_min_vehicle_distance'):
+                # Minimum distance to any vehicle during episode
+                min_dist = self._episode_min_vehicle_distance if self._episode_min_vehicle_distance != float('inf') else -1
+                self.evaluations_info_buffer["min_vehicle_distance"].append(min_dist)
+                
+                # Close encounter statistics
+                self.evaluations_info_buffer["total_close_encounters"].append(self._episode_close_encounters)
+                
+                # Close encounter rate (encounters per step)
+                ep_len = max(self._episode_length, 1)
+                close_encounter_rate = self._episode_close_encounters / ep_len
+                self.evaluations_info_buffer["close_encounter_rate"].append(close_encounter_rate)
+                
+                # Safe passes vs dangerous close encounters
+                self.evaluations_info_buffer["safe_pass_count"].append(self._episode_safe_passes)
+                self.evaluations_info_buffer["dangerous_close_count"].append(self._episode_dangerous_close)
+                
+                # Close encounter crash rate: what % of close encounters resulted in crash
+                total_close_steps = self._episode_safe_passes + self._episode_dangerous_close
+                if total_close_steps > 0:
+                    close_crash_rate = self._episode_dangerous_close / total_close_steps
+                else:
+                    close_crash_rate = 0
+                self.evaluations_info_buffer["close_encounter_crash_rate"].append(close_crash_rate)
             
             # ===== Compute and store episode action statistics =====
             if hasattr(self, '_episode_actions') and len(self._episode_actions) > 0:
@@ -692,6 +745,13 @@ class EvalCallback(EventCallback):
             self._episode_crash_expert_diffs = []
             self._episode_expert_steering_diffs = []
             self._episode_expert_accel_diffs = []
+            
+            # Reset traffic proximity tracking (NEW)
+            self._episode_min_vehicle_distance = float('inf')
+            self._episode_close_encounters = 0
+            self._episode_safe_passes = 0
+            self._episode_dangerous_close = 0
+            self._episode_length = 0
 
         if "raw_action" in info:
             self.evaluations_info_buffer["raw_action"].append(info["raw_action"])

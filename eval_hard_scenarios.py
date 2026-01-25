@@ -262,6 +262,13 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
         'expert_steering_diff': [],
         'expert_accel_diff': [],
         'expert_agreement_ratio': [],
+        # Traffic proximity metrics (NEW)
+        'min_vehicle_distance': [],          # Minimum distance to any vehicle during episode
+        'total_close_encounters': [],        # Total times within 15m of another vehicle
+        'close_encounter_rate': [],          # Close encounters per step
+        'safe_pass_count': [],               # Times passed close (<15m) without crash
+        'dangerous_close_count': [],         # Times close (<15m) AND crashed
+        'close_encounter_crash_rate': [],    # Crash rate during close encounters
     }
     
     for ep in range(num_episodes):
@@ -281,6 +288,11 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
         had_crash_vehicle = False
         had_crash_object = False
         had_out_of_road = False
+        # Traffic proximity tracking (NEW)
+        min_vehicle_distance = float('inf')
+        total_close_encounters = 0
+        safe_pass_count = 0        # Close (<15m) but no crash at that moment
+        dangerous_close_count = 0  # Close (<15m) AND crashed at that moment
         
         while not done:
             action, _ = model.predict(obs, deterministic=True)
@@ -304,16 +316,32 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
             episode_length += 1
             
             # Track crashes per step (cumulative across entire episode)
+            step_crash = False
             if info.get('crash_vehicle', False):
                 had_crash_vehicle = True
                 crash_count += 1
+                step_crash = True
             if info.get('crash_object', False):
                 had_crash_object = True
                 crash_count += 1
+                step_crash = True
             if info.get('out_of_road', False):
                 had_out_of_road = True
             if had_crash_vehicle or had_crash_object or had_out_of_road:
                 had_bad_event = True
+            
+            # Track traffic proximity (NEW)
+            vehicle_dist = info.get('min_vehicle_distance', -1)
+            if vehicle_dist > 0 and vehicle_dist < min_vehicle_distance:
+                min_vehicle_distance = vehicle_dist
+            
+            close_count = info.get('close_vehicle_count', 0)
+            if close_count > 0:
+                total_close_encounters += close_count
+                if step_crash:
+                    dangerous_close_count += 1  # Crashed while close to vehicle
+                else:
+                    safe_pass_count += 1  # Close but didn't crash
         
         # Episode-level metrics
         route_completion = info.get('route_completion', 0)
@@ -351,6 +379,18 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
             results['expert_steering_diff'].append(np.mean(episode_steering_diffs))
             results['expert_accel_diff'].append(np.mean(episode_accel_diffs))
             results['expert_agreement_ratio'].append(np.mean(np.array(episode_expert_diffs) < 0.3))
+        
+        # Traffic proximity metrics (NEW)
+        results['min_vehicle_distance'].append(float(min_vehicle_distance) if min_vehicle_distance != float('inf') else -1)
+        results['total_close_encounters'].append(total_close_encounters)
+        close_encounter_rate = total_close_encounters / max(episode_length, 1)
+        results['close_encounter_rate'].append(close_encounter_rate)
+        results['safe_pass_count'].append(safe_pass_count)
+        results['dangerous_close_count'].append(dangerous_close_count)
+        # Crash rate during close encounters: how often we crash when close to other vehicles
+        total_close_steps = safe_pass_count + dangerous_close_count
+        close_encounter_crash_rate = dangerous_close_count / max(total_close_steps, 1) if total_close_steps > 0 else 0
+        results['close_encounter_crash_rate'].append(close_encounter_crash_rate)
     
     # Only close env if we created it (not shared)
     if owns_env:
@@ -383,6 +423,16 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
         summary['expert_steering_diff'] = float(np.mean(results['expert_steering_diff']))
         summary['expert_accel_diff'] = float(np.mean(results['expert_accel_diff']))
         summary['expert_agreement_ratio'] = float(np.mean(results['expert_agreement_ratio']))
+    
+    # Add traffic proximity metrics (NEW)
+    valid_distances = [d for d in results['min_vehicle_distance'] if d > 0]
+    summary['min_vehicle_distance'] = float(np.min(valid_distances)) if valid_distances else -1
+    summary['avg_min_vehicle_distance'] = float(np.mean(valid_distances)) if valid_distances else -1
+    summary['total_close_encounters'] = float(np.mean(results['total_close_encounters']))
+    summary['close_encounter_rate'] = float(np.mean(results['close_encounter_rate']))
+    summary['safe_pass_count'] = float(np.mean(results['safe_pass_count']))
+    summary['dangerous_close_count'] = float(np.mean(results['dangerous_close_count']))
+    summary['close_encounter_crash_rate'] = float(np.mean(results['close_encounter_crash_rate']))
     
     return summary
 
@@ -530,6 +580,21 @@ def main():
             expert_agreement = [r['expert_agreement_ratio'] for r in model_results]
             print(f"  Expert Action Diff (L2): {np.mean(expert_diffs):.3f}")
             print(f"  Expert Agreement Ratio: {np.mean(expert_agreement)*100:.1f}%")
+        
+        # Traffic proximity metrics (NEW)
+        if 'min_vehicle_distance' in model_results[0]:
+            min_dists = [r['min_vehicle_distance'] for r in model_results if r['min_vehicle_distance'] > 0]
+            close_encounters = [r['total_close_encounters'] for r in model_results]
+            safe_passes = [r['safe_pass_count'] for r in model_results]
+            dangerous = [r['dangerous_close_count'] for r in model_results]
+            close_crash_rate = [r['close_encounter_crash_rate'] for r in model_results]
+            
+            print(f"  -- Traffic Proximity Metrics --")
+            print(f"  Min Vehicle Distance: {np.mean(min_dists):.1f}m (min={np.min(min_dists):.1f}m)" if min_dists else "  Min Vehicle Distance: N/A")
+            print(f"  Close Encounters (avg): {np.mean(close_encounters):.1f}")
+            print(f"  Safe Passes (close but no crash): {np.mean(safe_passes):.1f}")
+            print(f"  Dangerous Close (close + crash): {np.mean(dangerous):.1f}")
+            print(f"  Close Encounter Crash Rate: {np.mean(close_crash_rate)*100:.1f}%")
     
     # Save results
     with open(output_path / "hard_scenario_results.json", 'w') as f:
@@ -557,6 +622,11 @@ def main():
             }
             if 'expert_agreement_ratio' in results[0]:
                 metrics_by_model[name]['expert_agreement'] = [r['expert_agreement_ratio'] for r in results]
+            # Traffic proximity metrics
+            if 'close_encounter_crash_rate' in results[0]:
+                metrics_by_model[name]['close_encounter_crash_rate'] = [r['close_encounter_crash_rate'] for r in results]
+                metrics_by_model[name]['total_close_encounters'] = [r['total_close_encounters'] for r in results]
+                metrics_by_model[name]['safe_pass_count'] = [r['safe_pass_count'] for r in results]
         
         # Print comparison table
         print(f"\n{'Metric':<30}", end="")
@@ -574,6 +644,10 @@ def main():
             ('any_bad_event', 'Any Bad Event Rate', '{:.1%}'),
             ('crash_vehicle', 'Crash Vehicle Rate', '{:.1%}'),
             ('expert_agreement', 'Expert Agreement', '{:.1%}'),
+            # Traffic proximity metrics
+            ('total_close_encounters', 'Close Encounters (avg)', '{:.1f}'),
+            ('safe_pass_count', 'Safe Passes (avg)', '{:.1f}'),
+            ('close_encounter_crash_rate', 'Close Encounter Crash Rate', '{:.1%}'),
         ]
         
         for key, label, fmt in metric_display:
