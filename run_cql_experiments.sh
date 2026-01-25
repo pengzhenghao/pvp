@@ -1,75 +1,66 @@
 #!/bin/bash
-# ============================================================
-# CQL (Conservative Q-Learning) Experiments
-# 2 个 GPU，分两轮运行
-# 第一轮: 15000, 10000
-# 第二轮: 12500, 7500
-# ============================================================
 
-# ============================================================
-# GPU Detection
-# ============================================================
-if [ -n "$SLURM_NUM_GPUS" ]; then
-    AVAILABLE_GPUS=$SLURM_NUM_GPUS
-elif [ -n "$SLURM_GPUS_ON_NODE" ]; then
-    AVAILABLE_GPUS=$SLURM_GPUS_ON_NODE
-elif [ -n "$CUDA_VISIBLE_DEVICES" ]; then
-    AVAILABLE_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
-else
-    AVAILABLE_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
-    if [ "$AVAILABLE_GPUS" -eq 0 ]; then
-        AVAILABLE_GPUS=2
-    fi
+killall python -9 2>/dev/null || true
+
+# CQL (Conservative Q-Learning) Experiment Script
+# This script runs CQL experiments with different data amounts
+# Each data amount runs on a separate GPU (5 data amounts on 5 GPUs)
+#
+# Usage:
+#   ./run_cql_experiments.sh        # Normal mode (eval_freq=100, 500 episodes)
+#   ./run_cql_experiments.sh fast   # Fast mode (eval_freq=1000, 50 episodes)
+#
+# Using optimal hyperparameters found: alpha=10.0, temp=1.0, num_random=10 (defaults)
+
+# Base directory
+BASE_DIR="/home/caihy/pvp"
+SCRIPT="train_bc_metadrive_online.py"
+BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
+
+# Check for fast mode
+FAST_MODE=false
+if [ "$1" == "fast" ]; then
+    FAST_MODE=true
 fi
 
-echo "Detected $AVAILABLE_GPUS available GPU(s)"
-
-# ============================================================
-# Configuration
-# ============================================================
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="${SCRIPT_DIR}"
-SCRIPT="train_bc_metadrive_online.py"
-BUFFER_PATH="${BASE_DIR}/data_buffer_20000.npz"
-
-# Training parameters
+# Common parameters
 BC_TRAINING_TIMESTEPS=2000
-SAVE_FREQ=1000
+SAVE_FREQ=100
 SEED=0
 
-# Crash penalty parameters
+# Crash penalty parameters (directly affect reward)
 CRASH_VEHICLE_PENALTY=5.0
 CRASH_OBJECT_PENALTY=5.0
 OUT_OF_ROAD_PENALTY=5.0
+
+# Mode-specific parameters
+if [ "$FAST_MODE" == "true" ]; then
+    EVAL_FREQ=100
+    N_EVAL_EPISODES=25
+    SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
+    WANDB_PROJECT="0121mainexp"
+    echo "*** FAST MODE ENABLED ***"
+else
+    EVAL_FREQ=100
+    N_EVAL_EPISODES=500
+    SKIP_PRETRAIN_EVAL=""
+    WANDB_PROJECT="0121mainexpfull"
+fi
 
 # CQL optimal hyperparameters
 CQL_ALPHA=10.0
 CQL_TEMP=1.0
 NUM_RANDOM_ACTIONS=10
 
-# Check for fast mode
-FAST_MODE="false"
-if [ "$1" == "fast" ]; then
-    FAST_MODE="true"
-    EVAL_FREQ=100
-    N_EVAL_EPISODES=25
-    SKIP_PRETRAIN_EVAL="--skip_pretrain_eval"
-    WANDB_PROJECT="0123mainexp"
-else
-    EVAL_FREQ=500
-    N_EVAL_EPISODES=200
-    SKIP_PRETRAIN_EVAL=""
-    WANDB_PROJECT="0123mainexp"
-fi
-
 # Function to run a single experiment
 run_experiment() {
     local GPU_ID=$1
     local DATA_STEPS=$2
     
+    # Create descriptive experiment name
     local EXP_NAME="cql_data${DATA_STEPS}_alpha${CQL_ALPHA}_seed${SEED}"
     
-    echo "  GPU ${GPU_ID}: ${EXP_NAME}"
+    echo "Starting experiment: ${EXP_NAME} on GPU ${GPU_ID}"
     
     PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=${GPU_ID} python ${BASE_DIR}/${SCRIPT} \
         --exp_name "${EXP_NAME}" \
@@ -90,47 +81,54 @@ run_experiment() {
         ${SKIP_PRETRAIN_EVAL} \
         --wandb_project "${WANDB_PROJECT}" \
         > "${BASE_DIR}/logs/${EXP_NAME}.log" 2>&1 &
+    
+    echo "Experiment ${EXP_NAME} started with PID $!"
 }
 
 # Create logs directory
 mkdir -p ${BASE_DIR}/logs
 
 # ============================================================
-# Run experiments - 分两轮
+# Experiment Configuration
+# ============================================================
+if [ "$FAST_MODE" == "true" ]; then
+    DATA_STEPS_LIST=(2000)
+else
+    DATA_STEPS_LIST=(6000 5000 4000 3000 2000)
+fi
+
+# ============================================================
+# Run experiments
 # ============================================================
 
 echo "============================================================"
 echo "Starting CQL Experiments"
 echo "============================================================"
 echo "Mode: $([ "$FAST_MODE" == "true" ] && echo "FAST" || echo "NORMAL")"
-echo "Available GPUs: ${AVAILABLE_GPUS}"
-echo "CQL alpha: ${CQL_ALPHA}, temp: ${CQL_TEMP}"
-echo "Round 1: 15000, 10000"
-echo "Round 2: 12500, 7500"
+echo "Data steps: ${DATA_STEPS_LIST[@]}"
+echo "CQL alpha: ${CQL_ALPHA}"
+echo "CQL temp: ${CQL_TEMP}"
+echo "Num random actions: ${NUM_RANDOM_ACTIONS}"
 echo "Training timesteps: ${BC_TRAINING_TIMESTEPS}"
 echo "Eval freq: ${EVAL_FREQ}"
 echo "Eval episodes: ${N_EVAL_EPISODES}"
+echo "Loading buffer from: ${BUFFER_PATH}"
+echo "============================================================"
+echo ""
+echo "CQL adds conservative penalty to prevent Q-value overestimation"
 echo "============================================================"
 
-# Round 1: 15000, 10000
-echo ""
-echo "Round 1: data sizes 15000, 10000"
-run_experiment 0 15000
-run_experiment 1 10000
-echo "Waiting for Round 1 to complete..."
-wait
-echo "Round 1 completed!"
+# Run experiments in parallel
+for i in "${!DATA_STEPS_LIST[@]}"; do
+    GPU_ID=$i
+    DATA_STEPS=${DATA_STEPS_LIST[$i]}
+    run_experiment ${GPU_ID} ${DATA_STEPS}
+done
 
-# Round 2: 12500, 7500
-echo ""
-echo "Round 2: data sizes 12500, 7500"
-run_experiment 0 12500
-run_experiment 1 7500
-echo "Waiting for Round 2 to complete..."
+# Wait for all experiments to complete
+echo "All ${#DATA_STEPS_LIST[@]} experiments started. Waiting for completion..."
 wait
-echo "Round 2 completed!"
 
-echo ""
 echo "============================================================"
 echo "All CQL experiments completed!"
 echo "Logs are saved in ${BASE_DIR}/logs/"

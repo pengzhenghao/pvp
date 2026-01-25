@@ -16,8 +16,7 @@ NUM_RANDOM=${5:-10}
 SEED=${6:-0}
 
 # Base directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="${SCRIPT_DIR}"
+BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
 
 # Training parameters

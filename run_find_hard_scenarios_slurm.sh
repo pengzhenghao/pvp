@@ -2,12 +2,13 @@
 #SBATCH --job-name=find_hard_scenarios
 #SBATCH --output=./logs/find_hard_scenarios_%j.out
 #SBATCH --error=./logs/find_hard_scenarios_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=120:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:1
+#SBATCH --partition="gpu04"
 
 # Create logs directory if not exists
 mkdir -p ./logs

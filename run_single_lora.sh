@@ -17,14 +17,13 @@ LORA_TARGET="actor"
 SEED=0
 
 # Paths
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="${SCRIPT_DIR}"
+BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
-BUFFER_PATH="${BASE_DIR}/data_buffer_20000.npz"
+BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
 
 # Training parameters
 BC_TRAINING_TIMESTEPS=2000
-SAVE_FREQ=1000
+SAVE_FREQ=100
 EVAL_FREQ=100
 N_EVAL_EPISODES=500
 
@@ -34,7 +33,7 @@ CRASH_OBJECT_PENALTY=5.0
 OUT_OF_ROAD_PENALTY=5.0
 
 # Wandb project
-WANDB_PROJECT="0123mainexp"
+WANDB_PROJECT="0121mainexpfull"
 
 # Create experiment name
 EXP_NAME="lora_data${DATA_STEPS}_r${LORA_RANK}_a${LORA_ALPHA}_d${LORA_DROPOUT}_${LORA_TARGET}_seed${SEED}"

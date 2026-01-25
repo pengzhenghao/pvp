@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=24:00:00
-#SBATCH --partition="all"
+#SBATCH --partition="gpu06"
 
 # ============================================================
 # SLURM Script for Baseline Model Evaluation

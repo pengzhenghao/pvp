@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #SBATCH --time=120:00:00
-#SBATCH --partition="all"
+#SBATCH --partition="gpu04"
 
 # ============================================================
 # SLURM Script for TD3+BC Experiments

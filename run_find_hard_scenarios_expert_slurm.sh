@@ -7,6 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
+#SBATCH --partition="gpu07"
 
 # Create directories
 mkdir -p ./logs

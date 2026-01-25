@@ -65,7 +65,8 @@ if __name__ == '__main__':
     parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Maximum gradient norm for IQL.")
     # Data buffer save/load arguments
     parser.add_argument("--load_buffer", type=str, default="", help="Path to load saved data buffer (skip Phase 1 if provided).")
-    parser.add_argument("--save_buffer", type=str, default="", help="Path to save data buffer after collection (auto-generated if not provided).")
+    parser.add_argument("--save_buffer", type=str, default="", help="Path to save data buffer after collection (enables saving).")
+    parser.add_argument("--save_buffer_after_phase1", action="store_true", help="Enable saving buffer after Phase 1 (auto-generated path if --save_buffer not provided).")
     # Penalty parameters (directly affects reward)
     parser.add_argument("--crash_vehicle_penalty", type=float, default=5.0, help="Penalty for crashing into a vehicle (default: 5.0)")
     parser.add_argument("--crash_object_penalty", type=float, default=5.0, help="Penalty for crashing into an object (default: 5.0)")
@@ -563,35 +564,44 @@ if __name__ == '__main__':
         print(f"Phase 1 completed! Collected {actual_transitions} transitions (buffer_size={hb.buffer_size}, full={hb.full})")
         print("=" * 80)
         
-        # Save buffer if requested (only essential fields to save space)
-        save_buffer_path = args.save_buffer if args.save_buffer else str(trial_dir / f"data_buffer_{data_collection_timesteps}.npz")
-        print(f"Saving data buffer to: {save_buffer_path}")
-        
-        # Check if optimize_memory_usage is enabled (next_observations will be None)
-        optimize_memory = data_collector.human_data_buffer.optimize_memory_usage
-        print(f"optimize_memory_usage: {optimize_memory}")
-        
-        # Prepare data dict for saving
-        save_dict = {
-            'pos': np.array(data_collector.human_data_buffer.pos),
-            'full': np.array(data_collector.human_data_buffer.full),
-            'optimize_memory_usage': np.array(optimize_memory),
-            'actions_behavior': data_collector.human_data_buffer.actions_behavior,
-            'rewards': data_collector.human_data_buffer.rewards,
-            'dones': data_collector.human_data_buffer.dones,
-        }
-        
-        # Save observations (dict with potentially multiple keys like 'image', 'state')
-        for key, value in data_collector.human_data_buffer.observations.items():
-            save_dict[f'obs_{key}'] = value
-        
-        # Only save next_observations if not using optimize_memory_usage
-        if not optimize_memory and data_collector.human_data_buffer.next_observations is not None:
-            for key, value in data_collector.human_data_buffer.next_observations.items():
-                save_dict[f'next_obs_{key}'] = value
-        
-        np.savez_compressed(save_buffer_path, **save_dict)
-        print(f"Buffer saved successfully!")
+        # Save buffer only if explicitly requested via --save_buffer or --save_buffer_after_phase1
+        if args.save_buffer or args.save_buffer_after_phase1:
+            if args.save_buffer:
+                save_buffer_path = args.save_buffer
+            else:
+                # Default save path: /bigdata/caihy/data_buffer_{exp_name}_{timesteps}.npz
+                default_save_dir = Path("/bigdata/caihy")
+                default_save_dir.mkdir(parents=True, exist_ok=True)
+                save_buffer_path = str(default_save_dir / f"data_buffer_{args.exp_name}_{data_collection_timesteps}.npz")
+            print(f"Saving data buffer to: {save_buffer_path}")
+            
+            # Check if optimize_memory_usage is enabled (next_observations will be None)
+            optimize_memory = data_collector.human_data_buffer.optimize_memory_usage
+            print(f"optimize_memory_usage: {optimize_memory}")
+            
+            # Prepare data dict for saving
+            save_dict = {
+                'pos': np.array(data_collector.human_data_buffer.pos),
+                'full': np.array(data_collector.human_data_buffer.full),
+                'optimize_memory_usage': np.array(optimize_memory),
+                'actions_behavior': data_collector.human_data_buffer.actions_behavior,
+                'rewards': data_collector.human_data_buffer.rewards,
+                'dones': data_collector.human_data_buffer.dones,
+            }
+            
+            # Save observations (dict with potentially multiple keys like 'image', 'state')
+            for key, value in data_collector.human_data_buffer.observations.items():
+                save_dict[f'obs_{key}'] = value
+            
+            # Only save next_observations if not using optimize_memory_usage
+            if not optimize_memory and data_collector.human_data_buffer.next_observations is not None:
+                for key, value in data_collector.human_data_buffer.next_observations.items():
+                    save_dict[f'next_obs_{key}'] = value
+            
+            np.savez_compressed(save_buffer_path, **save_dict)
+            print(f"Buffer saved successfully!")
+        else:
+            print("Skipping buffer save (use --save_buffer or --save_buffer_after_phase1 to enable)")
         
         # Transfer buffer from data_collector to bc_trainer BEFORE cleanup
         bc_trainer.replay_buffer = data_collector.human_data_buffer

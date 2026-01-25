@@ -11,17 +11,16 @@ sleep 2
 # ============================================================
 # Configuration
 # ============================================================
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="${SCRIPT_DIR}"
+BASE_DIR="/home/caihy/pvp"
 SCRIPT="train_bc_metadrive_online.py"
-BUFFER_PATH="${BASE_DIR}/data_buffer_20000.npz"
+BUFFER_PATH="/home/caihy/pvp/data_buffer_20000.npz"
 
 # Training parameters (fast mode)
 BC_TRAINING_TIMESTEPS=2000
 DATA_STEPS=2000
 EVAL_FREQ=100
 N_EVAL_EPISODES=25
-SAVE_FREQ=1000
+SAVE_FREQ=100
 SEED=0
 
 # Penalty parameters
