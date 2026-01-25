@@ -62,7 +62,41 @@ def make_env_config(seed, use_image=True, use_render=False):
         use_render=use_render,
         manual_control=False,
         start_seed=seed,
-        num_scenarios=1,  # Only this seed
+        num_scenarios=1,  # Only this seed (for single-seed mode)
+        horizon=1500,
+        crash_vehicle_done=False,
+        crash_object_done=False,
+        cost_to_reward=False,
+        crash_vehicle_penalty=5.0,
+        crash_object_penalty=5.0,
+        out_of_road_penalty=5.0,
+    )
+    
+    if use_image:
+        config.update(dict(
+            image_observation=True,
+            vehicle_config=dict(image_source="rgb_camera"),
+            sensors={"rgb_camera": (RGBCamera, *sensor_size)},
+            stack_size=3,
+            interface_panel=["rgb_camera", "dashboard"],
+            daytime="06:10",
+        ))
+    else:
+        config['image_observation'] = False
+    
+    return config
+
+
+def make_shared_env_config(use_image=True, use_render=False, start_seed=1000, num_scenarios=1000):
+    """Create config for a shared environment that supports multiple seeds via reset(seed=...)."""
+    from metadrive.component.sensors.rgb_camera import RGBCamera
+    sensor_size = (84, 84)
+    
+    config = dict(
+        use_render=use_render,
+        manual_control=False,
+        start_seed=start_seed,
+        num_scenarios=num_scenarios,  # Support multiple seeds
         horizon=1500,
         crash_vehicle_done=False,
         crash_object_done=False,
@@ -180,11 +214,26 @@ def load_lidar_expert():
     return expert
 
 
-def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model=None):
-    """Evaluate model on a specific scenario seed with comprehensive metrics."""
+def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model=None, shared_env=None):
+    """Evaluate model on a specific scenario seed with comprehensive metrics.
+    
+    Args:
+        model: The model to evaluate
+        seed: The scenario seed
+        num_episodes: Number of episodes to run
+        use_render: Whether to render (ignored if shared_env provided)
+        expert_model: Optional expert model for comparison
+        shared_env: Optional shared environment (faster - uses reset(seed=seed) instead of creating new env)
+    """
     from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
     
-    env = HumanInTheLoopEnv(config=make_env_config(seed, use_image=True, use_render=use_render))
+    # Use shared environment if provided (much faster - avoids creating new env for each seed)
+    if shared_env is not None:
+        env = shared_env
+        owns_env = False
+    else:
+        env = HumanInTheLoopEnv(config=make_env_config(seed, use_image=True, use_render=use_render))
+        owns_env = True
     
     # For expert comparison, we'll get expert action from the same observation
     # No need for separate lidar env - expert can predict from lidar obs in info
@@ -216,7 +265,8 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
     }
     
     for ep in range(num_episodes):
-        obs = env.reset()
+        # Use seed parameter when using shared env (supports fast scenario switching)
+        obs = env.reset(seed=seed) if shared_env is not None else env.reset()
         
         done = False
         episode_reward = 0
@@ -227,6 +277,10 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
         episode_accel_diffs = []
         crash_count = 0
         had_bad_event = False
+        # Cumulative flags for each type of bad event
+        had_crash_vehicle = False
+        had_crash_object = False
+        had_out_of_road = False
         
         while not done:
             action, _ = model.predict(obs, deterministic=True)
@@ -249,25 +303,29 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
             episode_reward += reward
             episode_length += 1
             
-            # Track crashes per step
-            if info.get('crash_vehicle', False) or info.get('crash_object', False):
+            # Track crashes per step (cumulative across entire episode)
+            if info.get('crash_vehicle', False):
+                had_crash_vehicle = True
                 crash_count += 1
-            if info.get('crash_vehicle', False) or info.get('crash_object', False) or info.get('out_of_road', False):
+            if info.get('crash_object', False):
+                had_crash_object = True
+                crash_count += 1
+            if info.get('out_of_road', False):
+                had_out_of_road = True
+            if had_crash_vehicle or had_crash_object or had_out_of_road:
                 had_bad_event = True
         
         # Episode-level metrics
         route_completion = info.get('route_completion', 0)
         arrive_dest = info.get('arrive_dest', False)
-        crash_vehicle = info.get('crash_vehicle', False)
-        crash_object = info.get('crash_object', False)
-        out_of_road = info.get('out_of_road', False)
         
         results['rewards'].append(episode_reward)
         results['lengths'].append(episode_length)
         results['route_completions'].append(route_completion)
-        results['crash_vehicles'].append(crash_vehicle)
-        results['crash_objects'].append(crash_object)
-        results['out_of_roads'].append(out_of_road)
+        # FIXED: Use cumulative flags tracked during episode, not final step values
+        results['crash_vehicles'].append(had_crash_vehicle)
+        results['crash_objects'].append(had_crash_object)
+        results['out_of_roads'].append(had_out_of_road)
         results['arrive_dests'].append(arrive_dest)
         
         # New metrics
@@ -294,7 +352,9 @@ def evaluate_on_seed(model, seed, num_episodes=1, use_render=False, expert_model
             results['expert_accel_diff'].append(np.mean(episode_accel_diffs))
             results['expert_agreement_ratio'].append(np.mean(np.array(episode_expert_diffs) < 0.3))
     
-    env.close()
+    # Only close env if we created it (not shared)
+    if owns_env:
+        env.close()
     
     # Compute summary statistics
     summary = {
@@ -367,9 +427,19 @@ def main():
             print(f"Warning: Could not load expert: {e}")
             expert_model = None
     
-    # Create a temporary environment for model initialization
+    # Create a shared environment for model initialization AND evaluation
+    # This is much faster than creating a new env for each seed - uses reset(seed=seed)
     from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
-    temp_env = HumanInTheLoopEnv(config=make_env_config(seeds[0], use_image=True))
+    min_seed = min(seeds)
+    max_seed = max(seeds)
+    num_scenarios = max_seed - min_seed + 100  # Extra buffer
+    shared_env = HumanInTheLoopEnv(config=make_shared_env_config(
+        use_image=True, 
+        use_render=args.render,
+        start_seed=min_seed,
+        num_scenarios=num_scenarios
+    ))
+    print(f"Created shared env: start_seed={min_seed}, num_scenarios={num_scenarios}")
     
     # Load models
     models_to_eval = {}
@@ -379,7 +449,7 @@ def main():
         iql_path = script_dir / args.iql_checkpoint
         if iql_path.exists():
             print(f"Loading IQL model from {iql_path}...")
-            models_to_eval["iql"] = load_iql_model(iql_path, temp_env)
+            models_to_eval["iql"] = load_iql_model(iql_path, shared_env)
             print("IQL model loaded!")
         else:
             print(f"ERROR: IQL checkpoint not found at {iql_path}")
@@ -389,7 +459,7 @@ def main():
         td3_path = script_dir / args.td3_checkpoint
         if td3_path.exists():
             print(f"Loading TD3BC1 model from {td3_path}...")
-            models_to_eval["td3bc1"] = load_td3_model(td3_path, temp_env)
+            models_to_eval["td3bc1"] = load_td3_model(td3_path, shared_env)
             print("TD3BC1 model loaded!")
         else:
             print(f"ERROR: TD3 checkpoint not found at {td3_path}")
@@ -399,13 +469,13 @@ def main():
         td3bc2_path = script_dir / args.td3bc2_checkpoint
         if td3bc2_path.exists():
             print(f"Loading TD3BC2 model from {td3bc2_path}...")
-            models_to_eval["td3bc2"] = load_td3_model(td3bc2_path, temp_env)
+            models_to_eval["td3bc2"] = load_td3_model(td3bc2_path, shared_env)
             print("TD3BC2 model loaded!")
         else:
             print(f"ERROR: TD3BC2 checkpoint not found at {td3bc2_path}")
             return
     
-    temp_env.close()
+    # Don't close shared_env yet - it will be used for all evaluations
     
     # Evaluate each model on each seed
     all_results = {}
@@ -422,7 +492,8 @@ def main():
                 model, seed, 
                 num_episodes=args.num_episodes,
                 use_render=args.render,
-                expert_model=expert_model
+                expert_model=expert_model,
+                shared_env=shared_env  # Use shared env for faster evaluation
             )
             model_results.append(result)
             
@@ -538,6 +609,9 @@ def main():
         
         with open(output_path / "comparison_summary.json", 'w') as f:
             json.dump(comparison, f, indent=2)
+    
+    # Clean up shared environment
+    shared_env.close()
     
     print(f"\nResults saved to {output_path}/")
 
