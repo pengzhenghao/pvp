@@ -40,7 +40,7 @@ python find_hard_scenarios_parallel.py \
     --num_trials 5 \
     --num_envs 10 \
     --save_interval 50 \
-    --checkpoint ./pretrained.zip \
+    --checkpoint ./domainAexpertBC.zip \
     --output ./results/hard_scenarios.json
 
 echo "=============================================="

@@ -320,7 +320,7 @@ if __name__ == '__main__':
     
     # Load initial policy from checkpoint (使用脚本所在目录)
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    initial_ckpt = script_dir / "pretrained.zip"
+    initial_ckpt = script_dir / "domainAexpertBC.zip"
     if initial_ckpt.exists():
         print(f"Loading initial policy for bc_trainer from {initial_ckpt}!")
         from pvp.sb3.common.save_util import load_from_zip_file
