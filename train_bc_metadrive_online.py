@@ -1,5 +1,14 @@
-import argparse
 import os
+# CRITICAL: Set GPU environment BEFORE any other imports
+# This ensures SubprocVecEnv child processes inherit the correct GPU setting
+_gpu_id = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+os.environ["CUDA_VISIBLE_DEVICES"] = _gpu_id
+os.environ["SDL_VIDEODRIVER"] = "offscreen"
+os.environ["PYOPENGL_PLATFORM"] = "egl"
+if "DISPLAY" in os.environ:
+    del os.environ["DISPLAY"]
+
+import argparse
 import uuid
 import gc
 import numpy as np
@@ -14,6 +23,8 @@ from pvp.sb3.td3.td3 import TD3
 from pvp.sb3.td3.cql import CQL
 from pvp.sb3.td3.iql import IQL
 from pvp.sb3.common.callbacks import CallbackList, CheckpointCallback
+from hard_scenario_eval_callback import HardScenarioEvalCallback
+from distributed_hard_eval_callback import DistributedHardScenarioEvalCallback
 from pvp.sb3.common.monitor import Monitor
 from pvp.sb3.common.vec_env import SubprocVecEnv
 from pvp.sb3.common.wandb_callback import WandbCallback
@@ -82,6 +93,18 @@ if __name__ == '__main__':
     parser.add_argument("--lora_dropout", default=0.0, type=float, help="Dropout for LoRA layers.")
     parser.add_argument("--lora_target", default="actor", type=str, choices=["actor", "all"], 
                        help="Which networks to apply LoRA to: 'actor' (policy only) or 'all' (actor + critic).")
+    # Hard scenario evaluation arguments
+    parser.add_argument("--use_hard_eval", action="store_true", help="Use HardScenarioEvalCallback for evaluation on 200 hard scenarios.")
+    parser.add_argument("--use_distributed_eval", action="store_true", help="Use DistributedHardScenarioEvalCallback (multi-GPU evaluation).")
+    parser.add_argument("--hard_eval_seeds", default=200, type=int, help="Number of hard seeds to evaluate (max 200).")
+    parser.add_argument("--hard_eval_envs", default=30, type=int, help="Number of parallel envs for hard eval (per GPU if distributed).")
+    parser.add_argument("--num_gpus", default=4, type=int, help="Number of GPUs for distributed evaluation.")
+    parser.add_argument("--job_id", default=0, type=int, help="Job ID for distributed evaluation (0-indexed).")
+    parser.add_argument("--num_jobs", default=1, type=int, help="Total number of jobs for distributed evaluation.")
+    # Training-only mode (for batch evaluation later)
+    parser.add_argument("--no_eval", action="store_true", help="Skip evaluation during training (for batch evaluation later).")
+    parser.add_argument("--checkpoint_dir", type=str, default="", help="Directory to save BC checkpoints (for batch evaluation).")
+    parser.add_argument("--bc_save_freq", default=100, type=int, help="Save BC checkpoint every N steps (for batch evaluation).")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled
@@ -96,6 +119,11 @@ if __name__ == '__main__':
         args.n_eval_episodes = 4
         args.save_freq = 1
         # num_envs will be set to 2 in the environment setup
+        # Hard eval in toy mode uses minimal settings
+        args.hard_eval_seeds = 4
+        args.hard_eval_envs = 2
+        args.num_gpus = 2
+        args.use_hard_eval = True  # Enable hard eval by default in toy mode
 
     # ===== Set up some arguments =====
     experiment_batch_name = "{}_freelevel{}".format(args.exp_name, args.free_level)
@@ -484,22 +512,26 @@ if __name__ == '__main__':
                     obs_key = key[9:]  # Remove 'next_obs_' prefix
                     hb.next_observations[obs_key] = buffer_data[key]
         
-        # Calculate effective pos and full based on data_collection_timesteps
-        # This allows using a subset of a larger saved buffer
-        effective_transitions = data_collection_timesteps // SAVED_NUM_ENVS
+        # Calculate effective pos and full based on actual buffer content
+        # When loading a buffer, use the full buffer size, not data_collection_timesteps
+        # The buffer_size is the actual capacity, so use it directly
+        buffer_actual_size = hb.buffer_size
         
-        if effective_transitions >= hb.buffer_size:
-            # Use full buffer (wrapped around)
+        # Check if we should use full buffer or partial based on data_collection_timesteps
+        # If data_collection_timesteps is explicitly set larger than buffer, use full buffer
+        if args.data_collection_timesteps >= buffer_actual_size:
+            # Use full buffer
             hb.full = True
-            hb.pos = effective_transitions % hb.buffer_size
+            hb.pos = 0  # Full buffer, pos doesn't matter for sampling
+            actual_usable = buffer_actual_size
         else:
-            # Use partial buffer
+            # Use partial buffer (user requested less than available)
             hb.full = False
-            hb.pos = effective_transitions
+            hb.pos = args.data_collection_timesteps
+            actual_usable = hb.pos
         
-        actual_usable = hb.buffer_size if hb.full else hb.pos
-        print(f"Loaded buffer, using {actual_usable} transitions "
-              f"(data_collection_timesteps={data_collection_timesteps}, saved_num_envs={SAVED_NUM_ENVS}, "
+        print(f"Loaded buffer: buffer_size={buffer_actual_size}, using {actual_usable} transitions "
+              f"(requested data_collection_timesteps={data_collection_timesteps}, "
               f"pos={hb.pos}, full={hb.full})")
         
         # Free buffer_data memory
@@ -667,22 +699,105 @@ if __name__ == '__main__':
                 config={"trainer_config": trainer_config}
             )
         )
+    
+    # Skip evaluation if --no_eval is set
+    if args.no_eval:
+        print("=" * 60)
+        print("NO EVALUATION MODE - Checkpoints saved for batch evaluation")
+        print(f"  BC Save Freq: {args.bc_save_freq}")
+        if args.checkpoint_dir:
+            print(f"  Checkpoint Dir: {args.checkpoint_dir}")
+        print("=" * 60)
+    
+    # Add HardScenarioEvalCallback if requested (skip if --no_eval)
+    elif args.use_distributed_eval:
+        # Use distributed multi-GPU evaluation
+        print("=" * 60)
+        print("DISTRIBUTED HARD SCENARIO EVALUATION ENABLED")
+        print(f"  Seeds: {args.hard_eval_seeds}, GPUs: {args.num_gpus}, Envs/GPU: {args.hard_eval_envs}")
+        print(f"  Eval Freq: {args.eval_freq}, Toy Mode: {args.toy}")
+        print("=" * 60)
+        
+        distributed_eval_callback = DistributedHardScenarioEvalCallback(
+            num_seeds=args.hard_eval_seeds,
+            num_gpus=args.num_gpus,
+            num_envs_per_gpu=args.hard_eval_envs,
+            eval_freq=args.eval_freq,
+            toy_mode=args.toy,
+            daytime="06:10",
+            log_path=str(trial_dir / "models"),
+            verbose=2,
+            name_prefix="dist_hard_eval",
+        )
+        phase2_callbacks.append(distributed_eval_callback)
+        # Mark that we're using hard eval for disabling regular eval
+        args.use_hard_eval = True
+        
+    elif args.use_hard_eval:
+        # Use single-GPU hard scenario evaluation
+        print("=" * 60)
+        print("HARD SCENARIO EVALUATION ENABLED (Single GPU)")
+        print(f"  Seeds: {args.hard_eval_seeds}, Envs: {args.hard_eval_envs}")
+        print(f"  Job: {args.job_id}/{args.num_jobs}, Eval Freq: {args.eval_freq}")
+        print(f"  Toy Mode: {args.toy}")
+        print("=" * 60)
+        
+        hard_eval_callback = HardScenarioEvalCallback(
+            num_seeds=args.hard_eval_seeds,
+            num_envs=args.hard_eval_envs,
+            eval_freq=args.eval_freq,
+            job_id=args.job_id,
+            num_jobs=args.num_jobs,
+            toy_mode=args.toy,
+            daytime="06:10",
+            log_path=str(trial_dir / "models"),
+            verbose=2,
+            name_prefix="hard_eval",
+        )
+        phase2_callbacks.append(hard_eval_callback)
+    
     phase2_callbacks = CallbackList(phase2_callbacks)
     
     # Setup learn for Phase 2 - this will create EvalCallback and attach it to bc_trainer
     # reset_num_timesteps=True to start training from scratch (timesteps reset to 0)
+    # If using HardScenarioEvalCallback or DistributedEvalCallback, disable the regular EvalCallback
+    use_custom_eval = args.use_hard_eval or args.use_distributed_eval
+    
+    # Disable all evaluation if --no_eval is set
+    if args.no_eval:
+        regular_eval_freq = -1
+        regular_n_eval_episodes = 0
+        print(f"[INFO] All evaluation disabled (--no_eval mode)")
+    else:
+        regular_eval_freq = -1 if use_custom_eval else args.eval_freq
+        regular_n_eval_episodes = 0 if use_custom_eval else args.n_eval_episodes
+        
+        if use_custom_eval:
+            eval_type = "DistributedHardScenarioEvalCallback" if args.use_distributed_eval else "HardScenarioEvalCallback"
+            print(f"[INFO] Disabling regular EvalCallback - using {eval_type} instead")
+    
     phase2_total_timesteps, phase2_callback = bc_trainer._setup_learn(
         bc_training_timesteps,
-        eval_env,  # eval_env for evaluation (recreated for Phase 2)
+        eval_env,  # eval_env for evaluation (still needed for regular eval if enabled)
         phase2_callbacks,
-        args.eval_freq,  # eval_freq
-        args.n_eval_episodes,  # n_eval_episodes
+        regular_eval_freq,  # eval_freq (-1 disables regular eval)
+        regular_n_eval_episodes,  # n_eval_episodes (0 if using hard eval)
         str(trial_dir),  # eval_log_path
         True,  # reset_num_timesteps=True - train from scratch
         experiment_batch_name,  # tb_log_name
     )
     
     phase2_callback.on_training_start(locals(), globals())
+    
+    # Setup BC checkpoint directory if in --no_eval mode
+    bc_ckpt_dir = None
+    if args.no_eval:
+        if args.checkpoint_dir:
+            bc_ckpt_dir = Path(args.checkpoint_dir)
+        else:
+            bc_ckpt_dir = trial_dir / "bc_checkpoints"
+        bc_ckpt_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[BC Checkpoints] Saving to: {bc_ckpt_dir}")
     
     # Use explicit iteration counting to ensure exact timestep values
     train_freq = args.train_freq
@@ -706,6 +821,12 @@ if __name__ == '__main__':
         # EvalCallback will trigger automatically when n_calls % eval_freq == 0
         # The logged step will be exactly next_timestep (100, 200, 300, ...)
         phase2_callback.on_step()
+        
+        # Save BC checkpoint if in --no_eval mode
+        if bc_ckpt_dir and next_timestep % args.bc_save_freq == 0:
+            ckpt_path = bc_ckpt_dir / f"bc_step_{next_timestep:06d}.zip"
+            bc_trainer.save(str(ckpt_path))
+            print(f"[BC Checkpoint] Saved: {ckpt_path.name}")
         
         # Log progress
         log_interval = 100 if args.toy else 1000

@@ -51,6 +51,8 @@ if __name__ == '__main__':
     parser.add_argument("--cql_temp", default=1.0, type=float, help="Temperature for logsumexp in CQL loss.")
     parser.add_argument("--cql_with_lagrange", action="store_true", help="Use Lagrange multiplier for automatic CQL alpha tuning.")
     parser.add_argument("--lagrange_threshold", default=10.0, type=float, help="Target value for CQL penalty when using Lagrange.")
+    parser.add_argument("--no_eval", action="store_true", help="Disable evaluation during training (only save checkpoints).")
+    parser.add_argument("--checkpoint_dir", type=str, default=None, help="Directory to save checkpoints. If not set, uses trial_dir.")
     args = parser.parse_args()
     
     # Apply toy mode settings if enabled

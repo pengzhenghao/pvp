@@ -3,12 +3,11 @@
 #SBATCH --output=/p0/user/caihy/pvp/logs/eval_dist_%A_%a.out
 #SBATCH --error=/p0/user/caihy/pvp/logs/eval_dist_%A_%a.err
 #SBATCH --time=01:00:00
-#SBATCH --partition=all
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --array=0-3
-
+#SBATCH --partition="gpu04"
 # ============================================================
 # Distributed Parallel Evaluation (4 GPUs = 4x30 = 120 envs)
 # ============================================================
