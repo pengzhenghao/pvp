@@ -7,8 +7,18 @@ Usage:
     python eval_hard_scenarios_parallel.py --model both --num_seeds 20  # For testing
 """
 
-import argparse
 import os
+# CRITICAL: Set GPU environment BEFORE any other imports
+# This ensures SubprocVecEnv child processes inherit the correct GPU setting
+_gpu_id = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+os.environ["CUDA_VISIBLE_DEVICES"] = _gpu_id
+os.environ["SDL_VIDEODRIVER"] = "offscreen"
+os.environ["PYOPENGL_PLATFORM"] = "egl"
+if "DISPLAY" in os.environ:
+    del os.environ["DISPLAY"]
+print(f"[GPU Setup] CUDA_VISIBLE_DEVICES={_gpu_id}")
+
+import argparse
 import json
 import numpy as np
 import sys
@@ -36,10 +46,19 @@ class SeedPoolEnv:
     """
     def __init__(self, env, seeds):
         self.env = env
+        self._original_seeds = list(seeds)  # Keep original for reset_pool
         self.seed_queue = collections.deque(seeds)
         self.current_seed = None
         self.finished = False  # True when no more seeds in queue
         self._last_info = {}  # Store info for retrieval
+    
+    def reset_pool(self):
+        """Reset the seed pool to original state for reuse with new checkpoint."""
+        self.seed_queue = collections.deque(self._original_seeds)
+        self.current_seed = None
+        self.finished = False
+        self._last_info = {}
+        return self.reset()
     
     @property
     def observation_space(self):
@@ -485,19 +504,42 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
     
     # Create env factories with SeedPoolEnv wrapper
     # All envs use same start_seed and num_scenarios to allow any seed
+    import sys as _sys
+    _sys.stdout.flush()  # Ensure previous output is flushed
+    
     def make_env_with_pool(env_idx):
         env_seeds = seeds_per_env[env_idx]
+        # Capture GPU ID from parent process
+        gpu_id = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
         def _init():
+            import time as _init_time
+            _start = _init_time.time()
+            print(f"[GPU Setup] CUDA_VISIBLE_DEVICES={gpu_id}", flush=True)
+            
+            # Re-set GPU in subprocess (important for spawn/forkserver)
+            import os as subprocess_os
+            subprocess_os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
+            subprocess_os.environ["SDL_VIDEODRIVER"] = "offscreen"
+            subprocess_os.environ["PYOPENGL_PLATFORM"] = "egl"
+            if "DISPLAY" in subprocess_os.environ:
+                del subprocess_os.environ["DISPLAY"]
+            
             config = shared_env_config.copy()
             config["start_seed"] = min_seed  # Use min seed for all envs
             config["num_scenarios"] = num_scenarios  # Cover all possible seeds
             env = HumanInTheLoopEnv(config=config)
+            print(f"  [Env {env_idx}] Created in {_init_time.time()-_start:.1f}s", flush=True)
             return SeedPoolEnv(env, env_seeds)
         return _init
     
+    print(f"  Creating {num_envs} subprocess environments...", flush=True)
+    import time as _create_time
+    _create_start = _create_time.time()
+    
     env_fns = [make_env_with_pool(i) for i in range(num_envs)]
     vec_env = SubprocVecEnv(env_fns)
-    print(f"  VecEnv created with {num_envs} envs (dynamic seed assignment)")
+    
+    print(f"  VecEnv created with {num_envs} envs in {_create_time.time()-_create_start:.1f}s (dynamic seed assignment)", flush=True)
     
     # Reset all (each env starts with its first seed)
     obs = vec_env.reset()
@@ -518,6 +560,10 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
     dangerous_close_counts = np.zeros(num_envs)
     
     all_actions = [[] for _ in range(num_envs)]
+    all_speeds = [[] for _ in range(num_envs)]  # Track speed per env
+    expert_diffs = [[] for _ in range(num_envs)]  # Track expert action diffs per env
+    steering_diffs = [[] for _ in range(num_envs)]
+    accel_diffs = [[] for _ in range(num_envs)]
     current_seeds = [seeds_per_env[i][0] if seeds_per_env[i] else None for i in range(num_envs)]
     env_finished = np.zeros(num_envs, dtype=bool)  # True when env has no more seeds
     
@@ -572,6 +618,11 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
             if info.get('arrive_dest', False):
                 arrive_dests[i] = True
             
+            # Track speed from velocity info
+            if 'velocity' in info:
+                speed = np.linalg.norm(info['velocity'])
+                all_speeds[i].append(speed)
+            
             # Traffic proximity - use close_vehicle_count from env
             vehicle_dist = info.get('min_vehicle_distance', -1)
             if vehicle_dist > 0 and vehicle_dist < min_vehicle_distances[i]:
@@ -584,6 +635,14 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
                     dangerous_close_counts[i] += 1
                 else:
                     safe_pass_counts[i] += 1
+            
+            # Expert comparison (get expert action from lidar_obs in info)
+            if expert_model is not None and 'lidar_obs' in info:
+                lidar_obs = info['lidar_obs']
+                expert_action, _ = expert_model.predict(lidar_obs, deterministic=True)
+                expert_diffs[i].append(np.linalg.norm(actions[i] - expert_action))
+                steering_diffs[i].append(abs(actions[i][0] - expert_action[0]))
+                accel_diffs[i].append(abs(actions[i][1] - expert_action[1]))
             
             # Episode done - save result and reset tracking
             if dones[i]:
@@ -600,6 +659,15 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
                 if total_close_encounters[i] > 0:
                     close_encounter_crash_rate = dangerous_close_counts[i] / total_close_encounters[i]
                 
+                # Compute speed metrics
+                speeds_arr = np.array(all_speeds[i]) if all_speeds[i] else np.array([0.0])
+                avg_speed = float(np.mean(speeds_arr))
+                speed_std = float(np.std(speeds_arr))
+                
+                # Compute behavioral metrics
+                steering_std = float(np.std(actions_arr[:, 0])) if len(actions_arr) > 0 else 0.0
+                accel_std = float(np.std(actions_arr[:, 1])) if len(actions_arr) > 0 else 0.0
+                
                 result = {
                     'seed': seed,
                     'reward': float(episode_rewards[i]),
@@ -613,6 +681,11 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
                     'success_rate': float(arrive_dests[i]),
                     'success_no_bad_event_rate': float(arrive_dests[i] and not had_bad_event[i]),
                     'crash_count_mean': float(crash_counts[i]),
+                    # Behavioral metrics
+                    'avg_speed': avg_speed,
+                    'speed_std': speed_std,
+                    'steering_std': steering_std,
+                    'accel_std': accel_std,
                     'mean_steering_abs': float(np.mean(np.abs(actions_arr[:, 0]))) if len(actions_arr) > 0 else 0.0,
                     'mean_accel_abs': float(np.mean(np.abs(actions_arr[:, 1]))) if len(actions_arr) > 0 else 0.0,
                     'hard_brake_ratio': float(np.mean(actions_arr[:, 1] < -0.5)) if len(actions_arr) > 0 else 0.0,
@@ -625,6 +698,14 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
                     'dangerous_close_count': float(dangerous_close_counts[i]),
                     'close_encounter_crash_rate': float(close_encounter_crash_rate),
                 }
+                
+                # Add expert comparison metrics if available
+                if len(expert_diffs[i]) > 0:
+                    result['expert_action_diff_l2'] = float(np.mean(expert_diffs[i]))
+                    result['expert_steering_diff'] = float(np.mean(steering_diffs[i]))
+                    result['expert_accel_diff'] = float(np.mean(accel_diffs[i]))
+                    result['expert_agreement_ratio'] = float(np.mean(np.array(expert_diffs[i]) < 0.3))
+                
                 all_results.append(result)
                 
                 # Reset tracking for next episode (auto-reset already happened)
@@ -637,29 +718,42 @@ def evaluate_seeds_parallel(model, seeds, num_envs, shared_env_config, expert_mo
                 had_bad_event[i] = False
                 arrive_dests[i] = False
                 crash_counts[i] = 0
+                all_speeds[i] = []  # Reset speed tracking
                 min_vehicle_distances[i] = float('inf')
                 total_close_encounters[i] = 0
                 safe_pass_counts[i] = 0
                 dangerous_close_counts[i] = 0
                 all_actions[i] = []
+                expert_diffs[i] = []  # Reset expert tracking
+                steering_diffs[i] = []
+                accel_diffs[i] = []
                 
                 # Update current seed from info (set by SeedPoolEnv)
                 current_seeds[i] = info.get('seed', None)
         
-        # Print progress every 20 completed episodes
-        if len(all_results) >= last_print_count + 20:
-            last_print_count = (len(all_results) // 20) * 20
-            elapsed = eval_time.time() - start_time
+        # Print progress every 10 seconds OR every 20 completed episodes
+        elapsed = eval_time.time() - start_time
+        time_based_print = (elapsed - getattr(evaluate_seeds_parallel, '_last_print_time', 0)) >= 10
+        count_based_print = len(all_results) >= last_print_count + 20
+        
+        if time_based_print or count_based_print:
+            if count_based_print:
+                last_print_count = (len(all_results) // 20) * 20
+            evaluate_seeds_parallel._last_print_time = elapsed
+            
             active_envs = num_envs - np.sum(env_finished)
-            avg_reward = np.mean([r['reward'] for r in all_results[-20:]])
-            avg_success = np.mean([r['success_rate'] for r in all_results[-20:]])
+            avg_reward = np.mean([r['reward'] for r in all_results[-20:]]) if len(all_results) >= 20 else (np.mean([r['reward'] for r in all_results]) if all_results else 0)
+            avg_success = np.mean([r['success_rate'] for r in all_results[-20:]]) if len(all_results) >= 20 else (np.mean([r['success_rate'] for r in all_results]) if all_results else 0)
             seeds_per_sec = len(all_results) / elapsed if elapsed > 0 else 0
             remaining = len(seeds) - len(all_results)
             eta = remaining / seeds_per_sec if seeds_per_sec > 0 else 0
+            
+            # Also show step progress (how many steps done in active envs)
+            total_episode_steps = sum(episode_lengths)
             print(f"  [{len(all_results)}/{len(seeds)}] {elapsed:.1f}s | "
-                  f"{active_envs} active envs | "
-                  f"Reward={avg_reward:.1f} Success={avg_success:.1%} | "
-                  f"ETA={eta:.0f}s")
+                  f"{active_envs} active | steps={total_episode_steps} | "
+                  f"Reward={avg_reward:.1f} Succ={avg_success:.1%} | "
+                  f"ETA={eta:.0f}s", flush=True)
     
     vec_env.close()
     
@@ -860,6 +954,16 @@ def main():
         safe_passes = [r['safe_pass_count'] for r in model_results]
         dangerous_closes = [r['dangerous_close_count'] for r in model_results]
         close_crash_rates = [r['close_encounter_crash_rate'] for r in model_results]
+        # Behavioral metrics
+        avg_speeds = [r.get('avg_speed', 0) for r in model_results]
+        speed_stds = [r.get('speed_std', 0) for r in model_results]
+        steering_stds = [r.get('steering_std', 0) for r in model_results]
+        accel_stds = [r.get('accel_std', 0) for r in model_results]
+        hard_brake_ratios = [r.get('hard_brake_ratio', 0) for r in model_results]
+        hard_steer_ratios = [r.get('hard_steer_ratio', 0) for r in model_results]
+        
+        # Out of road rate
+        out_of_road_rates = [r.get('out_of_road_rate', 0) for r in model_results]
         
         print(f"\n{model_name.upper()} Summary:")
         print(f"  Reward: mean={np.mean(rewards):.1f}, std={np.std(rewards):.1f}")
@@ -867,15 +971,60 @@ def main():
         print(f"  Route Completion (no bad event): {np.mean(route_no_bad)*100:.1f}%")
         print(f"  Success Rate: {np.mean(success_rates)*100:.1f}%")
         print(f"  Success Rate (no bad event): {np.mean(success_no_bad)*100:.1f}%")
+        print(f"  --- Safety Metrics ---")
         print(f"  Crash Vehicle Rate: {np.mean(crash_rates)*100:.1f}%")
+        print(f"  Out of Road Rate: {np.mean(out_of_road_rates)*100:.1f}%")
         print(f"  Any Bad Event Rate: {np.mean(any_bad_rates)*100:.1f}%")
+        print(f"  --- Behavioral Metrics ---")
+        print(f"  Avg Speed: {np.mean(avg_speeds):.2f} m/s")
+        print(f"  Speed Std: {np.mean(speed_stds):.2f}")
+        print(f"  Steering Std: {np.mean(steering_stds):.4f}")
+        print(f"  Accel Std: {np.mean(accel_stds):.4f}")
+        print(f"  Hard Brake Ratio: {np.mean(hard_brake_ratios)*100:.1f}%")
+        print(f"  Hard Steer Ratio: {np.mean(hard_steer_ratios)*100:.1f}%")
         print(f"  --- Traffic Proximity ---")
         print(f"  Min Vehicle Distance: {np.mean(min_dists):.2f}m" if min_dists else "  Min Vehicle Distance: N/A")
         print(f"  Avg Close Encounters: {np.mean(close_encounters):.1f}")
         print(f"  Close Encounter Rate: {np.mean(close_rates)*100:.1f}%")
         print(f"  Safe Pass Count: {np.mean(safe_passes):.1f}")
+        # Compute safe pass rate
+        total_close_enc = sum(close_encounters)
+        total_safe_pass = sum(safe_passes)
+        safe_pass_rate = total_safe_pass / total_close_enc if total_close_enc > 0 else 0.0
+        print(f"  Safe Pass Rate: {safe_pass_rate*100:.1f}%")
         print(f"  Dangerous Close Count: {np.mean(dangerous_closes):.1f}")
         print(f"  Close Encounter Crash Rate: {np.mean(close_crash_rates)*100:.1f}%")
+        
+        # Expert Comparison Metrics (if available)
+        expert_diffs = [r.get('expert_action_diff_l2', None) for r in model_results]
+        expert_diffs = [d for d in expert_diffs if d is not None]
+        if expert_diffs:
+            print(f"  --- Expert Comparison ---")
+            print(f"  Expert Action Diff (L2): {np.mean(expert_diffs):.4f}")
+            steering_diffs = [r.get('expert_steering_diff', 0) for r in model_results if 'expert_steering_diff' in r]
+            accel_diffs = [r.get('expert_accel_diff', 0) for r in model_results if 'expert_accel_diff' in r]
+            agreements = [r.get('expert_agreement_ratio', 0) for r in model_results if 'expert_agreement_ratio' in r]
+            if steering_diffs:
+                print(f"  Expert Steering Diff: {np.mean(steering_diffs):.4f}")
+            if accel_diffs:
+                print(f"  Expert Accel Diff: {np.mean(accel_diffs):.4f}")
+            if agreements:
+                print(f"  Expert Agreement Ratio: {np.mean(agreements)*100:.1f}%")
+        
+        # Difficulty Segment Analysis
+        print(f"  --- Difficulty Segments (Hardest to Easiest) ---")
+        segment_names = ["hardest", "hard", "medium", "easy", "easiest"]
+        num_per_segment = len(model_results) // 5 if len(model_results) >= 5 else len(model_results)
+        for seg_idx, seg_name in enumerate(segment_names):
+            start_idx = seg_idx * num_per_segment
+            end_idx = min(start_idx + num_per_segment, len(model_results))
+            if start_idx >= len(model_results):
+                break
+            seg_results = model_results[start_idx:end_idx]
+            seg_success = np.mean([r['success_rate'] for r in seg_results]) * 100
+            seg_crash = np.mean([r['crash_vehicle_rate'] for r in seg_results]) * 100
+            seg_reward = np.mean([r['reward'] for r in seg_results])
+            print(f"  [{seg_name:8s}] Success: {seg_success:5.1f}%, Crash: {seg_crash:5.1f}%, Reward: {seg_reward:.1f}")
     
     # Save results
     if args.num_jobs > 1:
