@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
 #SBATCH --array=0-19%4
-#SBATCH --partition=gpu07
+#SBATCH --partition=gpu06
 # ============================================================
 # FULL Reproduce Job 12219 on GPU07
 # - 20 checkpoints (step 1000, 2000, ..., 20000)

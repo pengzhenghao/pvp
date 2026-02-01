@@ -237,7 +237,7 @@ class SeedQueueWrapper:
         return getattr(self.env, name)
 
 
-def make_shared_env_config(use_image=True, start_seed=1000, num_scenarios=1000):
+def make_shared_env_config(use_image=True, start_seed=1000, num_scenarios=1000, daytime="06:10"):
     """Create config for a shared environment that supports multiple seeds via reset(seed=...)."""
     from metadrive.component.sensors.rgb_camera import RGBCamera
     sensor_size = (84, 84)
@@ -263,7 +263,7 @@ def make_shared_env_config(use_image=True, start_seed=1000, num_scenarios=1000):
             sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
             interface_panel=["rgb_camera", "dashboard"],
-            daytime="06:10",
+            daytime=daytime,
         ))
     else:
         config['image_observation'] = False
@@ -809,6 +809,8 @@ def main():
                         help="TD3BC2 checkpoint path")
     parser.add_argument("--pretrained_checkpoint", type=str, default="pretrained.zip",
                         help="Pretrained checkpoint path (for testing)")
+    parser.add_argument("--model_type", type=str, default="td3", choices=["td3", "iql", "td3bc"],
+                        help="Model type for loading pretrained checkpoint (td3, iql, or td3bc)")
     # Distributed evaluation arguments
     parser.add_argument("--job_id", type=int, default=0,
                         help="Job ID for distributed evaluation (0 to num_jobs-1)")
@@ -816,6 +818,8 @@ def main():
                         help="Total number of distributed jobs")
     parser.add_argument("--save_json", action="store_true",
                         help="Save results to JSON for later merging")
+    parser.add_argument("--daytime", type=str, default="06:10",
+                        help="Daytime setting for environment (e.g., '06:10', '08:30')")
     args = parser.parse_args()
     
     start_time = time.time()
@@ -862,9 +866,10 @@ def main():
     shared_env = HumanInTheLoopEnv(config=make_shared_env_config(
         use_image=True, 
         start_seed=min_seed,
-        num_scenarios=num_scenarios
+        num_scenarios=num_scenarios,
+        daytime=args.daytime
     ))
-    print(f"Created shared env: start_seed={min_seed}, num_scenarios={num_scenarios}")
+    print(f"Created shared env: start_seed={min_seed}, num_scenarios={num_scenarios}, daytime={args.daytime}")
     
     # Load models
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -907,7 +912,7 @@ def main():
         pretrained_path = script_dir / args.pretrained_checkpoint
         if pretrained_path.exists():
             print(f"Loading pretrained model from {pretrained_path}...")
-            models_to_eval["pretrained"] = load_model("td3", pretrained_path, shared_env)
+            models_to_eval["pretrained"] = load_model(args.model_type, pretrained_path, shared_env)
             print("Pretrained model loaded!")
         else:
             print(f"ERROR: Pretrained checkpoint not found at {pretrained_path}")
@@ -918,7 +923,8 @@ def main():
     shared_env_config = make_shared_env_config(
         use_image=True, 
         start_seed=min_seed,
-        num_scenarios=num_scenarios
+        num_scenarios=num_scenarios,
+        daytime=args.daytime
     )
     
     # Close the shared_env used for model loading

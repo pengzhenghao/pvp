@@ -6,8 +6,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=64G
-#SBATCH --partition="gpu07"
+#SBATCH --mem=500G
+#SBATCH --partition="gpu03"
 
 # Create directories
 mkdir -p ./logs
@@ -34,14 +34,14 @@ export MKL_NUM_THREADS=1
 # Run with parallel mode
 # 25 envs = 5 scenarios x 5 trials per batch
 python find_hard_scenarios_expert.py \
-    --start_seed 1000 \
+    --start_seed 0 \
     --num_scenarios 1000 \
     --parallel \
-    --num_envs 25 \
+    --num_envs 20 \
     --num_trials 5 \
     --stochastic \
     --save_interval 50 \
-    --output ./results/expert_difficulty
+    --output ./results/expert_difficulty_gpu03
 
 echo "=============================================="
 echo "End time: $(date)"

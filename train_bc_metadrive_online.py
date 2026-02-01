@@ -74,6 +74,7 @@ if __name__ == '__main__':
     parser.add_argument("--iql_beta", default=1.0, type=float, help="IQL temperature for advantage-weighted regression.")
     parser.add_argument("--clip_score", default=100.0, type=float, help="Maximum advantage weight for IQL.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Maximum gradient norm for IQL.")
+    parser.add_argument("--reward_normalize", action="store_true", help="Normalize rewards in IQL training.")
     # Data buffer save/load arguments
     parser.add_argument("--load_buffer", type=str, default="", help="Path to load saved data buffer (skip Phase 1 if provided).")
     parser.add_argument("--save_buffer", type=str, default="", help="Path to save data buffer after collection (enables saving).")
@@ -167,7 +168,7 @@ if __name__ == '__main__':
         sensors={"rgb_camera": (RGBCamera, *sensor_size)},
         stack_size=3,
         interface_panel=["rgb_camera", "dashboard"],
-        daytime="06:10",
+        daytime="08:30",
         use_render=False,
         disable_expert=False,  # Ensure IDMPolicy is used
         # Crash handling: consistent with eval env
@@ -210,7 +211,7 @@ if __name__ == '__main__':
             sensors={"rgb_camera": (RGBCamera, *sensor_size)},
             stack_size=3,
             interface_panel=["rgb_camera", "dashboard"],
-            daytime="06:10",
+            daytime="08:30",
         # Crash handling: don't end episode on crash, penalty already affects reward
         crash_vehicle_done=False,  # Continue episode after crashing into vehicle
         crash_object_done=False,   # Continue episode after crashing into object
@@ -335,10 +336,12 @@ if __name__ == '__main__':
             iql_beta=args.iql_beta,
             clip_score=args.clip_score,
             max_grad_norm=args.max_grad_norm,
+            reward_normalize=args.reward_normalize,
         ))
         bc_trainer = IQL(**trainer_config)
         print(f"Using IQL trainer with tau={args.iql_tau}, beta={args.iql_beta}, "
-              f"clip_score={args.clip_score}, max_grad_norm={args.max_grad_norm}")
+              f"clip_score={args.clip_score}, max_grad_norm={args.max_grad_norm}, "
+              f"reward_normalize={args.reward_normalize}")
     else:
         bc_trainer = TD3(**trainer_config)
         if args.use_td3_bc:
@@ -660,7 +663,7 @@ if __name__ == '__main__':
         print(f"With Lagrange: {args.cql_with_lagrange}, threshold: {args.lagrange_threshold}")
     elif args.use_iql:
         print("Phase 2: IQL (Implicit Q-Learning) Training on Collected Data")
-        print(f"IQL tau: {args.iql_tau}, beta: {args.iql_beta}, clip_score: {args.clip_score}")
+        print(f"IQL tau: {args.iql_tau}, beta: {args.iql_beta}, clip_score: {args.clip_score}, reward_normalize: {args.reward_normalize}")
     elif args.use_td3_bc:
         print("Phase 2: TD3+BC Training (Q-learning + BC) on Collected Data")
     else:
@@ -724,7 +727,7 @@ if __name__ == '__main__':
             num_envs_per_gpu=args.hard_eval_envs,
             eval_freq=args.eval_freq,
             toy_mode=args.toy,
-            daytime="06:10",
+            daytime="08:30",
             log_path=str(trial_dir / "models"),
             verbose=2,
             name_prefix="dist_hard_eval",
@@ -749,7 +752,7 @@ if __name__ == '__main__':
             job_id=args.job_id,
             num_jobs=args.num_jobs,
             toy_mode=args.toy,
-            daytime="06:10",
+            daytime="08:30",
             log_path=str(trial_dir / "models"),
             verbose=2,
             name_prefix="hard_eval",

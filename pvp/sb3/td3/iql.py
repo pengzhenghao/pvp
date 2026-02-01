@@ -85,6 +85,8 @@ class IQL(TD3):
         iql_beta: float = 3.0,
         clip_score: float = 100.0,
         max_grad_norm: float = 1.0,
+        reward_normalize: bool = False,  # Whether to normalize rewards
+        normalize_advantage: bool = True,  # Whether to normalize advantage (disable for vanilla IQL)
     ):
         # Don't initialize model yet - we need to set up value network first
         super(IQL, self).__init__(
@@ -123,6 +125,10 @@ class IQL(TD3):
         self.iql_beta = iql_beta
         self.clip_score = clip_score
         self.max_grad_norm = max_grad_norm
+        self.reward_normalize = reward_normalize
+        self.normalize_advantage = normalize_advantage
+        self._reward_mean = None
+        self._reward_std = None
         
         if _init_setup_model:
             self._setup_model()
@@ -235,7 +241,25 @@ class IQL(TD3):
             with th.no_grad():
                 # Use V(s') instead of max_a' Q(s', a')
                 next_v = self._get_value(replay_data.next_observations)
-                target_q = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_v
+                
+                # Apply reward normalization if enabled
+                rewards = replay_data.rewards
+                if self.reward_normalize:
+                    # Compute running stats on first call or use stored stats
+                    if self._reward_mean is None:
+                        # Compute stats from current batch (will be updated over time)
+                        self._reward_mean = rewards.mean().item()
+                        self._reward_std = rewards.std().item() + 1e-8
+                    else:
+                        # Exponential moving average for stability
+                        alpha = 0.01
+                        self._reward_mean = (1 - alpha) * self._reward_mean + alpha * rewards.mean().item()
+                        self._reward_std = (1 - alpha) * self._reward_std + alpha * (rewards.std().item() + 1e-8)
+                    
+                    # Normalize rewards: zero mean, unit variance
+                    rewards = (rewards - self._reward_mean) / self._reward_std
+                
+                target_q = rewards + (1 - replay_data.dones) * self.gamma * next_v
             
             # Get current Q estimates
             current_q_values = self.critic(replay_data.observations, replay_data.actions_behavior)
@@ -267,18 +291,21 @@ class IQL(TD3):
                     advantages_mean.append(advantage.mean().item())
                     advantages_std.append(advantage.std().item())
                     
-                    # Normalize advantages for stability (important!)
-                    adv_std = advantage.std()
-                    if adv_std > 1e-8:
-                        advantage_normalized = advantage / adv_std
+                    # Normalize advantages for stability (optional)
+                    if self.normalize_advantage:
+                        adv_std = advantage.std()
+                        if adv_std > 1e-8:
+                            advantage_for_weights = advantage / adv_std
+                        else:
+                            advantage_for_weights = advantage
                     else:
-                        advantage_normalized = advantage
+                        # Vanilla IQL: use raw advantage
+                        advantage_for_weights = advantage
                     
                     # Compute weights: exp(β * A) with clipping for stability
-                    # Use normalized advantages to prevent explosion
-                    weights = th.exp(self.iql_beta * advantage_normalized)
+                    weights = th.exp(self.iql_beta * advantage_for_weights)
                     weights = th.clamp(weights, max=self.clip_score)
-                    # Normalize weights to have mean 1 for stable gradients
+                    # Normalize weights to have mean 1 for stable gradients (always do this)
                     weights = weights / weights.mean()
                 
                 # Get policy actions
@@ -315,6 +342,10 @@ class IQL(TD3):
             self.logger.record("train/advantage_std", np.mean(advantages_std))
         self.logger.record("train/iql_tau", self.iql_tau)
         self.logger.record("train/iql_beta", self.iql_beta)
+        self.logger.record("train/reward_normalize", int(self.reward_normalize))
+        if self.reward_normalize and self._reward_mean is not None:
+            self.logger.record("train/reward_mean", self._reward_mean)
+            self.logger.record("train/reward_std", self._reward_std)
         
         # ===== Additional training metrics (same as TD3) =====
         if len(actor_losses) > 0:
