@@ -148,8 +148,8 @@ def load_lidar_expert(device="auto"):
         device=device,
     )
     
-    script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    ckpt = script_dir / "pvp" / "experiments" / "metadrive" / "egpo" / "metadrive_pvp_20m_steps.zip"
+    # Use absolute path to avoid issues when script is moved
+    ckpt = Path("/p0/user/caihy/pvp/pvp/experiments/metadrive/egpo/metadrive_pvp_20m_steps.zip")
     
     print(f"Loading lidar expert from: {ckpt}")
     if ckpt.exists():

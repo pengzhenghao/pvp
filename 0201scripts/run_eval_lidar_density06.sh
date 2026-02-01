@@ -31,6 +31,10 @@ python eval_on_train_seeds.py \
     --num_seeds 200 \
     --use_test_seeds \
     --use_original_config \
+    --daytime "08:30" \
+    --wandb \
+    --wandb_project lidar-eval-test \
+    --exp_name lidar-test-d06 \
     --output_dir /p0/user/caihy/pvp/results/eval_density06
 
 echo "Done!"
