@@ -334,10 +334,15 @@ def evaluate_sequential(model, seeds, env_config, model_name="model"):
             
             avg_rc_no_bad = np.mean([r['route_completion_no_bad'] for r in all_results])
             avg_cost = np.mean([r['episode_cost'] for r in all_results])
+            # Reward decomposition
+            avg_crash_penalty = np.mean([r['total_crash_penalty'] for r in all_results])
+            avg_oor_penalty = np.mean([r['total_out_of_road_penalty'] for r in all_results])
+            avg_driving_reward = np.mean([r['estimated_driving_reward'] for r in all_results])
             print(f"  [{seed_idx+1}/{len(seeds)}] {elapsed:.1f}s | Mem={mem:.0f}MB | "
                   f"R={avg_reward:.1f} Succ={avg_success:.0%} SuccNoBad={avg_success_no_bad:.0%} "
-                  f"RCNoBad={avg_rc_no_bad:.0%} Cost={avg_cost:.1f} "
-                  f"RC={avg_rc:.0%} Crash={avg_crash:.0%} | ETA={eta:.0f}s", flush=True)
+                  f"RCNoBad={avg_rc_no_bad:.0%} | "
+                  f"CrashP={avg_crash_penalty:.1f} OorP={avg_oor_penalty:.1f} DrivR={avg_driving_reward:.1f} | "
+                  f"ETA={eta:.0f}s", flush=True)
     
     env.close()
     return all_results
@@ -467,7 +472,36 @@ def main():
         model_name = f"iql_{Path(args.checkpoint).stem}"
     
     # Build comprehensive env config dict for logging
+    # Determine seed range for clear logging
+    if args.use_simple_seeds:
+        seed_range = f"[{args.start_seed}, {args.start_seed + args.num_seeds})"
+    elif args.use_test_seeds:
+        seed_range = "[1000, 2000)"
+    else:
+        seed_range = "[0, 1000)"
+    
+    # Create a hash of seeds for easy comparison between runs
+    import hashlib
+    seeds_str = ','.join(map(str, seeds))
+    seeds_hash = hashlib.md5(seeds_str.encode()).hexdigest()[:8]
+    
+    # Seeds at key positions for visual verification
+    seeds_at_50_60 = seeds[50:60] if len(seeds) > 60 else seeds[50:] if len(seeds) > 50 else []
+    
     env_config_log = {
+        # === SEED CONFIGURATION (CRITICAL FOR VERIFICATION) ===
+        'config/seed_type': seed_type,
+        'config/seed_range': seed_range,
+        'config/use_test_seeds': args.use_test_seeds,
+        'config/num_seeds_evaluated': len(seeds),
+        'config/seeds_hash': seeds_hash,  # Quick comparison: same hash = same seeds
+        'config/seeds_first_5': str(seeds[:5]),
+        'config/seeds_at_50_60': str(seeds_at_50_60),  # Key position for bug detection
+        'config/seeds_last_5': str(seeds[-5:]),
+        'config/seeds_min': int(min(seeds)),
+        'config/seeds_max': int(max(seeds)),
+        'config/seeds_full_list': seeds_str,  # Full list for detailed comparison
+        # === ENVIRONMENT CONFIGURATION ===
         'config/use_original_config': args.use_original_config,
         'config/image_observation': env_config.get('image_observation'),
         'config/traffic_density': env_config.get('traffic_density', 'NOT_SET_default_0.06'),
@@ -490,7 +524,6 @@ def main():
         'config/model_type': args.model,
         'config/checkpoint': args.checkpoint if args.checkpoint else 'N/A',
         'config/num_seeds': len(seeds),
-        'config/seed_type': seed_type,
     }
     
     print(f"\n[2] Environment config (FULL):")
@@ -534,6 +567,15 @@ def main():
     print(f"Crash Vehicle Count: mean={np.mean(crash_vehicle_counts):.2f}")
     print(f"Crash Object Count: mean={np.mean(crash_object_counts):.2f}")
     print(f"Out of Road Count: mean={np.mean(out_of_road_counts):.2f}")
+    print(f"--- Reward Decomposition ---")
+    avg_velocity = np.mean([r['avg_velocity'] for r in results])
+    total_crash_penalty = np.mean([r['total_crash_penalty'] for r in results])
+    total_oor_penalty = np.mean([r['total_out_of_road_penalty'] for r in results])
+    total_driving_reward = np.mean([r['estimated_driving_reward'] for r in results])
+    print(f"Avg Velocity: {avg_velocity:.2f} m/s")
+    print(f"Crash Penalty Mean: {total_crash_penalty:.1f}")
+    print(f"Out of Road Penalty Mean: {total_oor_penalty:.1f}")
+    print(f"Estimated Driving Reward Mean: {total_driving_reward:.1f}")
     print(f"\nTotal evaluation time: {eval_time/60:.1f} minutes")
     
     # Save results

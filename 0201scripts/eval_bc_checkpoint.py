@@ -36,27 +36,28 @@ logging.getLogger('metadrive').setLevel(logging.WARNING)
 logging.getLogger('panda3d').setLevel(logging.WARNING)
 
 # Top 200 hardest scenarios for TRAINING (seeds in [0, 1000))
+# MUST match generate_bc_data_sequential.py HARD_200_SEEDS exactly!
 TOP_200_TRAIN_SEEDS = [
     751, 849, 61, 963, 160, 257, 678, 491, 892, 410,
     403, 35, 473, 725, 171, 536, 376, 192, 755, 169,
     947, 586, 59, 535, 418, 694, 424, 452, 64, 100,
     548, 973, 180, 369, 313, 488, 557, 821, 318, 91,
     481, 969, 230, 120, 646, 942, 73, 806, 549, 315,
-    141, 210, 326, 217, 949, 87, 697, 855, 929, 304,
-    812, 428, 618, 745, 439, 597, 390, 232, 495, 429,
-    568, 472, 784, 238, 462, 328, 831, 539, 917, 436,
-    581, 514, 665, 815, 414, 977, 789, 898, 753, 998,
-    337, 662, 654, 668, 770, 556, 332, 297, 895, 866,
-    508, 296, 224, 950, 385, 940, 526, 363, 936, 341,
-    728, 525, 543, 510, 862, 294, 750, 882, 445, 683,
-    467, 779, 292, 707, 660, 289, 447, 701, 711, 760,
-    903, 504, 912, 399, 681, 675, 884, 951, 670, 723,
-    923, 358, 566, 442, 438, 772, 600, 893, 823, 689,
-    282, 563, 848, 560, 511, 719, 344, 630, 768, 285,
-    188, 765, 365, 324, 133, 888, 909, 478, 671, 505,
-    691, 844, 379, 276, 575, 384, 741, 966, 356, 749,
-    826, 346, 656, 367, 242, 639, 352, 955, 972, 524,
-    781, 434, 794, 628, 736, 394, 623, 850, 485, 757,
+    799, 816, 740, 781, 382, 738, 609, 765, 930, 932,
+    534, 747, 183, 401, 300, 692, 41, 367, 804, 959,
+    400, 984, 492, 46, 389, 354, 706, 448, 435, 92,
+    277, 543, 986, 903, 413, 239, 90, 484, 837, 819,
+    791, 454, 459, 758, 85, 168, 194, 567, 680, 205,
+    126, 373, 297, 208, 44, 794, 525, 533, 57, 142,
+    12, 762, 844, 598, 685, 368, 832, 946, 966, 178,
+    250, 572, 9, 825, 584, 11, 728, 269, 232, 898,
+    668, 374, 29, 760, 238, 5, 653, 524, 950, 611,
+    888, 243, 185, 215, 319, 934, 72, 923, 345, 236,
+    119, 248, 364, 553, 985, 199, 207, 392, 352, 355,
+    214, 894, 70, 847, 156, 336, 221, 965, 184, 735,
+    620, 305, 944, 718, 226, 773, 530, 987, 891, 261,
+    859, 394, 188, 951, 622, 769, 340, 225, 344, 540,
+    640, 975, 114, 727, 68, 310, 265, 273, 726, 42,
 ]
 
 # Top 200 hardest scenarios for TESTING (seeds in [1000, 2000))
@@ -473,6 +474,10 @@ def evaluate_parallel(model, seeds, num_envs, env_config):
     total_close_encounters = np.zeros(num_envs)
     safe_pass_counts = np.zeros(num_envs)
     dangerous_close_counts = np.zeros(num_envs)
+    # Reward decomposition tracking
+    total_crash_penalties = np.zeros(num_envs)
+    total_out_of_road_penalties = np.zeros(num_envs)
+    out_of_road_counts = np.zeros(num_envs, dtype=int)
     
     all_actions = [[] for _ in range(num_envs)]
     all_speeds = [[] for _ in range(num_envs)]
@@ -507,18 +512,22 @@ def evaluate_parallel(model, seeds, num_envs, env_config):
             episode_lengths[i] += 1
             route_completions[i] = max(route_completions[i], info.get('route_completion', 0.0))
             
-            # Track crashes
+            # Track crashes and penalties
             step_crash = False
             if info.get('crash_vehicle', False):
                 had_crash_vehicle[i] = True
                 crash_counts[i] += 1
+                total_crash_penalties[i] += 5.0  # crash_vehicle_penalty
                 step_crash = True
             if info.get('crash_object', False):
                 had_crash_object[i] = True
                 crash_counts[i] += 1
+                total_crash_penalties[i] += 5.0  # crash_object_penalty
                 step_crash = True
             if info.get('out_of_road', False):
                 had_out_of_road[i] = True
+                out_of_road_counts[i] += 1
+                total_out_of_road_penalties[i] += 5.0  # out_of_road_penalty
             if had_crash_vehicle[i] or had_crash_object[i] or had_out_of_road[i]:
                 had_bad_event[i] = True
             if info.get('arrive_dest', False):
@@ -583,6 +592,12 @@ def evaluate_parallel(model, seeds, num_envs, env_config):
                     'safe_pass_count': float(safe_pass_counts[i]),
                     'dangerous_close_count': float(dangerous_close_counts[i]),
                     'close_encounter_crash_rate': float(close_enc_crash_rate),
+                    # Reward decomposition (PRECISE tracking)
+                    'total_step_rewards': float(episode_rewards[i]),
+                    'total_crash_penalty': float(total_crash_penalties[i]),
+                    'total_out_of_road_penalty': float(total_out_of_road_penalties[i]),
+                    'out_of_road_count': int(out_of_road_counts[i]),
+                    'estimated_driving_reward': float(episode_rewards[i] + total_crash_penalties[i] + total_out_of_road_penalties[i]),
                 }
                 
                 all_results.append(result)
@@ -604,6 +619,10 @@ def evaluate_parallel(model, seeds, num_envs, env_config):
                 dangerous_close_counts[i] = 0
                 all_actions[i] = []
                 current_seeds[i] = info.get('seed', None)
+                # Reset reward decomposition
+                total_crash_penalties[i] = 0
+                total_out_of_road_penalties[i] = 0
+                out_of_road_counts[i] = 0
         
         # Progress logging
         elapsed = time.time() - start_time
@@ -621,8 +640,13 @@ def evaluate_parallel(model, seeds, num_envs, env_config):
                 avg_route_comp = np.mean([r['route_completion'] for r in all_results])
                 avg_route_no_bad = np.mean([r['route_completion_no_bad_event'] for r in all_results])
                 avg_crash_rate = np.mean([r['crash_vehicle_rate'] for r in all_results])
+                # Reward decomposition
+                avg_crash_penalty = np.mean([r.get('total_crash_penalty', 0) for r in all_results])
+                avg_oor_penalty = np.mean([r.get('total_out_of_road_penalty', 0) for r in all_results])
+                avg_driving_reward = np.mean([r.get('estimated_driving_reward', 0) for r in all_results])
             else:
                 avg_reward = avg_success = avg_success_no_bad = avg_route_comp = avg_route_no_bad = avg_crash_rate = 0
+                avg_crash_penalty = avg_oor_penalty = avg_driving_reward = 0
             
             seeds_per_sec = len(all_results) / elapsed if elapsed > 0 else 0
             remaining = len(seeds) - len(all_results)
@@ -632,6 +656,7 @@ def evaluate_parallel(model, seeds, num_envs, env_config):
             print(f"  [{len(all_results)}/{len(seeds)}] {elapsed:.1f}s | "
                   f"R={avg_reward:.1f} Succ={avg_success:.0%} SuccNoBad={avg_success_no_bad:.0%} "
                   f"RC={avg_route_comp:.0%} RCNoBad={avg_route_no_bad:.0%} Crash={avg_crash_rate:.0%} | "
+                  f"CrashP={avg_crash_penalty:.1f} OorP={avg_oor_penalty:.1f} DrivR={avg_driving_reward:.1f} | "
                   f"ETA={eta:.0f}s", flush=True)
     
     vec_env.close()
@@ -733,10 +758,72 @@ def compute_metrics(results):
     return metrics
 
 
+def load_lidar_expert(device="auto"):
+    """Load the lidar-based PPO expert."""
+    from pvp.sb3.ppo import PPO
+    from pvp.sb3.ppo.policies import ActorCriticPolicy
+    from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+    from pvp.sb3.common.save_util import load_from_zip_file
+    
+    # Create a temporary lidar env for model loading
+    temp_env = HumanInTheLoopEnv(config={
+        'manual_control': False, 
+        'use_render': False,
+        'image_observation': False,
+    })
+    
+    expert = PPO(
+        policy=ActorCriticPolicy,
+        env=temp_env,
+        n_steps=1024,
+        verbose=0,
+        device=device,
+    )
+    
+    # Use absolute path
+    ckpt = Path("/p0/user/caihy/pvp/pvp/experiments/metadrive/egpo/metadrive_pvp_20m_steps.zip")
+    
+    print(f"Loading lidar expert from: {ckpt}")
+    if ckpt.exists():
+        data, params, pytorch_variables = load_from_zip_file(ckpt, device=expert.device, print_system_info=False)
+        expert.set_parameters(params, exact_match=True, device=expert.device)
+    else:
+        raise FileNotFoundError(f"Lidar expert not found at {ckpt}")
+    
+    temp_env.close()
+    return expert
+
+
+def make_lidar_env_config(daytime="08:30", use_test_seeds=False):
+    """Create environment config for lidar-based evaluation (matching image eval but without image)."""
+    start_seed = 1000 if use_test_seeds else 0
+    
+    return dict(
+        manual_control=False,
+        use_render=False,
+        start_seed=start_seed,
+        num_scenarios=1000,
+        horizon=1500,
+        crash_vehicle_done=False,
+        crash_object_done=False,
+        cost_to_reward=False,
+        crash_vehicle_penalty=5.0,
+        crash_object_penalty=5.0,
+        out_of_road_penalty=5.0,
+        # Lidar observation (NOT image)
+        image_observation=False,
+        # Daytime (may not affect lidar, but keep consistent)
+        daytime=daytime,
+        # NOTE: traffic_density and random_traffic NOT SET (use env default 0.06)
+    )
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate BC checkpoint on hard scenarios")
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to BC checkpoint")
+    parser = argparse.ArgumentParser(description="Evaluate BC/IQL/Lidar on hard scenarios")
+    parser.add_argument("--model", type=str, default="image", choices=["image", "lidar"],
+                        help="Model type: 'image' for BC/IQL, 'lidar' for PPO expert")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Path to BC/IQL checkpoint (required for image model)")
     parser.add_argument("--num_envs", type=int, default=30,
                         help="Number of parallel environments")
     parser.add_argument("--num_seeds", type=int, default=200,
@@ -762,19 +849,28 @@ def main():
     args = parser.parse_args()
     
     print("=" * 80)
-    print("BC Checkpoint Evaluation on Hard Scenarios")
+    if args.model == "lidar":
+        print("Lidar PPO Expert Evaluation on Hard Scenarios")
+    else:
+        print("BC/IQL Checkpoint Evaluation on Hard Scenarios")
     print("=" * 80)
-    print(f"Checkpoint: {args.checkpoint}")
+    print(f"Model type: {args.model}")
+    if args.model == "image":
+        print(f"Checkpoint: {args.checkpoint}")
     print(f"Num envs: {args.num_envs}")
     print(f"Num seeds: {args.num_seeds}")
     print(f"Daytime: {args.daytime}")
     print(f"Initial memory: {get_memory_mb():.1f} MB")
     print("=" * 80)
     
-    # Check checkpoint exists
-    if not os.path.exists(args.checkpoint):
-        print(f"ERROR: Checkpoint not found: {args.checkpoint}")
-        sys.exit(1)
+    # Check checkpoint exists (only for image model)
+    if args.model == "image":
+        if not args.checkpoint:
+            print(f"ERROR: --checkpoint is required for image model")
+            sys.exit(1)
+        if not os.path.exists(args.checkpoint):
+            print(f"ERROR: Checkpoint not found: {args.checkpoint}")
+            sys.exit(1)
     
     # Seeds to evaluate
     if args.use_test_seeds:
@@ -786,48 +882,120 @@ def main():
     print(f"Evaluating on {len(seeds)} seeds - {seed_type}")
     print(f"First 10 seeds: {seeds[:10]}")
     
-    # Create env config
-    env_config = make_env_config(daytime=args.daytime, use_original_config=args.use_original_config, use_test_seeds=args.use_test_seeds)
-    print(f"Environment config: daytime={args.daytime}, use_original_config={args.use_original_config}, use_test_seeds={args.use_test_seeds}")
-    
-    # Create dummy env for model loading
+    # Create env config based on model type
     from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
     min_seed = min(seeds)
     max_seed = max(seeds)
     num_scenarios = max_seed - min_seed + 100
     
-    dummy_config = env_config.copy()
-    dummy_config["start_seed"] = min_seed
-    dummy_config["num_scenarios"] = num_scenarios
-    dummy_env = HumanInTheLoopEnv(config=dummy_config)
+    if args.model == "lidar":
+        # Lidar expert uses state-based observation
+        env_config = make_lidar_env_config(daytime=args.daytime, use_test_seeds=args.use_test_seeds)
+        print(f"Environment config (LIDAR): daytime={args.daytime}, use_test_seeds={args.use_test_seeds}")
+        print(f"  image_observation=False (lidar mode)")
+        
+        # Load lidar expert
+        print(f"\nLoading Lidar PPO Expert...")
+        model = load_lidar_expert(device="auto")
+        model_name = "lidar_expert"
+    else:
+        # Image-based BC/IQL
+        env_config = make_env_config(daytime=args.daytime, use_original_config=args.use_original_config, use_test_seeds=args.use_test_seeds)
+        print(f"Environment config (IMAGE): daytime={args.daytime}, use_original_config={args.use_original_config}, use_test_seeds={args.use_test_seeds}")
+        
+        # Create dummy env for model loading
+        dummy_config = env_config.copy()
+        dummy_config["start_seed"] = min_seed
+        dummy_config["num_scenarios"] = num_scenarios
+        dummy_env = HumanInTheLoopEnv(config=dummy_config)
+        
+        # Load BC/IQL model
+        print(f"\nLoading BC/IQL model from {args.checkpoint}...")
+        model = load_bc_model(args.checkpoint, dummy_env)
+        dummy_env.close()
+        model_name = Path(args.checkpoint).stem
     
-    # Load model
-    print(f"\nLoading BC model from {args.checkpoint}...")
-    model = load_bc_model(args.checkpoint, dummy_env)
     print(f"Model loaded! Device: {model.device}")
-    dummy_env.close()
+    
+    # Create a temporary env to read ACTUAL config values after initialization
+    print(f"\nReading actual env config from initialized environment...")
+    temp_config = env_config.copy()
+    temp_config["start_seed"] = min_seed
+    temp_config["num_scenarios"] = num_scenarios
+    temp_env = HumanInTheLoopEnv(config=temp_config)
+    
+    # Read ACTUAL values from the initialized environment
+    actual_env_config = temp_env.config
+    actual_traffic_density = actual_env_config.get('traffic_density', 'UNKNOWN')
+    actual_random_traffic = actual_env_config.get('random_traffic', 'UNKNOWN')
+    actual_out_of_road_penalty = actual_env_config.get('out_of_road_penalty', 'UNKNOWN')
+    actual_crash_vehicle_penalty = actual_env_config.get('crash_vehicle_penalty', 'UNKNOWN')
+    actual_crash_object_penalty = actual_env_config.get('crash_object_penalty', 'UNKNOWN')
+    actual_driving_reward = actual_env_config.get('driving_reward', 'UNKNOWN')
+    actual_speed_reward = actual_env_config.get('speed_reward', 'UNKNOWN')
+    actual_use_lateral_reward = actual_env_config.get('use_lateral_reward', 'UNKNOWN')
+    actual_horizon = actual_env_config.get('horizon', 'UNKNOWN')
+    actual_daytime = actual_env_config.get('daytime', 'UNKNOWN')
+    actual_image_observation = actual_env_config.get('image_observation', 'UNKNOWN')
+    
+    print(f"  ACTUAL traffic_density: {actual_traffic_density}")
+    print(f"  ACTUAL random_traffic: {actual_random_traffic}")
+    print(f"  ACTUAL out_of_road_penalty: {actual_out_of_road_penalty}")
+    print(f"  ACTUAL crash_vehicle_penalty: {actual_crash_vehicle_penalty}")
+    print(f"  ACTUAL crash_object_penalty: {actual_crash_object_penalty}")
+    print(f"  ACTUAL driving_reward: {actual_driving_reward}")
+    print(f"  ACTUAL speed_reward: {actual_speed_reward}")
+    print(f"  ACTUAL horizon: {actual_horizon}")
+    print(f"  ACTUAL daytime: {actual_daytime}")
+    
+    temp_env.close()
     
     # Build comprehensive env config for logging
+    # Determine seed type and range for clear logging
+    seed_type = "TEST" if args.use_test_seeds else "TRAIN"
+    seed_range = "[1000, 2000)" if args.use_test_seeds else "[0, 1000)"
+    
+    # Create a hash of seeds for easy comparison between runs
+    import hashlib
+    seeds_str = ','.join(map(str, seeds))
+    seeds_hash = hashlib.md5(seeds_str.encode()).hexdigest()[:8]
+    
+    # Seeds at key positions for visual verification
+    seeds_at_50_60 = seeds[50:60] if len(seeds) > 60 else seeds[50:] if len(seeds) > 50 else []
+    
     env_config_log = {
+        # === SEED CONFIGURATION (CRITICAL FOR VERIFICATION) ===
+        'config/seed_type': seed_type,
+        'config/seed_range': seed_range,
+        'config/use_test_seeds': args.use_test_seeds,
+        'config/num_seeds_evaluated': len(seeds),
+        'config/seeds_hash': seeds_hash,  # Quick comparison: same hash = same seeds
+        'config/seeds_first_5': str(seeds[:5]),
+        'config/seeds_at_50_60': str(seeds_at_50_60),  # Key position for bug detection
+        'config/seeds_last_5': str(seeds[-5:]),
+        'config/seeds_min': int(min(seeds)),
+        'config/seeds_max': int(max(seeds)),
+        'config/seeds_full_list': seeds_str,  # Full list for detailed comparison
+        # === ACTUAL ENVIRONMENT CONFIGURATION (read from initialized env) ===
+        'env/model_type': args.model,
         'env/use_original_config': args.use_original_config,
-        'env/image_observation': env_config.get('image_observation'),
-        'env/traffic_density': env_config.get('traffic_density', 'NOT_SET_default_0.06'),
-        'env/random_traffic': env_config.get('random_traffic', 'NOT_SET_default'),
-        'env/daytime': env_config.get('daytime', 'NOT_SET_default'),
+        'env/image_observation_ACTUAL': actual_image_observation,
+        'env/traffic_density_ACTUAL': actual_traffic_density,
+        'env/random_traffic_ACTUAL': actual_random_traffic,
+        'env/daytime_ACTUAL': actual_daytime,
         'env/crash_vehicle_done': env_config.get('crash_vehicle_done'),
         'env/crash_object_done': env_config.get('crash_object_done'),
         'env/cost_to_reward': env_config.get('cost_to_reward'),
-        'env/crash_vehicle_penalty': env_config.get('crash_vehicle_penalty'),
-        'env/crash_object_penalty': env_config.get('crash_object_penalty'),
-        'env/out_of_road_penalty': env_config.get('out_of_road_penalty'),
+        'env/crash_vehicle_penalty_ACTUAL': actual_crash_vehicle_penalty,
+        'env/crash_object_penalty_ACTUAL': actual_crash_object_penalty,
+        'env/out_of_road_penalty_ACTUAL': actual_out_of_road_penalty,
+        'env/driving_reward_ACTUAL': actual_driving_reward,
+        'env/speed_reward_ACTUAL': actual_speed_reward,
+        'env/use_lateral_reward_ACTUAL': actual_use_lateral_reward,
+        'env/horizon_ACTUAL': actual_horizon,
         'env/start_seed': env_config.get('start_seed'),
         'env/num_scenarios': env_config.get('num_scenarios'),
-        'env/horizon': env_config.get('horizon'),
         'env/stack_size': env_config.get('stack_size'),
-        'env/out_of_route_done': env_config.get('out_of_route_done', 'NOT_SET'),
-        'env/driving_reward': env_config.get('driving_reward', 'NOT_SET'),
-        'env/speed_reward': env_config.get('speed_reward', 'NOT_SET'),
-        'env/use_lateral_reward': env_config.get('use_lateral_reward', 'NOT_SET'),
     }
     
     print(f"\nEnvironment config (FULL):")
