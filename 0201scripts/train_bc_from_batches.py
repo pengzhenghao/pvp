@@ -160,7 +160,9 @@ def main():
     parser.add_argument("--seed", type=int, default=0,
                         help="Random seed")
     parser.add_argument("--ckpt", type=str, default="",
-                        help="Path to initial checkpoint")
+                        help="Path to initial checkpoint (for resuming training)")
+    parser.add_argument("--start_step", type=int, default=0,
+                        help="Starting step (for resuming training, e.g., 40000 to continue from 40K)")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable wandb logging")
     parser.add_argument("--wandb_project", type=str, default="bc-hard-seeds",
@@ -341,13 +343,19 @@ def main():
     total_loss = 0
     memory_samples = []
     log_freq = args.log_freq
+    start_step = args.start_step
+    total_steps = args.bc_training_steps
+    
+    if start_step > 0:
+        print(f"\n[7] RESUMING from step {start_step}...", flush=True)
+        print(f"    Training steps: {start_step + 1} to {total_steps}", flush=True)
     
     # Accumulators for averaging
     loss_acc = []
     steering_loss_acc = []
     accel_loss_acc = []
     
-    for step in range(1, args.bc_training_steps + 1):
+    for step in range(start_step + 1, total_steps + 1):
         # Sample batch
         obs, actions = data_loader.sample()
         
@@ -390,17 +398,19 @@ def main():
         memory_samples.append(current_memory)
         
         # Logging
-        if step % log_freq == 0 or step == 1:
+        if step % log_freq == 0 or step == start_step + 1:
             elapsed = time.time() - start_time
-            rate = step / elapsed
-            eta_seconds = (args.bc_training_steps - step) / rate if rate > 0 else 0
+            steps_done = step - start_step
+            rate = steps_done / elapsed if elapsed > 0 else 0
+            steps_remaining = total_steps - step
+            eta_seconds = steps_remaining / rate if rate > 0 else 0
             eta_hours = eta_seconds / 3600
             
             avg_loss = np.mean(loss_acc[-log_freq:]) if loss_acc else 0
             avg_steering_loss = np.mean(steering_loss_acc[-log_freq:]) if steering_loss_acc else 0
             avg_accel_loss = np.mean(accel_loss_acc[-log_freq:]) if accel_loss_acc else 0
             
-            log_msg = f"[{step}/{args.bc_training_steps}] Loss: {avg_loss:.4f} (steer: {avg_steering_loss:.4f}, accel: {avg_accel_loss:.4f}), Mem: {current_memory:.0f}MB, Rate: {rate:.1f}/s, ETA: {eta_hours:.1f}h"
+            log_msg = f"[{step}/{total_steps}] Loss: {avg_loss:.4f} (steer: {avg_steering_loss:.4f}, accel: {avg_accel_loss:.4f}), Mem: {current_memory:.0f}MB, Rate: {rate:.1f}/s, ETA: {eta_hours:.1f}h"
             print(log_msg, flush=True)
             
             if args.wandb and wandb_run:
@@ -487,7 +497,9 @@ def main():
     print("\n" + "=" * 80, flush=True)
     print("Training Summary", flush=True)
     print("=" * 80, flush=True)
-    print(f"    Total steps: {args.bc_training_steps}", flush=True)
+    print(f"    Start step: {start_step}", flush=True)
+    print(f"    End step: {total_steps}", flush=True)
+    print(f"    Steps trained this run: {total_steps - start_step}", flush=True)
     print(f"    Total updates: {model._n_updates}", flush=True)
     print(f"    Training time: {(time.time() - start_time)/60:.1f} min", flush=True)
     print(f"    Final memory: {get_memory_usage():.1f} MB", flush=True)
