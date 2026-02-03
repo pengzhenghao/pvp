@@ -434,7 +434,10 @@ def main():
                         help="How many samples from each file before reloading")
     parser.add_argument("--toy", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--ckpt", type=str, default="")
+    parser.add_argument("--ckpt", type=str, default="",
+                        help="Main checkpoint for IQL components (V, Q, critic)")
+    parser.add_argument("--actor_ckpt", type=str, default="",
+                        help="Separate checkpoint for actor network only (e.g., from BC training)")
     parser.add_argument("--v_ckpt", type=str, default="", 
                         help="Separate checkpoint for V network (value_features_extractor + value_mlp)")
     parser.add_argument("--wandb", action="store_true")
@@ -591,17 +594,160 @@ def main():
     
     print("\n[4] Loading initial checkpoint...", flush=True)
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+    from pvp.sb3.common.save_util import load_from_zip_file
+    import zipfile
+    import io
+    import json
+    
+    # #region agent log - Debug logging helper
+    def _debug_log(hypothesis_id, location, message, data=None):
+        log_entry = {"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data or {}, "timestamp": time.time(), "sessionId": "debug-session"}
+        with open("/p0/user/caihy/.cursor/debug.log", "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    # #endregion
+    
+    # #region agent log - Hypothesis A/D: Log initial value network state hash
+    v_fe_hash_before = sum(p.sum().item() for p in model.value_features_extractor.parameters())
+    v_mlp_hash_before = sum(p.sum().item() for p in model.value_mlp.parameters())
+    critic_hash_before = sum(p.sum().item() for p in model.critic.parameters())
+    _debug_log("A", "before_any_load", "Initial model state hashes", {"v_fe": v_fe_hash_before, "v_mlp": v_mlp_hash_before, "critic": critic_hash_before})
+    # #endregion
+    
+    # Step 1: Load actor from separate checkpoint if provided
+    if args.actor_ckpt:
+        actor_ckpt_path = Path(args.actor_ckpt)
+        if actor_ckpt_path.exists():
+            print(f"    Loading ACTOR ONLY from: {actor_ckpt_path}", flush=True)
+            
+            # #region agent log - Hypothesis A: Log state BEFORE actor loading
+            v_fe_before_actor = sum(p.sum().item() for p in model.value_features_extractor.parameters())
+            critic_before_actor = sum(p.sum().item() for p in model.critic.parameters())
+            actor_before = sum(p.sum().item() for p in model.actor.parameters())
+            _debug_log("A", "before_actor_load", "State before actor load", {"v_fe": v_fe_before_actor, "critic": critic_before_actor, "actor": actor_before})
+            # #endregion
+            
+            # FIX: Directly read policy.pth from the zip file to get actor weights
+            with zipfile.ZipFile(actor_ckpt_path, 'r') as zf:
+                # #region agent log - Hypothesis D: Log files in BC checkpoint
+                _debug_log("D", "actor_ckpt_files", "Files in BC checkpoint", {"files": zf.namelist()})
+                # #endregion
+                
+                if 'policy.pth' in zf.namelist():
+                    with zf.open('policy.pth') as f:
+                        policy_state = torch.load(io.BytesIO(f.read()), map_location=model.device)
+                    
+                    # #region agent log - Hypothesis D: Log all keys in policy.pth
+                    all_keys = list(policy_state.keys())
+                    _debug_log("D", "policy_pth_keys", "Keys in policy.pth", {"keys": all_keys[:30], "total": len(all_keys)})
+                    # #endregion
+                    
+                    # Extract only actor weights (not actor_target, not critic)
+                    actor_state = {k: v for k, v in policy_state.items() 
+                                   if k.startswith('actor.') and not k.startswith('actor_target.')}
+                    
+                    # #region agent log - Hypothesis D: Log selected actor keys
+                    _debug_log("D", "actor_keys_selected", "Actor keys selected for loading", {"keys": list(actor_state.keys()), "count": len(actor_state)})
+                    # #endregion
+                    
+                    if actor_state:
+                        # #region agent log - Hypothesis H: Check key matching between checkpoint and model
+                        model_actor_keys = list(model.actor.state_dict().keys())
+                        _debug_log("H", "actor_key_comparison", "Comparing checkpoint keys vs model keys", {
+                            "ckpt_keys": list(actor_state.keys())[:10],
+                            "model_keys": model_actor_keys[:10],
+                            "ckpt_key_count": len(actor_state),
+                            "model_key_count": len(model_actor_keys)
+                        })
+                        # #endregion
+                        
+                        # Check if keys match - need to strip 'actor.' prefix from checkpoint keys
+                        # because model.actor.state_dict() keys don't have 'actor.' prefix
+                        actor_state_remapped = {}
+                        for k, v in actor_state.items():
+                            # Remove 'actor.' prefix if present
+                            new_key = k[6:] if k.startswith('actor.') else k
+                            actor_state_remapped[new_key] = v
+                        
+                        # #region agent log - Hypothesis H: Log remapped keys
+                        _debug_log("H", "actor_remapped_keys", "Remapped keys for loading", {
+                            "remapped_keys": list(actor_state_remapped.keys())[:10]
+                        })
+                        # #endregion
+                        
+                        model.actor.load_state_dict(actor_state_remapped, strict=False)
+                        print(f"    Actor loaded from BC checkpoint! ({len(actor_state_remapped)} keys)", flush=True)
+                    else:
+                        print(f"    WARNING: No actor keys found in policy.pth!", flush=True)
+                else:
+                    print(f"    WARNING: policy.pth not found in BC checkpoint!", flush=True)
+            
+            # #region agent log - Hypothesis A: Log state AFTER actor loading - verify V/Q unchanged
+            v_fe_after_actor = sum(p.sum().item() for p in model.value_features_extractor.parameters())
+            critic_after_actor = sum(p.sum().item() for p in model.critic.parameters())
+            actor_after = sum(p.sum().item() for p in model.actor.parameters())
+            v_fe_changed = abs(v_fe_after_actor - v_fe_before_actor) > 1e-6
+            critic_changed = abs(critic_after_actor - critic_before_actor) > 1e-6
+            actor_changed = abs(actor_after - actor_before) > 1e-6
+            _debug_log("A", "after_actor_load", "State after actor load", {
+                "v_fe": v_fe_after_actor, "critic": critic_after_actor, "actor": actor_after,
+                "v_fe_CHANGED": v_fe_changed, "critic_CHANGED": critic_changed, "actor_CHANGED": actor_changed
+            })
+            # #endregion
+        else:
+            print(f"    WARNING: Actor checkpoint not found: {actor_ckpt_path}", flush=True)
+    
+    # Step 2: Load IQL components (V, Q, critic) from main checkpoint
     if args.ckpt:
         ckpt_path = Path(args.ckpt)
     else:
         ckpt_path = script_dir / "domainAexpertBC.zip"
     
     if ckpt_path.exists():
-        print(f"    Loading actor/critic from: {ckpt_path}", flush=True)
-        from pvp.sb3.common.save_util import load_from_zip_file
-        data, params, pytorch_variables = load_from_zip_file(ckpt_path, device=model.device, print_system_info=False)
-        model.set_parameters(params, exact_match=False, device=model.device)
-        print(f"    Actor/Critic loaded!", flush=True)
+        print(f"    Loading IQL components (V, Q, critic) from: {ckpt_path}", flush=True)
+        
+        with zipfile.ZipFile(ckpt_path, 'r') as zf:
+            # Load value_features_extractor
+            if 'value_features_extractor.pth' in zf.namelist():
+                with zf.open('value_features_extractor.pth') as f:
+                    v_fe_state = torch.load(io.BytesIO(f.read()), map_location=model.device)
+                    model.value_features_extractor.load_state_dict(v_fe_state)
+                    print(f"    value_features_extractor loaded!", flush=True)
+            
+            # Load value_mlp
+            if 'value_mlp.pth' in zf.namelist():
+                with zf.open('value_mlp.pth') as f:
+                    v_mlp_state = torch.load(io.BytesIO(f.read()), map_location=model.device)
+                    model.value_mlp.load_state_dict(v_mlp_state)
+                    print(f"    value_mlp loaded!", flush=True)
+            
+            # Load critic (Q) from policy.pth
+            if 'policy.pth' in zf.namelist():
+                with zf.open('policy.pth') as f:
+                    policy_state = torch.load(io.BytesIO(f.read()), map_location=model.device)
+                    # Extract critic weights
+                    critic_keys = [k for k in policy_state.keys() if 'critic' in k]
+                    if critic_keys:
+                        critic_state = {k: policy_state[k] for k in critic_keys}
+                        model.critic.load_state_dict(critic_state, strict=False)
+                        print(f"    critic (Q) loaded!", flush=True)
+                    
+                    # If no separate actor_ckpt, also load actor from here
+                    if not args.actor_ckpt:
+                        actor_keys = [k for k in policy_state.keys() if 'actor' in k or 'features_extractor' in k or 'mlp_extractor' in k]
+                        if actor_keys:
+                            actor_state = {k: policy_state[k] for k in actor_keys}
+                            model.actor.load_state_dict(actor_state, strict=False)
+                            print(f"    actor loaded (no separate actor_ckpt)!", flush=True)
+        
+        # #region agent log - Hypothesis B: Log final state after IQL components loaded
+        v_fe_final = sum(p.sum().item() for p in model.value_features_extractor.parameters())
+        v_mlp_final = sum(p.sum().item() for p in model.value_mlp.parameters())
+        critic_final = sum(p.sum().item() for p in model.critic.parameters())
+        actor_final = sum(p.sum().item() for p in model.actor.parameters())
+        _debug_log("B", "after_iql_load", "Final state after IQL checkpoint load", {"v_fe": v_fe_final, "v_mlp": v_mlp_final, "critic": critic_final, "actor": actor_final, "actor_ckpt_used": bool(args.actor_ckpt)})
+        # #endregion
+        
+        print(f"    IQL components loaded from {ckpt_path}!", flush=True)
     else:
         print(f"    WARNING: Checkpoint not found: {ckpt_path}", flush=True)
     
@@ -815,6 +961,30 @@ def main():
     print("Starting IQL Training Loop", flush=True)
     print("=" * 80, flush=True)
     
+    # #region agent log - Hypothesis I: Log exact weights BEFORE training starts
+    # This will help compare if value/critic weights are identical between runs
+    v_fe_hash_train_start = sum(p.sum().item() for p in model.value_features_extractor.parameters())
+    v_mlp_hash_train_start = sum(p.sum().item() for p in model.value_mlp.parameters())
+    critic_hash_train_start = sum(p.sum().item() for p in model.critic.parameters())
+    actor_hash_train_start = sum(p.sum().item() for p in model.actor.parameters())
+    
+    # Also check first weight values for exact matching
+    v_fe_first_weight = next(model.value_features_extractor.parameters()).flatten()[:5].tolist()
+    critic_first_weight = next(model.critic.parameters()).flatten()[:5].tolist()
+    
+    _debug_log("I", "training_start_state", "Model state at training start", {
+        "v_fe_hash": v_fe_hash_train_start, 
+        "v_mlp_hash": v_mlp_hash_train_start, 
+        "critic_hash": critic_hash_train_start,
+        "actor_hash": actor_hash_train_start,
+        "v_fe_first_5_values": v_fe_first_weight,
+        "critic_first_5_values": critic_first_weight,
+        "actor_ckpt_used": bool(args.actor_ckpt)
+    })
+    print(f"    [DEBUG] V_FE hash at train start: {v_fe_hash_train_start:.6f}", flush=True)
+    print(f"    [DEBUG] Critic hash at train start: {critic_hash_train_start:.6f}", flush=True)
+    # #endregion
+    
     from pvp.sb3.common.utils import polyak_update
     
     start_time = time.time()
@@ -830,6 +1000,16 @@ def main():
         
         if args.reward_normalize and model._reward_mean is not None:
             rewards = (rewards - model._reward_mean) / model._reward_std
+        
+        # #region agent log - Hypothesis I: Log first 3 steps to detect early divergence
+        if step <= 3:
+            obs_hash = obs['image'].sum().item() if isinstance(obs, dict) else obs.sum().item()
+            actions_hash = actions.sum().item()
+            rewards_hash = rewards.sum().item()
+            _debug_log("I", f"step_{step}_data", f"Training data at step {step}", {
+                "obs_hash": obs_hash, "actions_hash": actions_hash, "rewards_hash": rewards_hash
+            })
+        # #endregion
         
         # ========== IQL Update ==========
         # 1. Value function update
