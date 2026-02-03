@@ -4,6 +4,7 @@ Train IQL from batched data format (optimize_memory style).
 Key: next_obs = obs[index+1], NOT separately stored.
 - Episode boundaries (done=True) require special handling
 - Caches loaded batch files to reduce I/O
+- Online rollout collection during training (logs rollout/* metrics to wandb)
 
 Usage:
     python train_iql_from_batches.py --data_dir /data/caihy/bc_data_1M --log_dir /data/caihy/iql_training
@@ -27,7 +28,179 @@ import torch
 import torch.nn.functional as F
 import psutil
 import gymnasium
+import hashlib
+from collections import deque, defaultdict
 sys.modules['gym'] = gymnasium
+
+
+# Top 200 hardest scenarios for the lidar PPO expert (in [0, 1000) range)
+# Same as generate_bc_data_sequential.py
+HARD_200_SEEDS = [
+    751, 849, 61, 963, 160, 257, 678, 491, 892, 410,
+    403, 35, 473, 725, 171, 536, 376, 192, 755, 169,
+    947, 586, 59, 535, 418, 694, 424, 452, 64, 100,
+    548, 973, 180, 369, 313, 488, 557, 821, 318, 91,
+    481, 969, 230, 120, 646, 942, 73, 806, 549, 315,
+    799, 816, 740, 781, 382, 738, 609, 765, 930, 932,
+    534, 747, 183, 401, 300, 692, 41, 367, 804, 959,
+    400, 984, 492, 46, 389, 354, 706, 448, 435, 92,
+    277, 543, 986, 903, 413, 239, 90, 484, 837, 819,
+    791, 454, 459, 758, 85, 168, 194, 567, 680, 205,
+    744, 760, 471, 690, 431, 507, 78, 196, 893, 99,
+    671, 289, 970, 550, 87, 457, 512, 663, 972, 834,
+    659, 638, 462, 630, 685, 727, 215, 380, 113, 211,
+    597, 476, 510, 560, 823, 517, 577, 708, 988, 545,
+    295, 882, 505, 228, 593, 243, 236, 832, 710, 965,
+    712, 558, 377, 294, 645, 640, 266, 566, 415, 613,
+    668, 280, 702, 635, 334, 105, 811, 584, 888, 578,
+    573, 629, 203, 346, 282, 912, 591, 364, 960, 840,
+    467, 845, 603, 115, 325, 143, 863, 285, 443, 527,
+    348, 474, 466, 344, 429, 779, 189, 331, 623, 563,
+]
+
+
+class SimpleMonitor:
+    """
+    Simplified Monitor that wraps an env and tracks episode statistics.
+    Avoids compatibility issues with gym/gymnasium.
+    """
+    def __init__(self, env):
+        self.env = env
+        self.rewards = []
+        self.episode_infos = defaultdict(list)
+        self.t_start = time.time()
+        self._last_info = {}
+        
+    @property
+    def observation_space(self):
+        return self.env.observation_space
+    
+    @property
+    def action_space(self):
+        return self.env.action_space
+    
+    @property
+    def unwrapped(self):
+        return self.env.unwrapped if hasattr(self.env, 'unwrapped') else self.env
+    
+    def reset(self, **kwargs):
+        self.rewards = []
+        self.episode_infos = defaultdict(list)
+        return self.env.reset(**kwargs)
+    
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        self.rewards.append(reward)
+        self._last_info = info
+        
+        # Track all info keys
+        for key, val in info.items():
+            if isinstance(val, (int, float, np.number)):
+                self.episode_infos[key].append(val)
+        
+        if done:
+            ep_rew = sum(self.rewards)
+            ep_len = len(self.rewards)
+            ep_info = {"r": round(ep_rew, 6), "l": ep_len, "t": round(time.time() - self.t_start, 6)}
+            
+            # Add final info values
+            for key, val in info.items():
+                if isinstance(val, (int, float, np.number, bool)):
+                    ep_info[key] = val
+                    # Also add episode mean for accumulated values
+                    if key in self.episode_infos and len(self.episode_infos[key]) > 0:
+                        ep_info["ep_{}".format(key)] = np.mean(self.episode_infos[key])
+            
+            info["episode"] = ep_info
+        
+        return obs, reward, done, info
+    
+    def close(self):
+        self.env.close()
+
+
+def create_rollout_env(daytime="06:10"):
+    """
+    Create a rollout environment with Monitor wrapper for online evaluation.
+    Uses the same config as data generation (generate_bc_data_sequential.py).
+    
+    Returns:
+        env: Environment with Monitor wrapper
+        seeds_hash: Hash of the seeds for verification
+        actual_env_config: Actual config values read from the environment
+    """
+    from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+    from metadrive.component.sensors.rgb_camera import RGBCamera
+    
+    sensor_size = (84, 84)
+    
+    # Same config as generate_bc_data_sequential.py
+    env_config = dict(
+        image_observation=True,
+        vehicle_config=dict(image_source="rgb_camera"),
+        sensors={"rgb_camera": (RGBCamera, *sensor_size)},
+        horizon=1500,
+        # Safety settings - match data generation
+        crash_vehicle_done=False,
+        crash_object_done=False,
+        crash_vehicle_penalty=5.0,
+        crash_object_penalty=5.0,
+        out_of_road_penalty=5.0,
+        # Reward settings
+        driving_reward=1.0,
+        speed_reward=0.1,
+        use_lateral_reward=False,
+        # Other settings
+        daytime=daytime,
+        use_render=False,
+        start_seed=0,
+        num_scenarios=1000,
+        # DO NOT set traffic_density - use env default (0.06)
+    )
+    
+    # Create wrapper that cycles through hard seeds
+    class HardSeedEnv(HumanInTheLoopEnv):
+        """Wrapper that cycles through HARD_200_SEEDS on reset."""
+        def __init__(self, config):
+            super().__init__(config)
+            self.hard_seeds = HARD_200_SEEDS
+            self.seed_idx = 0
+            self.seeds_used = []
+        
+        def reset(self, **kwargs):
+            # Select next seed from hard seeds (cycling)
+            seed = self.hard_seeds[self.seed_idx % len(self.hard_seeds)]
+            self.seed_idx += 1
+            kwargs['seed'] = seed
+            self.seeds_used.append(seed)
+            return super().reset(**kwargs)
+    
+    # Create env and wrap with SimpleMonitor (avoids gym/gymnasium compatibility issues)
+    env = HardSeedEnv(config=env_config)
+    env = SimpleMonitor(env)
+    
+    # Compute seeds hash for verification
+    seeds_str = ','.join(map(str, sorted(HARD_200_SEEDS)))
+    seeds_hash = hashlib.md5(seeds_str.encode()).hexdigest()[:16]
+    
+    # Read actual config from env after initialization
+    actual_env_config = {
+        'traffic_density': env.unwrapped.config.get('traffic_density', 0.06),
+        'daytime': env.unwrapped.config.get('daytime', daytime),
+        'out_of_road_penalty': env.unwrapped.config.get('out_of_road_penalty', 5.0),
+        'crash_vehicle_penalty': env.unwrapped.config.get('crash_vehicle_penalty', 5.0),
+        'crash_object_penalty': env.unwrapped.config.get('crash_object_penalty', 5.0),
+        'driving_reward': env.unwrapped.config.get('driving_reward', 1.0),
+        'speed_reward': env.unwrapped.config.get('speed_reward', 0.1),
+        'horizon': env.unwrapped.config.get('horizon', 1500),
+    }
+    
+    return env, seeds_hash, actual_env_config
+
+
+def safe_mean(arr):
+    """Compute mean of a list, returning 0 if empty."""
+    return np.mean(arr) if len(arr) > 0 else 0.0
 
 
 def get_memory_usage():
@@ -215,6 +388,12 @@ def main():
     parser.add_argument("--clip_score", type=float, default=100.0)
     parser.add_argument("--max_grad_norm", type=float, default=1.0,
                         help="Max gradient norm for clipping (default 1.0)")
+    parser.add_argument("--daytime", type=str, default="06:10",
+                        help="Daytime for rollout env (should match data generation)")
+    parser.add_argument("--rollout_log_freq", type=int, default=100,
+                        help="How often to log rollout metrics (in training steps)")
+    parser.add_argument("--no_rollout", action="store_true",
+                        help="Disable online rollout collection")
     args = parser.parse_args()
     
     if args.toy:
@@ -454,6 +633,52 @@ def main():
             print(f"    WARNING: Failed to initialize wandb: {e}", flush=True)
             args.wandb = False
     
+    # Create rollout environment for online evaluation
+    rollout_env = None
+    rollout_obs = None
+    ep_info_buffer = deque(maxlen=100)  # Store recent episode infos
+    rollout_seeds_hash = None
+    actual_rollout_config = None
+    
+    if not args.no_rollout:
+        print("\n[8] Creating rollout environment...", flush=True)
+        try:
+            rollout_env, rollout_seeds_hash, actual_rollout_config = create_rollout_env(daytime=args.daytime)
+            rollout_obs, _ = rollout_env.reset()
+            print(f"    Rollout env created!", flush=True)
+            print(f"    Seeds hash: {rollout_seeds_hash}", flush=True)
+            print(f"    Actual env config:", flush=True)
+            for k, v in actual_rollout_config.items():
+                print(f"      {k}: {v}", flush=True)
+            
+            # Log env config to wandb
+            if args.wandb and wandb_run:
+                daytime_numeric = int(args.daytime.replace(":", "")) if args.daytime else 0
+                env_cfg_metrics = {
+                    'env_cfg/traffic_density': actual_rollout_config['traffic_density'],
+                    'env_cfg/daytime_numeric': daytime_numeric,
+                    'env_cfg/out_of_road_penalty': actual_rollout_config['out_of_road_penalty'],
+                    'env_cfg/crash_vehicle_penalty': actual_rollout_config['crash_vehicle_penalty'],
+                    'env_cfg/crash_object_penalty': actual_rollout_config['crash_object_penalty'],
+                    'env_cfg/driving_reward': actual_rollout_config['driving_reward'],
+                    'env_cfg/speed_reward': actual_rollout_config['speed_reward'],
+                    'env_cfg/horizon': actual_rollout_config['horizon'],
+                    'env_cfg/num_seeds': len(HARD_200_SEEDS),
+                    'env_cfg/seeds_hash_numeric': int(rollout_seeds_hash[:8], 16) % 1000000,
+                }
+                wandb_run.log(env_cfg_metrics)
+                wandb_run.summary['seeds_hash'] = rollout_seeds_hash
+                wandb_run.summary['daytime'] = args.daytime
+                wandb_run.summary['traffic_density'] = actual_rollout_config['traffic_density']
+                print(f"    Logged env_cfg to wandb!", flush=True)
+        except Exception as e:
+            print(f"    WARNING: Failed to create rollout env: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            rollout_env = None
+    else:
+        print("\n[8] Rollout collection disabled (--no_rollout)", flush=True)
+    
     print("\n" + "=" * 80, flush=True)
     print("Starting IQL Training Loop", flush=True)
     print("=" * 80, flush=True)
@@ -563,6 +788,33 @@ def main():
         
         model._n_updates += 1
         
+        # ============ ONLINE ROLLOUT COLLECTION ============
+        # Collect one step of rollout data using current policy
+        if rollout_env is not None and rollout_obs is not None:
+            with torch.no_grad():
+                # Convert observation to tensor
+                rollout_obs_tensor = {
+                    'image': torch.as_tensor(rollout_obs['image'], device=model.device, dtype=torch.float32).unsqueeze(0),
+                    'state': torch.as_tensor(rollout_obs['state'], device=model.device, dtype=torch.float32).unsqueeze(0),
+                }
+                # Get action from policy
+                model.actor.eval()
+                action = model.actor(rollout_obs_tensor).cpu().numpy().squeeze()
+                model.actor.train()
+            
+            # Step environment
+            new_obs, reward, done, info = rollout_env.step(action)
+            
+            if done:
+                # Episode finished - extract episode info from Monitor wrapper
+                if 'episode' in info:
+                    ep_info_buffer.append(info['episode'])
+                # Reset for next episode
+                rollout_obs, _ = rollout_env.reset()
+            else:
+                rollout_obs = new_obs
+        # ====================================================
+        
         if step % log_freq == 0 or step == 1:
             elapsed = time.time() - start_time
             rate = step / elapsed
@@ -637,7 +889,7 @@ def main():
                 ess_ratio = ess.item() / len(weights_normalized)
                 iql_bc_divergence = (1.0 - ess_ratio) + weights_for_ess.std().item()
                 
-                wandb_run.log({
+                log_dict = {
                     # Basic losses
                     'train/value_loss': avg_value_loss,
                     'train/critic_loss': avg_critic_loss,
@@ -702,7 +954,46 @@ def main():
                     'train/rate_per_sec': rate,
                     'train/step': step,
                     'train/eta_hours': eta_hours,
-                }, step=step)
+                }
+                
+                # ============ ROLLOUT METRICS ============
+                # Log rollout metrics from ep_info_buffer
+                # Following the exact same pattern as off_policy_algorithm.py _dump_logs()
+                if len(ep_info_buffer) > 0 and len(ep_info_buffer[0]) > 0 and step % args.rollout_log_freq == 0:
+                    # Core metrics
+                    log_dict['rollout/ep_rew_mean'] = safe_mean([ep_info["r"] for ep_info in ep_info_buffer])
+                    log_dict['rollout/ep_len_mean'] = safe_mean([ep_info["l"] for ep_info in ep_info_buffer])
+                    
+                    # Log ALL environment-specific metrics from Monitor
+                    # This mirrors _dump_logs() and includes: route_completion, arrive_dest, 
+                    # crash_vehicle, out_of_road, velocity, steering, acceleration, cost, etc.
+                    first_ep_info = ep_info_buffer[-1]
+                    for k, v in first_ep_info.items():
+                        if k not in ["r", "l"] and type(v) is not str:
+                            try:
+                                log_dict["rollout/{}_mean".format(k)] = safe_mean(
+                                    [ep_info[k] for ep_info in ep_info_buffer if k in ep_info]
+                                )
+                            except (TypeError, ValueError, KeyError):
+                                pass
+                    
+                    # Log "total_*" metrics as sums (same as _dump_logs)
+                    for k, v in first_ep_info.items():
+                        if k.startswith("total"):
+                            log_dict["rollout/{}_sum".format(k)] = ep_info_buffer[-1].get(k, 0)
+                    
+                    # Print rollout summary with key metrics
+                    if step % (args.rollout_log_freq * 5) == 0:
+                        rc = log_dict.get('rollout/route_completion_mean', 0)
+                        arr = log_dict.get('rollout/arrive_dest_mean', 0)
+                        crash = log_dict.get('rollout/crash_vehicle_mean', 0)
+                        oor = log_dict.get('rollout/out_of_road_mean', 0)
+                        print(f"    [Rollout] Ep={len(ep_info_buffer)} R={log_dict.get('rollout/ep_rew_mean', 0):.1f} "
+                              f"Len={log_dict.get('rollout/ep_len_mean', 0):.0f} RC={rc:.2f} Arr={arr:.2f} "
+                              f"Crash={crash:.2f} OoR={oor:.2f}", flush=True)
+                # =========================================
+                
+                wandb_run.log(log_dict, step=step)
         
         if step % args.save_freq == 0:
             ckpt_path = trial_dir / f"iql_step_{step:06d}.zip"
@@ -720,6 +1011,12 @@ def main():
     print(f"    Training time: {(time.time() - start_time)/60:.1f} min", flush=True)
     print(f"    Final memory: {get_memory_usage():.1f} MB", flush=True)
     print("=" * 80, flush=True)
+    
+    # Cleanup rollout env
+    if rollout_env is not None:
+        print("\n[CLEANUP] Closing rollout environment...", flush=True)
+        rollout_env.close()
+        print("    Rollout env closed!", flush=True)
     
     if args.wandb and wandb_run:
         wandb_run.finish()
