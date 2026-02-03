@@ -738,6 +738,21 @@ def main():
                             actor_state = {k: policy_state[k] for k in actor_keys}
                             model.actor.load_state_dict(actor_state, strict=False)
                             print(f"    actor loaded (no separate actor_ckpt)!", flush=True)
+            
+            # FIX: Load optimizer states to prevent training instability
+            # value_optimizer state
+            if 'value_optimizer.pth' in zf.namelist():
+                with zf.open('value_optimizer.pth') as f:
+                    v_opt_state = torch.load(io.BytesIO(f.read()), map_location=model.device)
+                    model.value_optimizer.load_state_dict(v_opt_state)
+                    print(f"    value_optimizer loaded!", flush=True)
+            
+            # critic.optimizer state
+            if 'critic.optimizer.pth' in zf.namelist():
+                with zf.open('critic.optimizer.pth') as f:
+                    critic_opt_state = torch.load(io.BytesIO(f.read()), map_location=model.device)
+                    model.critic.optimizer.load_state_dict(critic_opt_state)
+                    print(f"    critic.optimizer loaded!", flush=True)
         
         # #region agent log - Hypothesis B: Log final state after IQL components loaded
         v_fe_final = sum(p.sum().item() for p in model.value_features_extractor.parameters())
