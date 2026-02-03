@@ -1020,6 +1020,40 @@ def main():
                 config=wandb_config,
             )
             print(f"Wandb initialized: {trial_name}")
+            
+            # Also log env config as metrics so they appear in charts (not just Overview)
+            # This makes it easier to compare across runs without clicking into each one
+            env_config_metrics = {}
+            for key, val in env_config_log.items():
+                # Convert to numeric where possible for chart display
+                metric_key = key.replace('/', '_')  # wandb metrics can't have /
+                if isinstance(val, (int, float, bool)):
+                    env_config_metrics[f"env_cfg/{metric_key}"] = float(val) if isinstance(val, bool) else val
+                elif isinstance(val, str):
+                    # For string values, try to extract numeric part or hash
+                    if val.replace('.', '').replace('-', '').isdigit():
+                        env_config_metrics[f"env_cfg/{metric_key}"] = float(val)
+                    elif key == 'config/seeds_hash':
+                        # Convert hash to int for comparison
+                        env_config_metrics[f"env_cfg/{metric_key}"] = int(val, 16) % 1000000
+            
+            # Log key numeric configs as step=0 metrics
+            wandb_module.log({
+                "env_cfg/traffic_density": actual_env_config.get('traffic_density', 0.06),
+                "env_cfg/out_of_road_penalty": actual_env_config.get('out_of_road_penalty', 5.0),
+                "env_cfg/crash_vehicle_penalty": actual_env_config.get('crash_vehicle_penalty', 5.0),
+                "env_cfg/crash_object_penalty": actual_env_config.get('crash_object_penalty', 5.0),
+                "env_cfg/driving_reward": actual_env_config.get('driving_reward', 1.0),
+                "env_cfg/speed_reward": actual_env_config.get('speed_reward', 0.1),
+                "env_cfg/horizon": actual_env_config.get('horizon', 1500),
+                "env_cfg/num_seeds": len(seeds),
+                "env_cfg/seeds_hash_numeric": int(seeds_hash, 16) % 1000000,  # For quick comparison
+                "env_cfg/seeds_min": int(min(seeds)),
+                "env_cfg/seeds_max": int(max(seeds)),
+                "env_cfg/use_test_seeds": 1 if args.use_test_seeds else 0,
+            }, step=0)
+            print(f"    Env config logged as metrics (env_cfg/*)")
+            
         except Exception as e:
             print(f"WARNING: Failed to init wandb: {e}")
     

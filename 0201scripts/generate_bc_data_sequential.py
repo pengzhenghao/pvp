@@ -130,6 +130,9 @@ def main():
     parser.add_argument("--wandb", action="store_true", help="Log to wandb")
     parser.add_argument("--wandb_project", type=str, default="bc-data-gen")
     parser.add_argument("--exp_name", type=str, default="bc-data-gen")
+    parser.add_argument("--daytime", type=str, default="08:30", help="Daytime setting for env")
+    parser.add_argument("--log_env_config", action="store_true", 
+                        help="Log actual env config to wandb after initialization")
     args = parser.parse_args()
     
     if args.toy:
@@ -187,7 +190,7 @@ def main():
         speed_reward=0.1,
         use_lateral_reward=False,
         # Other settings
-        daytime="08:30",
+        daytime=args.daytime,
         use_render=False,
         disable_expert=False,
         start_seed=0,
@@ -242,12 +245,18 @@ def main():
     vec_env = SubprocVecEnv([make_env(i) for i in range(args.num_envs)])
     print("VecEnv created!", flush=True)
     
+    # Compute seeds hash for reproducibility tracking
+    import hashlib
+    seeds_str = ','.join(map(str, sorted(HARD_200_SEEDS)))
+    seeds_hash = hashlib.md5(seeds_str.encode()).hexdigest()[:16]
+    print(f"Seeds hash: {seeds_hash}", flush=True)
+    
     # Build comprehensive env config for logging
     env_config_log = {
         'env/image_observation': env_config.get('image_observation'),
         'env/traffic_density': 'NOT_SET_default_0.06',  # Explicitly note we're using default
         'env/random_traffic': 'NOT_SET_default',
-        'env/daytime': env_config.get('daytime'),
+        'env/daytime': args.daytime,
         'env/crash_vehicle_done': env_config.get('crash_vehicle_done'),
         'env/crash_object_done': env_config.get('crash_object_done'),
         'env/crash_vehicle_penalty': env_config.get('crash_vehicle_penalty'),
@@ -262,6 +271,7 @@ def main():
         'env/disable_expert': env_config.get('disable_expert'),
         'data/hard_seeds_count': len(HARD_200_SEEDS),
         'data/hard_seeds_sample': str(HARD_200_SEEDS[:10]),
+        'data/seeds_hash': seeds_hash,
     }
     
     print("\nEnvironment config (FULL):", flush=True)
@@ -285,6 +295,43 @@ def main():
                 config=wandb_config,
             )
             print(f"Wandb initialized: {trial_name}", flush=True)
+            
+            # Log env config as metrics (visible in Charts, not just Overview)
+            # Use env_cfg/ prefix like eval scripts for consistency
+            # Convert daytime to numeric (e.g., "06:10" -> 610, "08:30" -> 830)
+            daytime_numeric = int(args.daytime.replace(":", "")) if args.daytime else 0
+            
+            env_cfg_metrics = {
+                'env_cfg/traffic_density': 0.06,  # Default value
+                'env_cfg/out_of_road_penalty': env_config.get('out_of_road_penalty', 5.0),
+                'env_cfg/crash_vehicle_penalty': env_config.get('crash_vehicle_penalty', 5.0),
+                'env_cfg/crash_object_penalty': env_config.get('crash_object_penalty', 5.0),
+                'env_cfg/driving_reward': env_config.get('driving_reward', 1.0),
+                'env_cfg/speed_reward': env_config.get('speed_reward', 0.1),
+                'env_cfg/horizon': env_config.get('horizon', 1500),
+                'env_cfg/num_seeds': len(HARD_200_SEEDS),
+                'env_cfg/seeds_hash_numeric': int(seeds_hash[:8], 16) % 1000000,
+                'env_cfg/num_envs': args.num_envs,
+                'env_cfg/batch_size': args.batch_size,
+                'env_cfg/total_timesteps': args.total_timesteps,
+                'env_cfg/daytime_numeric': daytime_numeric,  # e.g., 610 for 06:10
+            }
+            # Log WITHOUT step=0 to ensure it appears in charts
+            wandb_run.log(env_cfg_metrics)
+            
+            # Add ALL config to summary for quick reference in table view
+            wandb_run.summary['seeds_hash'] = seeds_hash
+            wandb_run.summary['daytime'] = args.daytime
+            wandb_run.summary['daytime_numeric'] = daytime_numeric  # e.g., 610 for 06:10
+            wandb_run.summary['total_timesteps_planned'] = args.total_timesteps
+            wandb_run.summary['traffic_density'] = 0.06
+            wandb_run.summary['out_of_road_penalty'] = env_config.get('out_of_road_penalty', 5.0)
+            wandb_run.summary['crash_vehicle_penalty'] = env_config.get('crash_vehicle_penalty', 5.0)
+            wandb_run.summary['crash_object_penalty'] = env_config.get('crash_object_penalty', 5.0)
+            wandb_run.summary['driving_reward'] = env_config.get('driving_reward', 1.0)
+            wandb_run.summary['speed_reward'] = env_config.get('speed_reward', 0.1)
+            wandb_run.summary['num_seeds'] = len(HARD_200_SEEDS)
+            print(f"Logged env_cfg/* metrics and summary to wandb", flush=True)
         except Exception as e:
             print(f"WARNING: Failed to init wandb: {e}", flush=True)
     
@@ -323,6 +370,7 @@ def main():
     # Aggregate metrics
     completed_episodes = []
     eval_log_interval = 50  # Log every N episodes
+    last_logged_episode_count = 0  # Track to avoid duplicate logs
     # =================================================
     
     # Dummy actions (env will use expert internally)
@@ -448,9 +496,18 @@ def main():
             batch_counter += 1
             env_buffers = defaultdict(list)
         
-        # Log evaluation metrics periodically
-        if len(completed_episodes) >= eval_log_interval and len(completed_episodes) % eval_log_interval == 0:
+        # Log evaluation metrics periodically (avoid duplicates using last_logged_episode_count)
+        current_ep_count = len(completed_episodes)
+        if current_ep_count >= eval_log_interval and current_ep_count % eval_log_interval == 0 and current_ep_count > last_logged_episode_count:
+            last_logged_episode_count = current_ep_count  # Update to avoid duplicate logs
+            
             recent = completed_episodes[-eval_log_interval:]
+            
+            # Calculate reward components
+            crash_penalty_mean = np.mean([e['total_crash_penalty'] for e in recent])
+            oor_penalty_mean = np.mean([e['total_out_of_road_penalty'] for e in recent])
+            driving_reward_est = np.mean([e['reward'] + e['total_crash_penalty'] + e['total_out_of_road_penalty'] for e in recent])
+            
             eval_metrics = {
                 'eval/reward_mean': np.mean([e['reward'] for e in recent]),
                 'eval/route_completion': np.mean([e['route_completion'] for e in recent]),
@@ -460,24 +517,25 @@ def main():
                 'eval/crash_vehicle_rate': np.mean([e['crash_vehicle'] for e in recent]),
                 'eval/out_of_road_rate': np.mean([e['out_of_road'] for e in recent]),
                 'eval/any_bad_event_rate': np.mean([e['any_bad_event'] for e in recent]),
-                'eval/total_episodes': len(completed_episodes),
+                'eval/total_episodes': current_ep_count,
                 # Reward component breakdown
                 'reward/avg_velocity': np.mean([e['avg_velocity'] for e in recent]),
-                'reward/crash_penalty_mean': np.mean([e['total_crash_penalty'] for e in recent]),
-                'reward/out_of_road_penalty_mean': np.mean([e['total_out_of_road_penalty'] for e in recent]),
+                'reward/crash_penalty_mean': crash_penalty_mean,
+                'reward/out_of_road_penalty_mean': oor_penalty_mean,
                 # Estimated driving reward (reward + penalties)
-                'reward/estimated_driving_reward': np.mean([e['reward'] + e['total_crash_penalty'] + e['total_out_of_road_penalty'] for e in recent]),
+                'reward/estimated_driving_reward': driving_reward_est,
             }
             
             if wandb_run:
                 wandb_run.log(eval_metrics, step=total_timesteps)
             
-            print(f"  [Eval] Ep={len(completed_episodes)} R={eval_metrics['eval/reward_mean']:.1f} "
+            # Print with reward decomposition
+            print(f"  [Eval] Ep={current_ep_count} R={eval_metrics['eval/reward_mean']:.1f} "
                   f"Succ={eval_metrics['eval/success_rate']*100:.0f}% "
                   f"SuccNoBad={eval_metrics['eval/success_no_bad']*100:.0f}% "
                   f"RC={eval_metrics['eval/route_completion']*100:.0f}% "
-                  f"RCNoBad={eval_metrics['eval/route_completion_no_bad']*100:.0f}% "
-                  f"Crash={eval_metrics['eval/crash_vehicle_rate']*100:.0f}%", flush=True)
+                  f"Crash={eval_metrics['eval/crash_vehicle_rate']*100:.0f}% | "
+                  f"CrashP={crash_penalty_mean:.1f} OorP={oor_penalty_mean:.1f} DrivR={driving_reward_est:.1f}", flush=True)
         
         # Progress
         if total_timesteps % 1000 == 0:
@@ -503,7 +561,8 @@ def main():
         'num_envs': args.num_envs,
         'sequential_storage': True,
         'hard_seeds': HARD_200_SEEDS[:20],  # Sample
-        'daytime': '08:30',
+        'daytime': args.daytime,
+        'seeds_hash': seeds_hash,
     }
     
     with open(data_dir / "metadata.json", 'w') as f:
