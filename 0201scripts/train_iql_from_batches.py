@@ -10,6 +10,13 @@ Usage:
     python train_iql_from_batches.py --data_dir /data/caihy/bc_data_1M --log_dir /data/caihy/iql_training
 """
 
+import sys
+import gymnasium
+import gymnasium.spaces
+sys.modules['gym'] = gymnasium
+sys.modules['gym.spaces'] = gymnasium.spaces
+gymnasium.spaces.space = gymnasium.spaces  # metadrive uses gym.spaces.space.Space
+
 import os
 _gpu_id = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
 os.environ["CUDA_VISIBLE_DEVICES"] = _gpu_id
@@ -21,20 +28,28 @@ if "DISPLAY" in os.environ:
 import argparse
 import numpy as np
 from pathlib import Path
-import sys
 import time
 import json
 import torch
 import torch.nn.functional as F
 import psutil
-import gymnasium
 import hashlib
 from collections import deque, defaultdict
-sys.modules['gym'] = gymnasium
+
+# CuPy for GPU image acceleration (optional)
+_cupy_available = False
+try:
+    import cupy as cp
+    from torch.utils.dlpack import from_dlpack
+    _cupy_available = True
+except ImportError:
+    pass  # cupy not installed, will use CPU path
 
 
 # Top 200 hardest scenarios for the lidar PPO expert (in [0, 1000) range)
 # Same as generate_bc_data_sequential.py
+# Top 200 hardest scenarios for the lidar PPO expert (in [0, 1000) range)
+# MUST match generate_bc_data_sequential.py and train_bc_from_batches.py EXACTLY
 HARD_200_SEEDS = [
     751, 849, 61, 963, 160, 257, 678, 491, 892, 410,
     403, 35, 473, 725, 171, 536, 376, 192, 755, 169,
@@ -46,16 +61,16 @@ HARD_200_SEEDS = [
     400, 984, 492, 46, 389, 354, 706, 448, 435, 92,
     277, 543, 986, 903, 413, 239, 90, 484, 837, 819,
     791, 454, 459, 758, 85, 168, 194, 567, 680, 205,
-    744, 760, 471, 690, 431, 507, 78, 196, 893, 99,
-    671, 289, 970, 550, 87, 457, 512, 663, 972, 834,
-    659, 638, 462, 630, 685, 727, 215, 380, 113, 211,
-    597, 476, 510, 560, 823, 517, 577, 708, 988, 545,
-    295, 882, 505, 228, 593, 243, 236, 832, 710, 965,
-    712, 558, 377, 294, 645, 640, 266, 566, 415, 613,
-    668, 280, 702, 635, 334, 105, 811, 584, 888, 578,
-    573, 629, 203, 346, 282, 912, 591, 364, 960, 840,
-    467, 845, 603, 115, 325, 143, 863, 285, 443, 527,
-    348, 474, 466, 344, 429, 779, 189, 331, 623, 563,
+    126, 373, 297, 208, 44, 794, 525, 533, 57, 142,
+    12, 762, 844, 598, 685, 368, 832, 946, 966, 178,
+    250, 572, 9, 825, 584, 11, 728, 269, 232, 898,
+    668, 374, 29, 760, 238, 5, 653, 524, 950, 611,
+    888, 243, 185, 215, 319, 934, 72, 923, 345, 236,
+    119, 248, 364, 553, 985, 199, 207, 392, 352, 355,
+    214, 894, 70, 847, 156, 336, 221, 965, 184, 735,
+    620, 305, 944, 718, 226, 773, 530, 987, 891, 261,
+    859, 394, 188, 951, 622, 769, 340, 225, 344, 540,
+    640, 975, 114, 727, 68, 310, 265, 273, 726, 42,
 ]
 
 
@@ -119,83 +134,133 @@ class SimpleMonitor:
         self.env.close()
 
 
-def create_rollout_env(daytime="06:10"):
+def _make_rollout_env_subprocess(env_id, daytime, hard_seeds):
     """
-    Create a rollout environment with Monitor wrapper for online evaluation.
-    Uses the same config as data generation (generate_bc_data_sequential.py).
-    
-    Returns:
-        env: Environment with Monitor wrapper
-        seeds_hash: Hash of the seeds for verification
-        actual_env_config: Actual config values read from the environment
+    Factory function for creating a single rollout environment.
+    This is defined at module level to be pickle-friendly for SubprocVecEnv.
     """
-    from pvp.experiments.metadrive.human_in_the_loop_env import HumanInTheLoopEnv
+    from pvp.experiments.metadrive.egpo.fakehuman_env import FakeHumanEnv
+    from pvp.sb3.common.monitor import Monitor
     from metadrive.component.sensors.rgb_camera import RGBCamera
     
     sensor_size = (84, 84)
     
-    # Same config as generate_bc_data_sequential.py
     env_config = dict(
         image_observation=True,
+        image_on_cuda=False,  # Disabled for SubprocVecEnv
         vehicle_config=dict(image_source="rgb_camera"),
         sensors={"rgb_camera": (RGBCamera, *sensor_size)},
         horizon=1500,
-        # Safety settings - match data generation
         crash_vehicle_done=False,
         crash_object_done=False,
         crash_vehicle_penalty=5.0,
         crash_object_penalty=5.0,
         out_of_road_penalty=5.0,
-        # Reward settings
         driving_reward=1.0,
         speed_reward=0.1,
         use_lateral_reward=False,
-        # Other settings
         daytime=daytime,
         use_render=False,
+        disable_expert=True,
         start_seed=0,
         num_scenarios=1000,
-        # DO NOT set traffic_density - use env default (0.06)
     )
     
     # Create wrapper that cycles through hard seeds
-    class HardSeedEnv(HumanInTheLoopEnv):
-        """Wrapper that cycles through HARD_200_SEEDS on reset."""
-        def __init__(self, config):
+    # Each subprocess env gets its own seed counter starting at env_id
+    class HardSeedSubprocEnv(FakeHumanEnv):
+        """Wrapper that cycles through hard seeds for this subprocess."""
+        def __init__(self, config, env_id, seeds):
             super().__init__(config)
-            self.hard_seeds = HARD_200_SEEDS
-            self.seed_idx = 0
+            self.hard_seeds = seeds
+            self.env_id = env_id
+            # Start at different offset for each env to avoid all using same seed
+            self.seed_idx = env_id
             self.seeds_used = []
         
         def reset(self, **kwargs):
-            # Select next seed from hard seeds (cycling)
             seed = self.hard_seeds[self.seed_idx % len(self.hard_seeds)]
             self.seed_idx += 1
             kwargs['seed'] = seed
             self.seeds_used.append(seed)
             return super().reset(**kwargs)
     
-    # Create env and wrap with SimpleMonitor (avoids gym/gymnasium compatibility issues)
-    env = HardSeedEnv(config=env_config)
-    env = SimpleMonitor(env)
+    env = HardSeedSubprocEnv(config=env_config, env_id=env_id, seeds=hard_seeds)
+    env = Monitor(env=env)
+    return env
+
+
+def create_rollout_envs(num_envs=20, daytime="06:10", force_no_cuda_image=False):
+    """
+    Create N parallel rollout environments for online evaluation.
+    Uses SubprocVecEnv for N>1 (MetaDrive only allows one engine per process).
+    Uses DummyVecEnv for N=1 (simpler, no subprocess overhead).
+    
+    Args:
+        num_envs: Number of parallel environments
+        daytime: Daytime setting for the environment
+        force_no_cuda_image: If True, disable CUDA image even if cupy is available
+    
+    Returns:
+        vec_env: VecEnv with N environments
+        seeds_hash: Hash of the seeds for verification
+        actual_env_config: Actual config values read from the environment
+        use_cuda_image: Whether CUDA image acceleration is enabled
+        num_envs: Number of environments (for reference)
+    """
+    from pvp.sb3.common.vec_env import SubprocVecEnv, DummyVecEnv
+    from functools import partial
     
     # Compute seeds hash for verification
     seeds_str = ','.join(map(str, sorted(HARD_200_SEEDS)))
     seeds_hash = hashlib.md5(seeds_str.encode()).hexdigest()[:16]
     
-    # Read actual config from env after initialization
-    actual_env_config = {
-        'traffic_density': env.unwrapped.config.get('traffic_density', 0.06),
-        'daytime': env.unwrapped.config.get('daytime', daytime),
-        'out_of_road_penalty': env.unwrapped.config.get('out_of_road_penalty', 5.0),
-        'crash_vehicle_penalty': env.unwrapped.config.get('crash_vehicle_penalty', 5.0),
-        'crash_object_penalty': env.unwrapped.config.get('crash_object_penalty', 5.0),
-        'driving_reward': env.unwrapped.config.get('driving_reward', 1.0),
-        'speed_reward': env.unwrapped.config.get('speed_reward', 0.1),
-        'horizon': env.unwrapped.config.get('horizon', 1500),
-    }
+    # image_on_cuda is always False for parallel envs (multiprocessing limitation)
+    use_cuda_image = False
     
-    return env, seeds_hash, actual_env_config
+    if num_envs == 1:
+        # For N=1, use DummyVecEnv (simpler, no subprocess overhead)
+        def make_single_env():
+            return _make_rollout_env_subprocess(0, daytime, HARD_200_SEEDS)
+        vec_env = DummyVecEnv([make_single_env])
+    else:
+        # For N>1, use SubprocVecEnv (each env in separate subprocess)
+        # Use partial to bind arguments for pickle compatibility
+        env_fns = [partial(_make_rollout_env_subprocess, i, daytime, HARD_200_SEEDS) for i in range(num_envs)]
+        vec_env = SubprocVecEnv(env_fns)
+    
+    # Get actual config (need to get from first env, method differs by VecEnv type)
+    if num_envs == 1:
+        first_env = vec_env.envs[0]
+        actual_env_config = {
+            'traffic_density': first_env.unwrapped.config.get('traffic_density', 0.06),
+            'daytime': first_env.unwrapped.config.get('daytime', daytime),
+            'out_of_road_penalty': first_env.unwrapped.config.get('out_of_road_penalty', 5.0),
+            'crash_vehicle_penalty': first_env.unwrapped.config.get('crash_vehicle_penalty', 5.0),
+            'crash_object_penalty': first_env.unwrapped.config.get('crash_object_penalty', 5.0),
+            'driving_reward': first_env.unwrapped.config.get('driving_reward', 1.0),
+            'speed_reward': first_env.unwrapped.config.get('speed_reward', 0.1),
+            'horizon': first_env.unwrapped.config.get('horizon', 1500),
+            'image_on_cuda': use_cuda_image,
+            'num_envs': num_envs,
+        }
+    else:
+        # For SubprocVecEnv, we can't easily access individual env configs
+        # Use default values (they're the same as what we set in _make_rollout_env_subprocess)
+        actual_env_config = {
+            'traffic_density': 0.06,  # env default
+            'daytime': daytime,
+            'out_of_road_penalty': 5.0,
+            'crash_vehicle_penalty': 5.0,
+            'crash_object_penalty': 5.0,
+            'driving_reward': 1.0,
+            'speed_reward': 0.1,
+            'horizon': 1500,
+            'image_on_cuda': use_cuda_image,
+            'num_envs': num_envs,
+        }
+    
+    return vec_env, seeds_hash, actual_env_config, use_cuda_image, num_envs
 
 
 def safe_mean(arr):
@@ -392,8 +457,14 @@ def main():
                         help="Daytime for rollout env (should match data generation)")
     parser.add_argument("--rollout_log_freq", type=int, default=100,
                         help="How often to log rollout metrics (in training steps)")
+    parser.add_argument("--rollout_step_freq", type=int, default=1,
+                        help="Do rollout every N training steps (1=every step, 5=every 5 steps)")
     parser.add_argument("--no_rollout", action="store_true",
                         help="Disable online rollout collection")
+    parser.add_argument("--no_cuda_image", action="store_true",
+                        help="Disable CUDA image acceleration (use numpy instead of cupy)")
+    parser.add_argument("--num_rollout_envs", type=int, default=20,
+                        help="Number of parallel rollout environments (default=20)")
     args = parser.parse_args()
     
     if args.toy:
@@ -590,7 +661,7 @@ def main():
         'env/image_observation': True,
         'env/traffic_density': 'NOT_SET_default_0.06',  # Must match data generation
         'env/random_traffic': 'NOT_SET_default',
-        'env/daytime': '08:30',  # Must match data generation
+        'env/daytime': '06:10',  # Must match data generation (BC uses 06:10)
         'env/crash_vehicle_done': False,
         'env/crash_object_done': False,
         'env/crash_vehicle_penalty': 5.0,
@@ -633,20 +704,79 @@ def main():
             print(f"    WARNING: Failed to initialize wandb: {e}", flush=True)
             args.wandb = False
     
-    # Create rollout environment for online evaluation
+    # Create rollout environments for online evaluation (N parallel envs)
     rollout_env = None
     rollout_obs = None
     ep_info_buffer = deque(maxlen=100)  # Store recent episode infos
+    ep_extended_buffer = deque(maxlen=100)  # Store extended metrics (success_no_bad, etc.)
     rollout_seeds_hash = None
     actual_rollout_config = None
+    rollout_num_envs = args.num_rollout_envs
+    
+    # Rollout episode-level tracking - now arrays for N parallel envs
+    rollout_episode_count = 0  # Total episodes completed across all envs
+    rollout_image_on_cuda = False  # Track if using CUDA image acceleration
+    
+    def init_rollout_tracking_arrays(n_envs):
+        """Initialize per-env tracking arrays."""
+        return {
+            'step_in_episode': np.zeros(n_envs, dtype=np.int32),
+            'had_crash_vehicle': np.zeros(n_envs, dtype=np.bool_),
+            'had_crash_object': np.zeros(n_envs, dtype=np.bool_),
+            'had_out_of_road': np.zeros(n_envs, dtype=np.bool_),
+            'had_bad_event': np.zeros(n_envs, dtype=np.bool_),
+            'arrive_dest': np.zeros(n_envs, dtype=np.bool_),
+            'route_completion': np.zeros(n_envs, dtype=np.float32),
+            'route_at_first_bad': np.full(n_envs, -1.0, dtype=np.float32),  # -1 means no bad event yet
+            'total_crash_penalty': np.zeros(n_envs, dtype=np.float32),
+            'total_out_of_road_penalty': np.zeros(n_envs, dtype=np.float32),
+            'total_velocity': np.zeros(n_envs, dtype=np.float32),
+            'min_vehicle_distance': np.full(n_envs, float('inf'), dtype=np.float32),
+            'close_encounters': np.zeros(n_envs, dtype=np.int32),
+            'safe_passes': np.zeros(n_envs, dtype=np.int32),
+            'dangerous_close': np.zeros(n_envs, dtype=np.int32),
+            'current_seed': np.zeros(n_envs, dtype=np.int32),
+        }
+    
+    def reset_env_tracking(tracking, env_idx):
+        """Reset tracking for a single env after episode end."""
+        tracking['step_in_episode'][env_idx] = 0
+        tracking['had_crash_vehicle'][env_idx] = False
+        tracking['had_crash_object'][env_idx] = False
+        tracking['had_out_of_road'][env_idx] = False
+        tracking['had_bad_event'][env_idx] = False
+        tracking['arrive_dest'][env_idx] = False
+        tracking['route_completion'][env_idx] = 0.0
+        tracking['route_at_first_bad'][env_idx] = -1.0  # -1 means no bad event yet
+        tracking['total_crash_penalty'][env_idx] = 0.0
+        tracking['total_out_of_road_penalty'][env_idx] = 0.0
+        tracking['total_velocity'][env_idx] = 0.0
+        tracking['min_vehicle_distance'][env_idx] = float('inf')
+        tracking['close_encounters'][env_idx] = 0
+        tracking['safe_passes'][env_idx] = 0
+        tracking['dangerous_close'][env_idx] = 0
+        tracking['current_seed'][env_idx] = 0
+    
+    rollout_tracking = None  # Will be initialized after env creation
     
     if not args.no_rollout:
-        print("\n[8] Creating rollout environment...", flush=True)
+        print(f"\n[8] Creating {rollout_num_envs} parallel rollout environments...", flush=True)
         try:
-            rollout_env, rollout_seeds_hash, actual_rollout_config = create_rollout_env(daytime=args.daytime)
-            rollout_obs, _ = rollout_env.reset()
-            print(f"    Rollout env created!", flush=True)
+            rollout_env, rollout_seeds_hash, actual_rollout_config, rollout_image_on_cuda, rollout_num_envs = create_rollout_envs(
+                num_envs=rollout_num_envs,
+                daytime=args.daytime, 
+                force_no_cuda_image=args.no_cuda_image
+            )
+            # VecEnv.reset() returns stacked obs: {'image': (N, H, W, C, S), 'state': (N, D)}
+            rollout_obs = rollout_env.reset()
+            
+            # Initialize per-env tracking arrays
+            rollout_tracking = init_rollout_tracking_arrays(rollout_num_envs)
+            
+            print(f"    Rollout envs created: {rollout_num_envs} parallel environments!", flush=True)
             print(f"    Seeds hash: {rollout_seeds_hash}", flush=True)
+            print(f"    image_on_cuda: {rollout_image_on_cuda} (cupy available: {_cupy_available})", flush=True)
+            print(f"    Obs shapes: image={rollout_obs['image'].shape}, state={rollout_obs['state'].shape}", flush=True)
             print(f"    Actual env config:", flush=True)
             for k, v in actual_rollout_config.items():
                 print(f"      {k}: {v}", flush=True)
@@ -665,14 +795,16 @@ def main():
                     'env_cfg/horizon': actual_rollout_config['horizon'],
                     'env_cfg/num_seeds': len(HARD_200_SEEDS),
                     'env_cfg/seeds_hash_numeric': int(rollout_seeds_hash[:8], 16) % 1000000,
+                    'env_cfg/num_rollout_envs': rollout_num_envs,
                 }
                 wandb_run.log(env_cfg_metrics)
                 wandb_run.summary['seeds_hash'] = rollout_seeds_hash
                 wandb_run.summary['daytime'] = args.daytime
                 wandb_run.summary['traffic_density'] = actual_rollout_config['traffic_density']
+                wandb_run.summary['num_rollout_envs'] = rollout_num_envs
                 print(f"    Logged env_cfg to wandb!", flush=True)
         except Exception as e:
-            print(f"    WARNING: Failed to create rollout env: {e}", flush=True)
+            print(f"    WARNING: Failed to create rollout envs: {e}", flush=True)
             import traceback
             traceback.print_exc()
             rollout_env = None
@@ -788,31 +920,159 @@ def main():
         
         model._n_updates += 1
         
-        # ============ ONLINE ROLLOUT COLLECTION ============
-        # Collect one step of rollout data using current policy
-        if rollout_env is not None and rollout_obs is not None:
+        # ============ ONLINE ROLLOUT COLLECTION (N PARALLEL ENVS) ============
+        # Collect one step of rollout data from N parallel envs using current policy
+        # Only do rollout every N steps for speedup
+        if rollout_env is not None and rollout_obs is not None and rollout_tracking is not None and step % args.rollout_step_freq == 0:
+            # Increment step counter for all envs
+            rollout_tracking['step_in_episode'] += 1
+            
             with torch.no_grad():
-                # Convert observation to tensor
-                rollout_obs_tensor = {
-                    'image': torch.as_tensor(rollout_obs['image'], device=model.device, dtype=torch.float32).unsqueeze(0),
-                    'state': torch.as_tensor(rollout_obs['state'], device=model.device, dtype=torch.float32).unsqueeze(0),
-                }
-                # Get action from policy
+                # Convert observation to tensor - NOW BATCHED (N, H, W, C, S)
+                if rollout_image_on_cuda and _cupy_available:
+                    if hasattr(rollout_obs['image'], 'toDlpack'):
+                        image_tensor = from_dlpack(rollout_obs['image'].toDlpack())
+                    else:
+                        image_tensor = torch.as_tensor(rollout_obs['image'], device=model.device)
+                    if image_tensor.dtype == torch.uint8:
+                        image_tensor = image_tensor.float() / 255.0
+                    else:
+                        image_tensor = image_tensor.float()
+                    rollout_obs_tensor = {
+                        'image': image_tensor,  # Already (N, H, W, C, S)
+                        'state': torch.as_tensor(rollout_obs['state'], device=model.device, dtype=torch.float32),
+                    }
+                else:
+                    # Standard numpy -> torch conversion for batched obs
+                    rollout_obs_tensor = {
+                        'image': torch.as_tensor(rollout_obs['image'], device=model.device, dtype=torch.float32),
+                        'state': torch.as_tensor(rollout_obs['state'], device=model.device, dtype=torch.float32),
+                    }
+                # Get actions from policy for all N envs - returns (N, 2)
                 model.actor.eval()
-                action = model.actor(rollout_obs_tensor).cpu().numpy().squeeze()
+                policy_actions = model.actor(rollout_obs_tensor).cpu().numpy()  # (N, 2)
                 model.actor.train()
             
-            # Step environment
-            new_obs, reward, done, info = rollout_env.step(action)
+            # Step all N environments with their respective actions
+            # VecEnv.step returns: obs, rewards (N,), dones (N,), infos (list of N dicts)
+            # Use different variable names to avoid overwriting training batch data
+            new_obs, rollout_rewards, rollout_dones, infos = rollout_env.step(policy_actions)
             
-            if done:
-                # Episode finished - extract episode info from Monitor wrapper
-                if 'episode' in info:
-                    ep_info_buffer.append(info['episode'])
-                # Reset for next episode
-                rollout_obs, _ = rollout_env.reset()
-            else:
-                rollout_obs = new_obs
+            # === PER-ENV METRIC TRACKING ===
+            for i in range(rollout_num_envs):
+                info = infos[i]
+                
+                # Get current seed on first step of episode for this env
+                if rollout_tracking['step_in_episode'][i] == 1:
+                    rollout_tracking['current_seed'][i] = info.get('env_seed', 0)
+                
+                # Track velocity for this env
+                velocity = info.get('velocity', 0.0)
+                if isinstance(velocity, (list, np.ndarray)):
+                    velocity = np.linalg.norm(velocity)
+                rollout_tracking['total_velocity'][i] += velocity
+                
+                # Track crash events for this env
+                if info.get('crash_vehicle', False):
+                    rollout_tracking['had_crash_vehicle'][i] = True
+                    rollout_tracking['total_crash_penalty'][i] += 5.0
+                if info.get('crash_object', False):
+                    rollout_tracking['had_crash_object'][i] = True
+                    rollout_tracking['total_crash_penalty'][i] += 5.0
+                if info.get('out_of_road', False):
+                    rollout_tracking['had_out_of_road'][i] = True
+                    rollout_tracking['total_out_of_road_penalty'][i] += 5.0
+                
+                # Track bad event for this env - record route at FIRST bad event
+                if rollout_tracking['had_crash_vehicle'][i] or rollout_tracking['had_crash_object'][i] or rollout_tracking['had_out_of_road'][i]:
+                    if not rollout_tracking['had_bad_event'][i]:
+                        # First bad event - record route completion at this moment
+                        rollout_tracking['route_at_first_bad'][i] = info.get('route_completion', 0.0)
+                    rollout_tracking['had_bad_event'][i] = True
+                
+                # Track success for this env
+                if info.get('arrive_dest', False):
+                    rollout_tracking['arrive_dest'][i] = True
+                
+                # Track route completion for this env
+                rollout_tracking['route_completion'][i] = max(
+                    rollout_tracking['route_completion'][i], 
+                    info.get('route_completion', 0.0)
+                )
+                
+                # Track traffic proximity for this env
+                min_dist = info.get('min_vehicle_distance', float('inf'))
+                if min_dist < float('inf'):
+                    rollout_tracking['min_vehicle_distance'][i] = min(
+                        rollout_tracking['min_vehicle_distance'][i], min_dist
+                    )
+                if min_dist < 5.0:  # Close encounter threshold
+                    rollout_tracking['close_encounters'][i] += 1
+                    step_crash = info.get('crash_vehicle', False) or info.get('crash_object', False)
+                    if step_crash:
+                        rollout_tracking['dangerous_close'][i] += 1
+                    else:
+                        rollout_tracking['safe_passes'][i] += 1
+                
+                # === EPISODE END FOR ENV i ===
+                if rollout_dones[i]:
+                    rollout_episode_count += 1
+                    
+                    # Compute extended metrics for this env
+                    step_count = rollout_tracking['step_in_episode'][i]
+                    success_no_bad = rollout_tracking['arrive_dest'][i] and not rollout_tracking['had_bad_event'][i]
+                    rc_no_bad = rollout_tracking['route_completion'][i] if not rollout_tracking['had_bad_event'][i] else 0.0
+                    # Route until first bad event (or full route if no bad event)
+                    route_at_bad = rollout_tracking['route_at_first_bad'][i]
+                    route_until_bad = route_at_bad if route_at_bad >= 0 else rollout_tracking['route_completion'][i]
+                    avg_velocity = rollout_tracking['total_velocity'][i] / step_count if step_count > 0 else 0.0
+                    close_enc = rollout_tracking['close_encounters'][i]
+                    safe_pass_rate = rollout_tracking['safe_passes'][i] / close_enc if close_enc > 0 else 1.0
+                    close_enc_crash_rate = rollout_tracking['dangerous_close'][i] / close_enc if close_enc > 0 else 0.0
+                    
+                    # Store basic ep_info from Monitor (VecEnv stores it in 'episode' key)
+                    if 'episode' in info:
+                        ep_info_buffer.append(info['episode'])
+                    
+                    # Store extended metrics
+                    ep_extended = {
+                        'seed': int(rollout_tracking['current_seed'][i]),
+                        'success_no_bad': float(success_no_bad),
+                        'success_rate': float(rollout_tracking['arrive_dest'][i]),
+                        'route_completion': float(rollout_tracking['route_completion'][i]),
+                        'route_completion_no_bad': float(rc_no_bad),
+                        'route_until_bad': float(route_until_bad),
+                        'crash_vehicle_rate': float(rollout_tracking['had_crash_vehicle'][i]),
+                        'crash_object_rate': float(rollout_tracking['had_crash_object'][i]),
+                        'out_of_road_rate': float(rollout_tracking['had_out_of_road'][i]),
+                        'any_bad_event_rate': float(rollout_tracking['had_bad_event'][i]),
+                        'crash_penalty': float(rollout_tracking['total_crash_penalty'][i]),
+                        'out_of_road_penalty': float(rollout_tracking['total_out_of_road_penalty'][i]),
+                        'avg_velocity': float(avg_velocity),
+                        'min_vehicle_distance': float(rollout_tracking['min_vehicle_distance'][i]) if rollout_tracking['min_vehicle_distance'][i] < float('inf') else -1,
+                        'close_encounters': int(rollout_tracking['close_encounters'][i]),
+                        'safe_passes': int(rollout_tracking['safe_passes'][i]),
+                        'dangerous_close': int(rollout_tracking['dangerous_close'][i]),
+                        'safe_pass_rate': float(safe_pass_rate),
+                        'close_enc_crash_rate': float(close_enc_crash_rate),
+                        'episode_length': int(step_count),
+                        'env_id': i,
+                    }
+                    ep_extended_buffer.append(ep_extended)
+                    
+                    # Reset tracking for this env only (VecEnv auto-resets)
+                    reset_env_tracking(rollout_tracking, i)
+                    
+                    # Verification print for first few episodes
+                    if rollout_episode_count <= 5:
+                        print(f"[Rollout] Ep={rollout_episode_count} env={i} seed={ep_extended['seed']} "
+                              f"success_no_bad={ep_extended['success_no_bad']:.0f} "
+                              f"route={ep_extended['route_completion']:.2f} "
+                              f"route_until_bad={ep_extended['route_until_bad']:.2f} "
+                              f"len={ep_extended['episode_length']}", flush=True)
+            
+            # Update obs for next step (VecEnv already auto-reset finished envs)
+            rollout_obs = new_obs
         # ====================================================
         
         if step % log_freq == 0 or step == 1:
@@ -852,6 +1112,7 @@ def main():
                 weight_cv = (exp_advantage.std() / (exp_advantage.mean() + 1e-10)).item()
                 
                 # 4. Reward-advantage correlation
+                # rewards is from training batch (size 1024), not rollout
                 rewards_flat = rewards.flatten()
                 rewards_centered = rewards_flat - rewards_flat.mean()
                 adv_centered = adv_flat - adv_flat.mean()
@@ -956,17 +1217,14 @@ def main():
                     'train/eta_hours': eta_hours,
                 }
                 
-                # ============ ROLLOUT METRICS ============
-                # Log rollout metrics from ep_info_buffer
-                # Following the exact same pattern as off_policy_algorithm.py _dump_logs()
-                if len(ep_info_buffer) > 0 and len(ep_info_buffer[0]) > 0 and step % args.rollout_log_freq == 0:
-                    # Core metrics
+                # ============ ROLLOUT METRICS (ENHANCED) ============
+                # Log rollout metrics from ep_info_buffer + ep_extended_buffer
+                if len(ep_info_buffer) > 0 and step % args.rollout_log_freq == 0:
+                    # Core metrics from Monitor
                     log_dict['rollout/ep_rew_mean'] = safe_mean([ep_info["r"] for ep_info in ep_info_buffer])
                     log_dict['rollout/ep_len_mean'] = safe_mean([ep_info["l"] for ep_info in ep_info_buffer])
                     
-                    # Log ALL environment-specific metrics from Monitor
-                    # This mirrors _dump_logs() and includes: route_completion, arrive_dest, 
-                    # crash_vehicle, out_of_road, velocity, steering, acceleration, cost, etc.
+                    # Log ALL environment-specific metrics from Monitor (same as _dump_logs)
                     first_ep_info = ep_info_buffer[-1]
                     for k, v in first_ep_info.items():
                         if k not in ["r", "l"] and type(v) is not str:
@@ -977,20 +1235,69 @@ def main():
                             except (TypeError, ValueError, KeyError):
                                 pass
                     
-                    # Log "total_*" metrics as sums (same as _dump_logs)
+                    # Also log "total_*" as sums
                     for k, v in first_ep_info.items():
                         if k.startswith("total"):
                             log_dict["rollout/{}_sum".format(k)] = ep_info_buffer[-1].get(k, 0)
                     
-                    # Print rollout summary with key metrics
+                    # ======== EXTENDED METRICS from ep_extended_buffer ========
+                    if len(ep_extended_buffer) > 0:
+                        # Success metrics
+                        log_dict['rollout/success_no_bad'] = safe_mean([ep['success_no_bad'] for ep in ep_extended_buffer])
+                        log_dict['rollout/success_rate'] = safe_mean([ep['success_rate'] for ep in ep_extended_buffer])
+                        
+                        # Route completion metrics
+                        log_dict['rollout/route_completion_no_bad'] = safe_mean([ep['route_completion_no_bad'] for ep in ep_extended_buffer])
+                        log_dict['rollout/route_until_bad'] = safe_mean([ep['route_until_bad'] for ep in ep_extended_buffer])
+                        log_dict['rollout/route_completion'] = safe_mean([ep['route_completion'] for ep in ep_extended_buffer])
+                        
+                        # Safety metrics
+                        log_dict['rollout/crash_vehicle_rate'] = safe_mean([ep['crash_vehicle_rate'] for ep in ep_extended_buffer])
+                        log_dict['rollout/crash_object_rate'] = safe_mean([ep['crash_object_rate'] for ep in ep_extended_buffer])
+                        log_dict['rollout/out_of_road_rate'] = safe_mean([ep['out_of_road_rate'] for ep in ep_extended_buffer])
+                        log_dict['rollout/any_bad_event_rate'] = safe_mean([ep['any_bad_event_rate'] for ep in ep_extended_buffer])
+                        
+                        # Reward decomposition
+                        log_dict['rollout/crash_penalty_mean'] = safe_mean([ep['crash_penalty'] for ep in ep_extended_buffer])
+                        log_dict['rollout/out_of_road_penalty_mean'] = safe_mean([ep['out_of_road_penalty'] for ep in ep_extended_buffer])
+                        log_dict['rollout/avg_velocity_mean'] = safe_mean([ep['avg_velocity'] for ep in ep_extended_buffer])
+                        
+                        # Traffic proximity
+                        min_dists = [ep['min_vehicle_distance'] for ep in ep_extended_buffer if ep['min_vehicle_distance'] > 0]
+                        log_dict['rollout/min_vehicle_distance'] = safe_mean(min_dists) if min_dists else -1
+                        log_dict['rollout/close_encounters_mean'] = safe_mean([ep['close_encounters'] for ep in ep_extended_buffer])
+                        log_dict['rollout/safe_pass_rate'] = safe_mean([ep['safe_pass_rate'] for ep in ep_extended_buffer])
+                        log_dict['rollout/close_enc_crash_rate'] = safe_mean([ep['close_enc_crash_rate'] for ep in ep_extended_buffer])
+                        
+                        # Difficulty segment analysis (if enough episodes)
+                        if len(ep_extended_buffer) >= 5:
+                            sorted_eps = sorted([ep for ep in ep_extended_buffer if ep['seed'] is not None], 
+                                               key=lambda x: HARD_200_SEEDS.index(x['seed']) if x['seed'] in HARD_200_SEEDS else 999)
+                            if len(sorted_eps) >= 5:
+                                num_per_seg = len(sorted_eps) // 5
+                                segments = ['hardest', 'hard', 'medium', 'easy', 'easiest']
+                                for seg_idx, seg_name in enumerate(segments):
+                                    start_idx = seg_idx * num_per_seg
+                                    end_idx = min(start_idx + num_per_seg, len(sorted_eps))
+                                    if start_idx < len(sorted_eps):
+                                        seg_eps = sorted_eps[start_idx:end_idx]
+                                        log_dict[f'rollout/segment_{seg_name}_success'] = safe_mean([ep['success_rate'] for ep in seg_eps])
+                                        log_dict[f'rollout/segment_{seg_name}_crash'] = safe_mean([ep['crash_vehicle_rate'] for ep in seg_eps])
+                    # ===========================================================
+                    
+                    # Print rollout summary (enhanced)
                     if step % (args.rollout_log_freq * 5) == 0:
-                        rc = log_dict.get('rollout/route_completion_mean', 0)
-                        arr = log_dict.get('rollout/arrive_dest_mean', 0)
-                        crash = log_dict.get('rollout/crash_vehicle_mean', 0)
-                        oor = log_dict.get('rollout/out_of_road_mean', 0)
-                        print(f"    [Rollout] Ep={len(ep_info_buffer)} R={log_dict.get('rollout/ep_rew_mean', 0):.1f} "
-                              f"Len={log_dict.get('rollout/ep_len_mean', 0):.0f} RC={rc:.2f} Arr={arr:.2f} "
-                              f"Crash={crash:.2f} OoR={oor:.2f}", flush=True)
+                        succ_no_bad = log_dict.get('rollout/success_no_bad', 0)
+                        rc_no_bad = log_dict.get('rollout/route_completion_no_bad', 0)
+                        route_until_bad = log_dict.get('rollout/route_until_bad', 0)
+                        route_comp = log_dict.get('rollout/route_completion', 0)
+                        crash = log_dict.get('rollout/crash_vehicle_rate', 0)
+                        out_road = log_dict.get('rollout/out_of_road_rate', 0)
+                        crash_pen = log_dict.get('rollout/crash_penalty_mean', 0)
+                        safe_pass = log_dict.get('rollout/safe_pass_rate', 0)
+                        print(f"    [Rollout] Ep={len(ep_extended_buffer)} R={log_dict.get('rollout/ep_rew_mean', 0):.1f} RC={route_comp*100:.0f}% RCUntilBad={route_until_bad*100:.0f}% "
+                              f"SuccNoBad={succ_no_bad:.0%} RCNoBad={rc_no_bad:.0%} "
+                              f"Crash={crash:.0%} OoR={out_road:.0%} CrashPen={crash_pen:.1f} SafePass={safe_pass:.0%}", flush=True)
                 # =========================================
                 
                 wandb_run.log(log_dict, step=step)
