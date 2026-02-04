@@ -674,10 +674,14 @@ def main():
                         help="Path to custom model checkpoint (used with --model custom)")
     parser.add_argument("--custom_name", type=str, default="custom",
                         help="Name for custom model in output")
+    parser.add_argument("--custom_type", type=str, default="td3", choices=["td3", "iql"],
+                        help="Type of custom model: td3 or iql")
     parser.add_argument("--num_seeds", type=int, default=200,
-                        help="Number of seeds to evaluate (from top 200)")
+                        help="Number of seeds to evaluate")
     parser.add_argument("--num_episodes", type=int, default=1,
                         help="Number of episodes per seed")
+    parser.add_argument("--use_easiest", action="store_true",
+                        help="Use easiest seeds from hard_scenarios_expert.json instead of TOP_200_SEEDS")
     parser.add_argument("--output", type=str, default="./results/hard_scenario_eval",
                         help="Output directory")
     parser.add_argument("--render", action="store_true",
@@ -696,8 +700,27 @@ def main():
     output_path = Path(args.output)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    seeds = TOP_200_SEEDS[:args.num_seeds]
-    print(f"Evaluating on {len(seeds)} hardest scenarios")
+    # Select seeds based on --use_easiest flag
+    if args.use_easiest:
+        # Load from hard_scenarios_expert.json and use LAST (easiest) seeds
+        json_path = Path('results/hard_scenario_eval/hard_scenarios_expert.json')
+        if not json_path.exists():
+            json_path = Path('hard_scenarios_expert.json')
+        if json_path.exists():
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+            if 'sorting_methods' in data:
+                all_seeds = data['sorting_methods']['by_reward_ascending']
+            else:
+                all_seeds = [s['scenario_seed'] for s in data['scenarios']]
+            seeds = all_seeds[-args.num_seeds:]  # Last N are easiest
+            print(f"Using {len(seeds)} EASIEST seeds from {json_path}")
+        else:
+            print("WARNING: hard_scenarios_expert.json not found, using TOP_200_SEEDS reversed")
+            seeds = list(reversed(TOP_200_SEEDS))[:args.num_seeds]
+    else:
+        seeds = TOP_200_SEEDS[:args.num_seeds]
+        print(f"Evaluating on {len(seeds)} hardest scenarios")
     
     # Load lidar expert for comparison
     expert_model = None
@@ -766,8 +789,11 @@ def main():
         if not custom_path.exists():
             custom_path = script_dir / args.custom_checkpoint
         if custom_path.exists():
-            print(f"Loading custom model from {custom_path}...")
-            models_to_eval[args.custom_name] = load_td3_model(custom_path, shared_env)
+            print(f"Loading custom model ({args.custom_type}) from {custom_path}...")
+            if args.custom_type == "iql":
+                models_to_eval[args.custom_name] = load_iql_model(custom_path, shared_env)
+            else:
+                models_to_eval[args.custom_name] = load_td3_model(custom_path, shared_env)
             print(f"Custom model '{args.custom_name}' loaded!")
         else:
             print(f"ERROR: Custom checkpoint not found at {custom_path}")
@@ -1079,36 +1105,69 @@ def main():
         crash_rates = [r['crash_vehicle_rate'] for r in model_results]
         any_bad_rates = [r['any_bad_event_rate'] for r in model_results]
         
-        print(f"\n{model_name.upper()} Summary:")
+        # Out of road rate
+        out_of_road_rates = [r.get('out_of_road_rate', 0) for r in model_results]
+        
+        print(f"\n{'='*60}")
+        print(f"{model_name.upper()} SUMMARY ({len(seeds)} seeds)")
+        print(f"{'='*60}")
+        
+        print(f"\n  --- Navigation Metrics ---")
         print(f"  Reward: mean={np.mean(rewards):.1f}, std={np.std(rewards):.1f}")
         print(f"  Route Completion: {np.mean(route_completion)*100:.1f}%")
         print(f"  Route Completion (no bad event): {np.mean(route_no_bad)*100:.1f}%")
-        print(f"  Success Rate: {np.mean(success_rates)*100:.1f}%")
+        print(f"  Success Rate (arrive dest): {np.mean(success_rates)*100:.1f}%")
         print(f"  Success Rate (no bad event): {np.mean(success_no_bad)*100:.1f}%")
+        
+        print(f"\n  --- Safety Metrics ---")
         print(f"  Crash Vehicle Rate: {np.mean(crash_rates)*100:.1f}%")
+        print(f"  Out of Road Rate: {np.mean(out_of_road_rates)*100:.1f}%")
         print(f"  Any Bad Event Rate: {np.mean(any_bad_rates)*100:.1f}%")
+        print(f"  NO CRASH Rate: {(1-np.mean(crash_rates))*100:.1f}%")
+        print(f"  CLEAN Success (arrive + no bad): {np.mean(success_no_bad)*100:.1f}%")
+        
+        # Behavioral metrics
+        if 'avg_speed' in model_results[0]:
+            avg_speeds = [r['avg_speed'] for r in model_results]
+            steering_stds = [r.get('steering_std', 0) for r in model_results]
+            accel_stds = [r.get('accel_std', 0) for r in model_results]
+            hard_brake = [r.get('hard_brake_ratio', 0) for r in model_results]
+            hard_steer = [r.get('hard_steer_ratio', 0) for r in model_results]
+            print(f"\n  --- Behavioral Metrics ---")
+            print(f"  Avg Speed: {np.mean(avg_speeds):.2f} m/s")
+            print(f"  Steering Std: {np.mean(steering_stds):.4f}")
+            print(f"  Accel Std: {np.mean(accel_stds):.4f}")
+            print(f"  Hard Brake Ratio: {np.mean(hard_brake)*100:.1f}%")
+            print(f"  Hard Steer Ratio: {np.mean(hard_steer)*100:.1f}%")
         
         # Expert comparison if available
         if 'expert_action_diff_l2' in model_results[0]:
             expert_diffs = [r['expert_action_diff_l2'] for r in model_results]
             expert_agreement = [r['expert_agreement_ratio'] for r in model_results]
+            print(f"\n  --- Expert Agreement ---")
             print(f"  Expert Action Diff (L2): {np.mean(expert_diffs):.3f}")
             print(f"  Expert Agreement Ratio: {np.mean(expert_agreement)*100:.1f}%")
         
-        # Traffic proximity metrics (NEW)
+        # Traffic proximity metrics
         if 'min_vehicle_distance' in model_results[0]:
             min_dists = [r['min_vehicle_distance'] for r in model_results if r['min_vehicle_distance'] > 0]
             close_encounters = [r['total_close_encounters'] for r in model_results]
+            close_rates = [r.get('close_encounter_rate', 0) for r in model_results]
             safe_passes = [r['safe_pass_count'] for r in model_results]
             dangerous = [r['dangerous_close_count'] for r in model_results]
             close_crash_rate = [r['close_encounter_crash_rate'] for r in model_results]
             
-            print(f"  -- Traffic Proximity Metrics --")
-            print(f"  Min Vehicle Distance: {np.mean(min_dists):.1f}m (min={np.min(min_dists):.1f}m)" if min_dists else "  Min Vehicle Distance: N/A")
-            print(f"  Close Encounters (avg): {np.mean(close_encounters):.1f}")
-            print(f"  Safe Passes (close but no crash): {np.mean(safe_passes):.1f}")
-            print(f"  Dangerous Close (close + crash): {np.mean(dangerous):.1f}")
+            print(f"\n  --- Traffic Proximity ---")
+            print(f"  Min Vehicle Distance: {np.mean(min_dists):.2f}m (min={np.min(min_dists):.2f}m)" if min_dists else "  Min Vehicle Distance: N/A")
+            print(f"  Avg Close Encounters: {np.mean(close_encounters):.1f}")
+            print(f"  Close Encounter Rate: {np.mean(close_rates)*100:.1f}%")
+            print(f"  Safe Pass Count: {np.mean(safe_passes):.1f}")
+            print(f"  Dangerous Close Count: {np.mean(dangerous):.1f}")
             print(f"  Close Encounter Crash Rate: {np.mean(close_crash_rate)*100:.1f}%")
+            # Safe pass rate (key metric)
+            if np.mean(close_encounters) > 0:
+                safe_pass_rate = np.mean(safe_passes) / np.mean(close_encounters) * 100
+                print(f"  Safe Pass Rate: {safe_pass_rate:.1f}%")
     
     # Save results
     with open(output_path / "hard_scenario_results.json", 'w') as f:
@@ -1125,6 +1184,7 @@ def main():
         # Collect key metrics for each model
         metrics_by_model = {}
         for name, results in all_results.items():
+            crash_rates = [r['crash_vehicle_rate'] for r in results]
             metrics_by_model[name] = {
                 'reward': [r['reward'] for r in results],
                 'success_rate': [r['success_rate'] for r in results],
@@ -1132,8 +1192,15 @@ def main():
                 'route_completion': [r['route_completion'] for r in results],
                 'route_no_bad': [r['route_completion_no_bad_event'] for r in results],
                 'any_bad_event': [r['any_bad_event_rate'] for r in results],
-                'crash_vehicle': [r['crash_vehicle_rate'] for r in results],
+                'crash_vehicle': crash_rates,
+                'out_of_road': [r.get('out_of_road_rate', 0) for r in results],
+                'no_crash_rate': [1 - c for c in crash_rates],  # NO CRASH Rate
             }
+            # Behavioral metrics
+            if 'avg_speed' in results[0]:
+                metrics_by_model[name]['avg_speed'] = [r['avg_speed'] for r in results]
+                metrics_by_model[name]['hard_brake_ratio'] = [r.get('hard_brake_ratio', 0) for r in results]
+            # Expert agreement
             if 'expert_agreement_ratio' in results[0]:
                 metrics_by_model[name]['expert_agreement'] = [r['expert_agreement_ratio'] for r in results]
             # Traffic proximity metrics
@@ -1150,18 +1217,26 @@ def main():
         print("-" * (30 + 15 * len(model_names)))
         
         metric_display = [
+            # Navigation
             ('reward', 'Reward (mean)', '{:.1f}'),
-            ('success_rate', 'Success Rate', '{:.1%}'),
-            ('success_no_bad', 'Success (no bad event)', '{:.1%}'),
             ('route_completion', 'Route Completion', '{:.1%}'),
-            ('route_no_bad', 'Route (no bad event)', '{:.1%}'),
-            ('any_bad_event', 'Any Bad Event Rate', '{:.1%}'),
-            ('crash_vehicle', 'Crash Vehicle Rate', '{:.1%}'),
+            ('route_no_bad', 'Route (no bad)', '{:.1%}'),
+            ('success_rate', 'Success Rate', '{:.1%}'),
+            ('success_no_bad', 'Success (no bad)', '{:.1%}'),
+            # Safety
+            ('crash_vehicle', 'Crash Rate', '{:.1%}'),
+            ('out_of_road', 'Out of Road Rate', '{:.1%}'),
+            ('any_bad_event', 'Any Bad Event', '{:.1%}'),
+            ('no_crash_rate', 'NO CRASH Rate', '{:.1%}'),
+            # Behavioral
+            ('avg_speed', 'Avg Speed (m/s)', '{:.2f}'),
+            ('hard_brake_ratio', 'Hard Brake Ratio', '{:.1%}'),
+            # Expert
             ('expert_agreement', 'Expert Agreement', '{:.1%}'),
-            # Traffic proximity metrics
-            ('total_close_encounters', 'Close Encounters (avg)', '{:.1f}'),
-            ('safe_pass_count', 'Safe Passes (avg)', '{:.1f}'),
-            ('close_encounter_crash_rate', 'Close Encounter Crash Rate', '{:.1%}'),
+            # Traffic proximity
+            ('total_close_encounters', 'Close Encounters', '{:.1f}'),
+            ('safe_pass_count', 'Safe Passes', '{:.1f}'),
+            ('close_encounter_crash_rate', 'Close Enc Crash Rate', '{:.1%}'),
         ]
         
         for key, label, fmt in metric_display:
